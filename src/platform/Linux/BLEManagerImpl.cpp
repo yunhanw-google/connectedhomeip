@@ -26,11 +26,12 @@
 #include <ble/CHIPBleServiceData.h>
 #include <new>
 #include <platform/internal/BLEManager.h>
+#include <support/CodeUtils.h>
+#include "CHIPBluezHelper.h"
 
 #if CHIP_DEVICE_CONFIG_ENABLE_CHIPOBLE
 
 using namespace ::nl;
-using namespace ::nl::Ble;
 
 namespace chip {
 namespace DeviceLayer {
@@ -38,13 +39,54 @@ namespace Internal {
 
 BLEManagerImpl BLEManagerImpl::sInstance;
 
+
+
+uint8_t BLEManagerImpl::GetAdvertisingHandle(void)
+{
+    return mAdvHandle;
+}
+
+void BLEManagerImpl::SetAdvertisingHandle(uint8_t handle)
+{
+    mAdvHandle = handle;
+}
+
+BleLayer * BLEManagerImpl::_GetBleLayer() const
+{
+    return (BleLayer *) (this);
+}
+
+BLEManager::CHIPoBLEServiceMode BLEManagerImpl::_GetCHIPoBLEServiceMode(void)
+{
+    return mServiceMode;
+}
+
+bool BLEManagerImpl::_IsAdvertisingEnabled(void)
+{
+    return GetFlag(mFlags, kFlag_AdvertisingEnabled);
+}
+
+bool BLEManagerImpl::_IsFastAdvertisingEnabled(void)
+{
+    return GetFlag(mFlags, kFlag_FastAdvertisingEnabled);
+}
+
+bool BLEManagerImpl::_IsAdvertising(void)
+{
+    return GetFlag(mFlags, kFlag_Advertising);
+}
+
 CHIP_ERROR BLEManagerImpl::_Init()
 {
     CHIP_ERROR err;
     // Initialize the CHIP BleLayer.
-    err = BleLayer::Init(this, this, &SystemLayer);
-    SuccessOrExit(err);
-exit:
+    //err = BleLayer::Init(this, this, &SystemLayer);
+    //SuccessOrExit(err);
+    char *sBluezBleAddr;
+    sBluezBleAddr = NULL;
+    PlatformBlueZInit(false, sBluezBleAddr, "N0001", 1);
+
+//exit:
     return err;
 }
 
@@ -74,16 +116,19 @@ exit:
 
 CHIP_ERROR BLEManagerImpl::_GetDeviceName(char * buf, size_t bufSize)
 {
+/*
     if (strlen(mDeviceName) >= bufSize)
     {
         return CHIP_ERROR_BUFFER_TOO_SMALL;
     }
     strcpy(buf, mDeviceName);
+    */
     return CHIP_NO_ERROR;
 }
 
 CHIP_ERROR BLEManagerImpl::_SetDeviceName(const char * deviceName)
 {
+/*
     if (mServiceMode == ConnectivityManager::kCHIPoBLEServiceMode_NotSupported)
     {
         return CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE;
@@ -102,6 +147,7 @@ CHIP_ERROR BLEManagerImpl::_SetDeviceName(const char * deviceName)
         mDeviceName[0] = 0;
         ClearFlag(mFlags, kFlag_UseCustomDeviceName);
     }
+    */
     return CHIP_NO_ERROR;
 }
 
@@ -112,6 +158,8 @@ uint16_t BLEManagerImpl::_NumConnections(void)
     ChipLogProgress(DeviceLayer, "%s", __FUNCTION__);
     return 0;
 }
+
+//void BLEManagerImpl::NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT conId) {};
 
 } // namespace Internal
 } // namespace DeviceLayer

@@ -112,7 +112,7 @@
     <property name="UUID" type="s" access="read" />
     <property name="Device" type="o" access="read" />
     <property name="Primary" type="b" access="read" />
-    <property name="Includes" type="ao" access="read" />
+    <!-- <property name="Includes" type="ao" access="read" /> -->
   </interface>
 
   <interface name="org.bluez.GattCharacteristic1">
@@ -136,6 +136,7 @@
     </method>
     <method name="StartNotify" />
     <method name="StopNotify" />
+    <method name="Confirm" />
     <property name="UUID" type="s" access="read" />
     <property name="Service" type="o" access="read" />
     <property name="Value" type="ay" access="read" />
@@ -157,6 +158,24 @@
     <property name="UUID" type="s" access="read" />
     <property name="Characteristic" type="o" access="read" />
     <property name="Value" type="ay" access="read" />
+  </interface>
+
+  <interface name="org.bluez.LEAdvertisement1">
+    <method name="Release"/>
+    <property name="Type" type="s" access="read"/>
+    <property name="ServiceUUIDs" type="as" access="read"/>
+    <property name="ManufacturerData" type="a{qv}" access="read"/>
+    <property name="SolicitUUIDs" type="as" access="read"/>
+    <property name="ServiceData" type="a{sv}" access="read"/>
+    <property name="Data" type="a{yay}" access="read"/>
+    <property name="Discoverable" type="b" access="read"/>
+    <property name="DiscoverableTimeout" type="q" access="read"/>
+    <property name="Includes" type="as" access="read"/>
+    <property name="LocalName" type="s" access="read"/>
+    <property name="Appearance" type="q" access="read"/>
+    <property name="Duration" type="q" access="read"/>
+    <property name="Timeout" type="q" access="read"/>
+    <!-- <property name="SecondaryChannel" type="s" access="read"/> -->
   </interface>
 
   <interface name="org.bluez.LEAdvertisingManager1">

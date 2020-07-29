@@ -22,7 +22,6 @@
 #include "platform/internal/CHIPDeviceLayerInternal.h"
 
 #include "platform/PlatformManager.h"
-#include "platform/ThreadStackManager.h"
 
 #if CHIP_DEVICE_LAYER_TARGET == LINUX
 #include <thread>
@@ -49,7 +48,8 @@ void EventHandler(const chip::DeviceLayer::ChipDeviceEvent * event, intptr_t arg
 
 int TestThreadStackManager(void)
 {
-    chip::DeviceLayer::ThreadStackManagerImpl impl;
+    //chip::DeviceLayer::Internal::BLEManagerImpl impl;
+    /*
     chip::DeviceLayer::Internal::DeviceNetworkInfo info;
     uint16_t masterKey[16] = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
 
@@ -60,16 +60,17 @@ int TestThreadStackManager(void)
     info.FieldPresent.ThreadMeshPrefix    = false;
     info.FieldPresent.ThreadPSKc          = false;
     memcpy(&info.ThreadNetworkKey, &masterKey, sizeof(masterKey));
-
+     */
     chip::DeviceLayer::PlatformMgrImpl().InitChipStack();
+
     chip::DeviceLayer::PlatformMgrImpl().AddEventHandler(EventHandler, 0);
 
-    impl.InitThreadStack();
-    impl.StartThreadTask();
-    impl._SetThreadProvision(info);
-    impl._SetThreadEnabled(true);
+    //impl.InitThreadStack();
+    //impl.StartThreadTask();
+    //impl._SetThreadProvision(info);
+    //impl._SetThreadEnabled(true);
 
-    printf("Start Thread task done\n");
+    printf("Start BLUEZ task done\n");
 
     chip::DeviceLayer::PlatformMgrImpl().RunEventLoop();
 

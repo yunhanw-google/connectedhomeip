@@ -766,6 +766,7 @@ BLE_ERROR BLEEndPoint::SendNextMessage()
     data = NULL; // Ownership passed to fragmenter's tx buf on PrepareNextFragment success.
 
     // Send first message fragment over the air.
+    /*
     CHIP_FAULT_INJECT(chip::FaultInjection::kFault_CHIPOBLESend, {
         if (mRole == kBleRole_Central)
         {
@@ -777,6 +778,7 @@ BLE_ERROR BLEEndPoint::SendNextMessage()
         }
         ExitNow();
     });
+     */
     err = SendCharacteristic(mBtpEngine.TxPacket());
     SuccessOrExit(err);
 

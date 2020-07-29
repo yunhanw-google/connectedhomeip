@@ -97,6 +97,7 @@ CHIP_LDADD                                      = \
     $(top_builddir)/src/system/libSystemLayer.a   \
     $(top_builddir)/src/crypto/libChipCrypto.a    \
     $(top_builddir)/src/lib/support/libSupportLayer.a   \
+    $(top_builddir)/src/ble/libBleLayer.a       \
     $(NULL)
 
 if CHIP_DEVICE_LAYER_TARGET_LINUX
@@ -130,12 +131,12 @@ check_PROGRAMS                                 = \
     $(NULL)
 
 if CHIP_DEVICE_LAYER_TARGET_LINUX
-if CHIP_WITH_OT_BR_POSIX
+
 check_PROGRAMS += TestThreadStackMgr
 
 TestThreadStackMgr_LDADD                       = $(COMMON_LDADD)
 TestThreadStackMgr_SOURCES                     = TestThreadStackMgrDriver.cpp
-endif
+
 endif
 
 # TODO Add TestConfigurationMgr to check_PROGRAMS when dependent core profile are merged 
