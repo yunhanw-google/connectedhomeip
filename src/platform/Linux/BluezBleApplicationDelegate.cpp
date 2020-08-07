@@ -25,11 +25,16 @@
  */
 #include <support/CodeUtils.h>
 #include "BluezBleApplicationDelegate.h"
-#include "BluezHelperCode.h"
+
+#include "CHIPBluezHelper.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <errno.h>
+#include <stdarg.h>
+#include <strings.h>
+#include <unistd.h>
 
 #if CONFIG_BLE_PLATFORM_BLUEZ
-
-using namespace ::nl;
 
 namespace chip {
 namespace DeviceLayer {
@@ -52,7 +57,7 @@ void BluezBleApplicationDelegate::NotifyChipConnectionClosed(BLE_CONNECTION_OBJE
 
 static int CloseBleconnectionCB(void *aArg)
 {
-    CloseBleconnection();
+    //CloseBleconnection();
 
     return G_SOURCE_REMOVE;
 }

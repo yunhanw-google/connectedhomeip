@@ -39,7 +39,9 @@ namespace Internal {
 
 BLEManagerImpl BLEManagerImpl::sInstance;
 
-
+static BleLayer sBle;
+static BluezBleApplicationDelegate sBleApplicationDelegate;
+static BluezBlePlatformDelegate sBlePlatformDelegate(&sBle);
 
 uint8_t BLEManagerImpl::GetAdvertisingHandle(void)
 {
@@ -53,7 +55,8 @@ void BLEManagerImpl::SetAdvertisingHandle(uint8_t handle)
 
 BleLayer * BLEManagerImpl::_GetBleLayer() const
 {
-    return (BleLayer *) (this);
+    return &sBle;
+    //return (BleLayer *) (this);
 }
 
 BLEManager::CHIPoBLEServiceMode BLEManagerImpl::_GetCHIPoBLEServiceMode(void)
@@ -79,15 +82,24 @@ bool BLEManagerImpl::_IsAdvertising(void)
 CHIP_ERROR BLEManagerImpl::_Init()
 {
     CHIP_ERROR err;
+    char *sBluezBleAddr;
     // Initialize the CHIP BleLayer.
+    err = sBle.Init(&sBlePlatformDelegate, &sBleApplicationDelegate, &SystemLayer);
     //err = BleLayer::Init(this, this, &SystemLayer);
     //SuccessOrExit(err);
-    char *sBluezBleAddr;
+
+    sBle.mAppState = this;
+    sBle.OnChipBleConnectReceived = HandleIncomingBleConnection;
     sBluezBleAddr = NULL;
-    PlatformBlueZInit(false, sBluezBleAddr, "N0001", 1);
+    PlatformBlueZInit(false, sBluezBleAddr, "N0001", 1, &sBlePlatformDelegate, &sBleApplicationDelegate);
 
 //exit:
     return err;
+}
+
+void HandleIncomingBleConnection(BLEEndPoint *bleEP)
+{
+    ChipLogProgress(DeviceLayer, "WoBle con rcvd");
 }
 
 CHIP_ERROR BLEManagerImpl::_SetCHIPoBLEServiceMode(CHIPoBLEServiceMode val)

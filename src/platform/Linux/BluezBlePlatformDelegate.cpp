@@ -22,12 +22,11 @@
  *      The BluezBlePlatformDelegate provides the Weave stack with an interface
  *      by which to form and cancel GATT subscriptions, read and write
  *      GATT characteristic values, send GATT characteristic notifications,
- *      respond to GATT read requests, and close BLE connections.
+ *      respond to GATT read requests, and close Ble connections.
  */
 
 #include <support/CodeUtils.h>
 #include "BluezBlePlatformDelegate.h"
-#include "BluezHelperCode.h"
 
 #if CONFIG_BLE_PLATFORM_BLUEZ
 
@@ -35,7 +34,7 @@ namespace chip {
 namespace DeviceLayer {
 namespace Internal {
 
-BluezBlePlatformDelegate::BluezBlePlatformDelegate(BleLayer * ble) : Ble(ble), SendIndicationCb(NULL), GetMTUCb(NULL) { };
+BluezBlePlatformDelegate::BluezBlePlatformDelegate(Ble::BleLayer * Ble) : Ble(Ble), SendIndicationCb(NULL), GetMTUCb(NULL) { };
 
 uint16_t BluezBlePlatformDelegate::GetMTU(BLE_CONNECTION_OBJECT connObj) const
 {
@@ -47,15 +46,15 @@ uint16_t BluezBlePlatformDelegate::GetMTU(BLE_CONNECTION_OBJECT connObj) const
     return mtu;
 }
 
-bool BluezBlePlatformDelegate::SubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const nl::Ble::ChipBleUUID * svcId,
-                                                       const nl::Ble::ChipBleUUID * charId)
+bool BluezBlePlatformDelegate::SubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId,
+                                                       const Ble::ChipBleUUID * charId)
 {
     ChipLogError(Ble, "SubscribeCharacteristic: Not implemented");
     return true;
 }
 
-bool BluezBlePlatformDelegate::UnsubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const nl::Ble::ChipBleUUID * svcId,
-                                                         const nl::Ble::ChipBleUUID * charId)
+bool BluezBlePlatformDelegate::UnsubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId,
+                                                         const Ble::ChipBleUUID * charId)
 {
     ChipLogError(Ble, "UnsubscribeCharacteristic: Not implemented");
     return true;
@@ -67,8 +66,8 @@ bool BluezBlePlatformDelegate::CloseConnection(BLE_CONNECTION_OBJECT connObj)
     return true;
 }
 
-bool BluezBlePlatformDelegate::SendIndication(BLE_CONNECTION_OBJECT connObj, const nl::Ble::ChipBleUUID * svcId,
-                                              const nl::Ble::ChipBleUUID * charId, chip::System::PacketBuffer * pBuf)
+bool BluezBlePlatformDelegate::SendIndication(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId,
+                                              const Ble::ChipBleUUID * charId, chip::System::PacketBuffer * pBuf)
 {
     bool rc = true;
     ChipLogDetail(Ble, "Start of SendIndication");
@@ -81,22 +80,22 @@ bool BluezBlePlatformDelegate::SendIndication(BLE_CONNECTION_OBJECT connObj, con
     return rc;
 }
 
-bool BluezBlePlatformDelegate::SendWriteRequest(BLE_CONNECTION_OBJECT connObj, const nl::Ble::ChipBleUUID * svcId,
-                                                const nl::Ble::ChipBleUUID * charId, nl::chip::System::PacketBuffer * pBuf)
+bool BluezBlePlatformDelegate::SendWriteRequest(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId,
+                                                const Ble::ChipBleUUID * charId, chip::System::PacketBuffer * pBuf)
 {
     ChipLogError(Ble, "SendWriteRequest: Not implemented");
     return true;
 }
 
-bool BluezBlePlatformDelegate::SendReadRequest(BLE_CONNECTION_OBJECT connObj, const nl::Ble::ChipBleUUID * svcId,
-                                               const nl::Ble::ChipBleUUID * charId, nl::chip::System::PacketBuffer * pBuf)
+bool BluezBlePlatformDelegate::SendReadRequest(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId,
+                                               const Ble::ChipBleUUID * charId, chip::System::PacketBuffer * pBuf)
 {
     ChipLogError(Ble, "SendReadRequest: Not implemented");
     return true;
 }
 
 bool BluezBlePlatformDelegate::SendReadResponse(BLE_CONNECTION_OBJECT connObj, BLE_READ_REQUEST_CONTEXT requestContext,
-                                                const nl::Ble::ChipBleUUID * svcId, const nl::Ble::ChipBleUUID * charId)
+                                                const Ble::ChipBleUUID * svcId, const Ble::ChipBleUUID * charId)
 {
     ChipLogError(Ble, "SendReadResponse: Not implemented");
     return true;
@@ -112,15 +111,15 @@ void BluezBlePlatformDelegate::SetGetMTUCallback(GetMTUCallback cb)
     GetMTUCb = cb;
 }
 
-nl::chip::System::Error BluezBlePlatformDelegate::SendToChipThread(InEventParam * aParams)
+chip::System::Error BluezBlePlatformDelegate::SendToWeaveThread(InEventParam * aParams)
 {
     aParams->Ble = Ble;
 
     return Ble->ScheduleWork(HandleBleDelegate, aParams);
 }
 
-void BluezBlePlatformDelegate::HandleBleDelegate(nl::chip::System::Layer * aLayer, void * aAppState,
-                                                 nl::chip::System::Error aError)
+void BluezBlePlatformDelegate::HandleBleDelegate(chip::System::Layer * aLayer, void * aAppState,
+                                                 chip::System::Error aError)
 {
     InEventParam * args = static_cast<InEventParam *>(aAppState);
 
@@ -130,7 +129,7 @@ void BluezBlePlatformDelegate::HandleBleDelegate(nl::chip::System::Layer * aLaye
     {
 
     case InEventParam::EventTypeEnum::kEvent_IndicationConfirmation:
-        if (!args->Ble->HandleIndicationConfirmation(args->ConnectionObject, args->IndicationConfirmation.SvcId,
+        if (!args->Ble->HandleIndicationConfirmation((void *)(args->ConnectionObject), args->IndicationConfirmation.SvcId,
                                                      args->IndicationConfirmation.CharId))
         {
             ChipLogError(Ble, "HandleIndicationConfirmation failed");

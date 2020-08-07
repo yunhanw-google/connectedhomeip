@@ -35,7 +35,9 @@
 
 #include <support/CodeUtils.h>
 #include "CHIPBluezHelper.h"
-
+#include "WoBluez.h"
+#include "BluezBleApplicationDelegate.h"
+#include "BluezBlePlatformDelegate.h"
 
 
 using namespace ::nl;
@@ -43,6 +45,9 @@ using namespace ::nl;
 namespace chip {
 namespace DeviceLayer {
 namespace Internal {
+
+BluezBlePlatformDelegate * gBluezBlePlatformDelegate = NULL;
+BluezBleApplicationDelegate * gBluezBleApplicationDelegate = NULL;
 
 #define CHIP_PLAT_BLE_UUID_THREAD_GROUP 0xfffb
 
@@ -76,11 +81,6 @@ typedef struct BluezAddress
     uint8_t            mAddress[BLUEZ_ADDRESS_SIZE]; ///< A 48-bit address of Bluetooth device in LSB format.
 } BluezAddress;
 
-struct io_channel
-{
-    GIOChannel *channel;
-    guint       watch;
-};
 
 struct BluezConnection
 {
@@ -97,9 +97,11 @@ struct BluezConnection
 
 static int sBluezFD[2];
 
+
+
 static GMainLoop *          sBluezMainLoop = NULL;
 static pthread_t            sBluezThread;
-static BluezServerEndpoint *sEndpoint = NULL;
+BluezServerEndpoint *sEndpoint = NULL;
 
 static char *BluezShortServiceUUIDToUUIDString(uint16_t aServiceId)
 {
@@ -311,7 +313,7 @@ static gboolean BluezCharacteristicReadValue(BluezGattCharacteristic1 *aChar,
     ChipLogProgress(DeviceLayer, "debug BluezCharacteristicReadValue");
     val = (GVariant *)bluez_gatt_characteristic1_get_value(aChar);
 
-    bluez_gatt_characteristic1_complete_read_value(aChar, aInvocation, (const gchar*)val);
+    bluez_gatt_characteristic1_complete_read_value(aChar, aInvocation, val);
 
     return TRUE;
 }
@@ -324,16 +326,25 @@ static gboolean BluezCharacteristicWriteValue(BluezGattCharacteristic1 *aChar,
     const uint8_t *    tmpBuf;
     uint8_t *          buf;
     size_t             len;
-    BluezConnection *conn   = bluezCharacteristicGetTobleConnection(aChar, aOptions);
-    char *             valStr = g_variant_print(aValue, TRUE);
 
-    ChipLogProgress(DeviceLayer, "TRACE: Char write value %s", valStr);
-    g_free(valStr);
+    if (aValue != NULL)
+    {
+        ChipLogProgress(DeviceLayer, "It is not null");
+    }
+            //BluezConnection *conn   = bluezCharacteristicGetTobleConnection(aChar, aOptions);
+    GVariant * temp = g_variant_get_child_value (aValue, 0);
+    char *             valStr = g_variant_print(temp, TRUE);
 
-    VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
-                                                                             "No CHIP Bluez connection"));
+    //GVariantIter* iter1;
+    //g_variant_get( result, "ay", &iter1 );
+    //GVariant* child = g_variant_iter_next_value( iter1 );
+    //ChipLogProgress(DeviceLayer, "TRACE: Char write value children %s", g_variant_n_children(aValue));
+    //g_free(valStr);
 
-    bluez_gatt_characteristic1_set_value(aChar, (const gchar *)g_variant_ref(aValue));
+    //VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
+    //                                                                         "No CHIP Bluez connection"));
+
+    bluez_gatt_characteristic1_set_value(aChar, g_variant_ref(aValue));
 
     tmpBuf = (const uint8_t *)g_variant_get_fixed_array(aValue, &len, sizeof(uint8_t));
     buf    = (uint8_t *)g_memdup(tmpBuf, len);
@@ -354,20 +365,39 @@ static gboolean BluezCharacteristicWriteValueError(BluezGattCharacteristic1 *aCh
                                                    GVariant *                aValue,
                                                    GVariant *                aOptions)
 {
-    g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.NotSupported",
-                                               "Writing to characteristic is unsupported");
+
+
+    const uint8_t *    tmpBuf;
+    uint8_t *          buf;
+    size_t             len;
+    //BluezConnection *conn   = bluezCharacteristicGetTobleConnection(aChar, aOptions);
+
+    ChipLogProgress(DeviceLayer, "BluezCharacteristicWriteValueError");
+
+
+    //bluez_gatt_characteristic1_set_value(aChar, (const gchar *)g_variant_ref(aValue));
+
+    //tmpBuf = (const uint8_t *)g_variant_get_fixed_array(aValue, &len, sizeof(uint8_t));
+    //buf    = (uint8_t *)g_memdup(tmpBuf, len);
+
+
+    //WoBLEz_WriteReceived(sEndpoint, buf, len);
+
+    //bluez_gatt_characteristic1_complete_write_value(aChar, aInvocation);
+
+exit:
     return TRUE;
 }
 
 static gboolean BluezCharacteristicWriteFD(GIOChannel *aChannel, GIOCondition aCond, gpointer aClosure)
 {
-    BluezConnection *conn   = (BluezConnection *)aClosure;
+    //BluezConnection *conn   = (BluezConnection *)aClosure;
     GVariant *         newVal;
     gchar *          buf;
     ssize_t            len;
     int                fd;
 
-    ChipLogProgress(DeviceLayer, "%s mtu=%d", __func__, conn->mMtu);
+    ChipLogProgress(DeviceLayer, "%s mtu, %d", __func__, sEndpoint->mtu);
 
     if (aCond & G_IO_HUP)
     {
@@ -382,15 +412,16 @@ static gboolean BluezCharacteristicWriteFD(GIOChannel *aChannel, GIOCondition aC
     }
 
     VerifyOrExit(aCond == G_IO_IN, ChipLogProgress(DeviceLayer, "FAIL: error in %s", __func__));
-    buf = (gchar *)g_malloc(conn->mMtu);
+    buf = (gchar *)g_malloc(sEndpoint->mtu);
     fd  = g_io_channel_unix_get_fd(aChannel);
 
-    len = read(fd, buf, conn->mMtu);
+    len = read(fd, buf, sEndpoint->mtu);
 
     VerifyOrExit(len > 0, ChipLogProgress(DeviceLayer, "FAIL: short read in %s (%d)", __func__, len));
 
     newVal = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, buf, len, sizeof(uint8_t));
-    bluez_gatt_characteristic1_set_value(conn->c1, (const gchar *)newVal);
+    bluez_gatt_characteristic1_set_value(sEndpoint->c1, newVal);
+    WoBLEz_WriteReceived(sEndpoint, (const uint8_t*)buf, len);
 
 //    bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleC1Write), gOpenThreadInstance, conn, buf, len);
 exit:
@@ -419,19 +450,22 @@ static gboolean bluezCharacteristicDestroyFD(GIOChannel *aChannel, GIOCondition 
     return G_SOURCE_REMOVE;
 }
 
+
 static gboolean BluezCharacteristicAcquireWrite(BluezGattCharacteristic1 *aChar,
                                                 GDBusMethodInvocation *   aInvocation,
                                                 GVariant *                aOptions)
 {
-    BluezConnection *conn   = bluezCharacteristicGetTobleConnection(aChar, aOptions);
+    //BluezConnection *conn   = bluezCharacteristicGetTobleConnection(aChar, aOptions);
     int                fds[2] = {-1, -1};
     GIOChannel *       channel;
     char *             errStr;
     char *             debugStr;
     GVariantDict       options;
 
-    VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
-                                                                             "No Toble connection"));
+    ChipLogProgress(DeviceLayer, "BluezCharacteristicAcquireWrite is called");
+
+    //VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
+    //                                                                         "No Toble connection"));
 
     if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds) < 0)
     {
@@ -447,7 +481,7 @@ static gboolean BluezCharacteristicAcquireWrite(BluezGattCharacteristic1 *aChar,
     if (g_variant_dict_contains(&options, "mtu") == TRUE)
     {
         GVariant *v = g_variant_dict_lookup_value(&options, "mtu", G_VARIANT_TYPE_UINT16);
-        conn->mMtu  = g_variant_get_uint16(v);
+        sEndpoint->mtu = g_variant_get_uint16(v);
     }
     else
     {
@@ -460,14 +494,13 @@ static gboolean BluezCharacteristicAcquireWrite(BluezGattCharacteristic1 *aChar,
     g_io_channel_set_encoding(channel, NULL, NULL);
     g_io_channel_set_close_on_unref(channel, TRUE);
     g_io_channel_set_buffered(channel, FALSE);
-    conn->c1Channel.channel  = channel;
-    conn->c1Channel.watch  = g_io_add_watch(channel,
-                                            (GIOCondition)(G_IO_HUP | G_IO_IN | G_IO_ERR | G_IO_NVAL),
-                                            BluezCharacteristicWriteFD, conn);
+    //conn->c1Channel.channel  = channel;
+    g_io_add_watch(channel,(GIOCondition)(G_IO_HUP | G_IO_IN | G_IO_ERR | G_IO_NVAL),
+                                            BluezCharacteristicWriteFD, sEndpoint);
 
     bluez_gatt_characteristic1_set_write_acquired(aChar, TRUE);
 
-    Bluez_gatt_characteristic1_complete_acquire_write_with_fd(aInvocation, fds[1], conn->mMtu);
+    Bluez_gatt_characteristic1_complete_acquire_write_with_fd(aInvocation, fds[1], sEndpoint->mtu);
     close(fds[1]);
 
 exit:
@@ -478,6 +511,7 @@ static gboolean BluezCharacteristicAcquireWriteError(BluezGattCharacteristic1 *a
                                                      GDBusMethodInvocation *   aInvocation,
                                                      GVariant *                aOptions)
 {
+    ChipLogProgress(DeviceLayer, "BluezCharacteristicAcquireWriteError is called");
     g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.NotSupported",
                                                "AcquireWrite for characteristic is unsupported");
     return TRUE;
@@ -487,25 +521,25 @@ static gboolean BluezCharacteristicAcquireNotify(BluezGattCharacteristic1 *aChar
                                                  GDBusMethodInvocation *   aInvocation,
                                                  GVariant *                aOptions)
 {
-    BluezConnection *conn   = bluezCharacteristicGetTobleConnection(aChar, aOptions);
+    //BluezConnection *conn   = bluezCharacteristicGetTobleConnection(aChar, aOptions);
     int                fds[2] = {-1, -1};
     GIOChannel *       channel;
     char *             errStr;
     char *             debugStr;
     GVariantDict       options;
 
-    VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
-                                                                             "No Toble connection"));
+    //VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
+    //                                                                         "No Toble connection"));
 
     debugStr = g_variant_print(aOptions, TRUE);
     ChipLogProgress(DeviceLayer, "TRACE: AcquireNotify options %s", debugStr);
     g_free(debugStr);
 
     g_variant_dict_init(&options, aOptions);
-    if ((conn->mMtu == 0) && (g_variant_dict_contains(&options, "mtu") == TRUE))
+    if ((g_variant_dict_contains(&options, "mtu") == TRUE))
     {
         GVariant *v = g_variant_dict_lookup_value(&options, "mtu", G_VARIANT_TYPE_UINT16);
-        conn->mMtu  = g_variant_get_uint16(v);
+        sEndpoint->mtu  = g_variant_get_uint16(v);
     }
 
     if (bluez_gatt_characteristic1_get_notifying(aChar))
@@ -523,16 +557,19 @@ static gboolean BluezCharacteristicAcquireNotify(BluezGattCharacteristic1 *aChar
     g_io_channel_set_encoding(channel, NULL, NULL);
     g_io_channel_set_close_on_unref(channel, TRUE);
     g_io_channel_set_buffered(channel, FALSE);
-    conn->c2Channel.channel = channel;
+    sEndpoint->c2Channel.channel = channel;
     // no read watch on c2Channel characteristic; its just for writing
-    conn->c2Channel.watch = g_io_add_watch_full(channel, G_PRIORITY_DEFAULT_IDLE, (GIOCondition)(G_IO_HUP | G_IO_ERR | G_IO_NVAL),
-                                                bluezCharacteristicDestroyFD, conn, NULL);
+    sEndpoint->c2Channel.watch = g_io_add_watch_full(channel, G_PRIORITY_DEFAULT_IDLE, (GIOCondition)(G_IO_HUP | G_IO_ERR | G_IO_NVAL),
+                                                bluezCharacteristicDestroyFD, sEndpoint, NULL);
 
     bluez_gatt_characteristic1_set_notify_acquired(aChar, TRUE);
 
     // same reply as for AcquireWrite
-    Bluez_gatt_characteristic1_complete_acquire_write_with_fd(aInvocation, fds[1], conn->mMtu);
+    Bluez_gatt_characteristic1_complete_acquire_write_with_fd(aInvocation, fds[1], sEndpoint->mtu);
     close(fds[1]);
+
+    sEndpoint->isNotify = true;
+    WoBLEz_SubscriptionChange(sEndpoint);
     //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleC2Subscribed), gOpenThreadInstance, conn, true);
 
 exit:
@@ -543,6 +580,7 @@ static gboolean BluezCharacteristicAcquireNotifyError(BluezGattCharacteristic1 *
                                                       GDBusMethodInvocation *   aInvocation,
                                                       GVariant *                aOptions)
 {
+    ChipLogProgress(DeviceLayer, "TRACE: AcquireNotify is called");
     g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.NotSupported",
                                                "AcquireNotify for characteristic is unsupported");
     return TRUE;
@@ -550,10 +588,11 @@ static gboolean BluezCharacteristicAcquireNotifyError(BluezGattCharacteristic1 *
 
 static gboolean BluezCharacteristicStartNotify(BluezGattCharacteristic1 *aChar, GDBusMethodInvocation *aInvocation)
 {
-    BluezConnection *conn = bluezCharacteristicGetTobleConnection(aChar, NULL);
+    //BluezConnection *conn = bluezCharacteristicGetTobleConnection(aChar, NULL);
 
-    VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
-                                                                             "No Toble connection"));
+    ChipLogProgress(DeviceLayer, "start notify1");
+    //VerifyOrExit(conn != NULL, g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
+    //                                                                         "No Toble connection"));
 
     ChipLogProgress(DeviceLayer, "start notify");
 
@@ -566,8 +605,8 @@ static gboolean BluezCharacteristicStartNotify(BluezGattCharacteristic1 *aChar, 
     {
         bluez_gatt_characteristic1_complete_start_notify(aChar, aInvocation);
         bluez_gatt_characteristic1_set_notifying(aChar, TRUE);
-
-        WoBLEz_SubscriptionChange(gBluezServerEndpoint);
+        sEndpoint->isNotify = true;
+        WoBLEz_SubscriptionChange(sEndpoint);
         //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleC2Subscribed), conn, true);
     }
 
@@ -610,7 +649,7 @@ static gboolean BluezCharacteristicConfirm(BluezGattCharacteristic1 *aChar, GDBu
 {
     BluezConnection *conn = bluezCharacteristicGetTobleConnection(aChar, NULL);
 
-    WeaveLogDetail(Ble, "Indication confirmation received at %s", characteristic->path);
+    ChipLogDetail(Ble, "Indication confirmation");
     WoBLEz_IndicationConfirmation(sEndpoint);
 
     return TRUE;
@@ -620,6 +659,13 @@ static gboolean BluezCharacteristicStopNotifyError(BluezGattCharacteristic1 *aCh
 {
     g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
                                                "Unsubscribing from characteristic is unsupported");
+    return TRUE;
+}
+
+static gboolean BluezCharacteristicConfirmError(BluezGattCharacteristic1 *aChar, GDBusMethodInvocation *aInvocation)
+{
+    g_dbus_method_invocation_return_dbus_error(aInvocation, "org.bluez.Error.Failed",
+                                               "Confirm from characteristic is unsupported");
     return TRUE;
 }
 
@@ -659,6 +705,8 @@ static gboolean BluezIsServiceOnDevice(BluezGattService1 *aService, BluezDevice1
 
 static gboolean BluezIsCharOnService(BluezGattCharacteristic1 *aChar, BluezGattService1 *aService)
 {
+    ChipLogProgress(DeviceLayer, "location1 %s", bluez_gatt_characteristic1_get_service(aChar));
+    ChipLogProgress(DeviceLayer, "location2 %s", g_dbus_proxy_get_object_path(G_DBUS_PROXY(aService)));
     return strcmp(bluez_gatt_characteristic1_get_service(aChar),
                   g_dbus_proxy_get_object_path(G_DBUS_PROXY(aService))) == 0
            ? TRUE
@@ -1044,8 +1092,9 @@ static void BluezSignalInterfacePropertiesChanged(GDBusObjectManagerClient *aMan
                                                   const gchar *const *      aInvalidatedProps,
                                                   gpointer                  aClosure)
 {
-    SuccessOrExit(sEndpoint->adapter != NULL);
+    VerifyOrExit(sEndpoint->adapter != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL sEndpoint->adapter in %s", __func__));
 
+    ChipLogProgress(DeviceLayer, "property change comes");
     if (strcmp(g_dbus_proxy_get_interface_name(aInterface), CHARACTERISTIC_INTERFACE) == 0)
     {
         BluezGattCharacteristic1 *chr = BLUEZ_GATT_CHARACTERISTIC1(aInterface);
@@ -1087,20 +1136,25 @@ static void BluezSignalInterfacePropertiesChanged(GDBusObjectManagerClient *aMan
         GVariant *    value;
         char *        key;
 
+        ChipLogProgress(DeviceLayer, "device interface property change comes");
         if (BluezIsDeviceOnAdapter(device, sEndpoint->adapter))
         {
             BluezConnection *conn =
                     (BluezConnection *)g_hash_table_lookup(sEndpoint->connMap, g_dbus_proxy_get_object_path(aInterface));
 
             g_variant_iter_init(&iter, aChangedProperties);
+            ChipLogProgress(DeviceLayer, "look up bluez connection comes");
             while (g_variant_iter_next(&iter, "{&sv}", &key, &value))
             {
+                ChipLogProgress(DeviceLayer, "coonnected?");
                 if (strcmp(key, "Connected") == 0)
                 {
                     gboolean connected;
                     connected = g_variant_get_boolean(value);
+
                     if (connected)
                     {
+                        ChipLogProgress(DeviceLayer, "coonnected!");
                         // for a central, the connection has been already allocated.  For a peripheral, it has not.
                         // todo do we need this ? we could handle all connection the same wa...
                         if (sEndpoint->isCentral)
@@ -1116,17 +1170,18 @@ static void BluezSignalInterfacePropertiesChanged(GDBusObjectManagerClient *aMan
                             conn->mDevice      = (BluezDevice1 *)g_object_ref(device);
                             BluezConnectionInit(conn);
 
+                            ChipLogProgress(DeviceLayer, "coonnected, insert");
                             g_hash_table_insert(sEndpoint->connMap, g_strdup(g_dbus_proxy_get_object_path(aInterface)),
                                                 conn);
                         }
                         // for central, we do not call BluezConnectionInit until the services have been resolved
 
-                        WoBLEz_NewConnection(gBluezServerEndpoint);
+                        WoBLEz_NewConnection(sEndpoint);
                         //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleConnected), gOpenThreadInstance, conn);
                     }
                     else
                     {
-                        WoBLEz_ConnectionClosed(gBluezServerEndpoint);
+                        WoBLEz_ConnectionClosed(sEndpoint);
                         //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleDisconnected), gOpenThreadInstance, conn);
                         g_hash_table_remove(sEndpoint->connMap, g_dbus_proxy_get_object_path(aInterface));
                     }
@@ -1178,6 +1233,7 @@ static void BluezHandleNewDevice(BluezDevice1 *device)
     {
         BluezConnection *conn;
 
+        ChipLogProgress(DeviceLayer, "new device comes");
         SuccessOrExit(bluez_device1_get_connected(device));
 
         conn = (BluezConnection *)g_hash_table_lookup(sEndpoint->connMap,
@@ -1194,6 +1250,7 @@ static void BluezHandleNewDevice(BluezDevice1 *device)
 
         g_hash_table_insert(sEndpoint->connMap, g_strdup(g_dbus_proxy_get_object_path(G_DBUS_PROXY(device))),
                             conn);
+        ChipLogProgress(DeviceLayer, "new device comes end");
     }
 
 exit:
@@ -1318,6 +1375,7 @@ static BluezConnection *bluezCharacteristicGetTobleConnection(BluezGattCharacter
     GVariantDict options;
     GVariant *v;
 
+    ChipLogProgress(DeviceLayer, "loopup bluezCharacteristicGetTobleConnection");
     /* TODO Unfortunately StartNotify/StopNotify doesn't provide info about
      * peer device in call params so we need look this up ourselves.
      */
@@ -1331,19 +1389,24 @@ static BluezConnection *bluezCharacteristicGetTobleConnection(BluezGattCharacter
         for (l = objects; l != NULL; l = l->next)
         {
             BluezDevice1 *device = bluez_object_get_device1(BLUEZ_OBJECT(l->data));
+            ChipLogProgress(DeviceLayer, "loopup bluezCharacteristicGetTobleConnection1");
             if (device != NULL)
             {
                 if (BluezIsDeviceOnAdapter(device, sEndpoint->adapter))
                 {
+                    ChipLogProgress(DeviceLayer, "loopup bluezCharacteristicGetTobleConnection2");
                     for (ll = objects; ll != NULL; ll = ll->next)
                     {
                         BluezGattService1 *service = bluez_object_get_gatt_service1(BLUEZ_OBJECT(ll->data));
                         if (service != NULL)
                         {
+                            ChipLogProgress(DeviceLayer, "loopup bluezCharacteristicGetTobleConnection3");
                             if (BluezIsServiceOnDevice(service, device))
                             {
+                                ChipLogProgress(DeviceLayer, "loopup bluezCharacteristicGetTobleConnection4");
                                 if (BluezIsCharOnService(aChar, service))
                                 {
+                                    ChipLogProgress(DeviceLayer, "loopup bluezCharacteristicGetTobleConnection5");
                                     retval = (BluezConnection *)g_hash_table_lookup(sEndpoint->connMap,
                                                                                     g_dbus_proxy_get_object_path(G_DBUS_PROXY(device)));
                                 }
@@ -1395,11 +1458,12 @@ static void BluezPeripheralObjectsSetup(void)
             BluezCharacteristicCreate(sEndpoint->service, g_strdup("c1"), g_strdup(CHIP_PLAT_BLE_UUID_C1_STRING));
     bluez_gatt_characteristic1_set_flags(sEndpoint->c1, c1_flags);
     g_signal_connect(sEndpoint->c1, "handle-read-value", G_CALLBACK(BluezCharacteristicReadValue), NULL);
-    g_signal_connect(sEndpoint->c1, "handle-write-value", G_CALLBACK(BluezCharacteristicWriteValue), NULL);
+    g_signal_connect(sEndpoint->c1, "handle-write-value", G_CALLBACK(BluezCharacteristicWriteValueError), NULL);
     g_signal_connect(sEndpoint->c1, "handle-acquire-write", G_CALLBACK(BluezCharacteristicAcquireWrite), NULL);
     g_signal_connect(sEndpoint->c1, "handle-acquire-notify", G_CALLBACK(BluezCharacteristicAcquireNotifyError), NULL);
     g_signal_connect(sEndpoint->c1, "handle-start-notify", G_CALLBACK(BluezCharacteristicStartNotifyError), NULL);
     g_signal_connect(sEndpoint->c1, "handle-stop-notify", G_CALLBACK(BluezCharacteristicStopNotifyError), NULL);
+    g_signal_connect(sEndpoint->c1, "handle-confirm", G_CALLBACK(BluezCharacteristicConfirmError), NULL);
 
     sEndpoint->c2 =
             BluezCharacteristicCreate(sEndpoint->service, g_strdup("c2"), g_strdup(CHIP_PLAT_BLE_UUID_C2_STRING));
@@ -1522,6 +1586,85 @@ exit:
     return msg == NULL;
 }
 
+uint16_t GetMTUWeaveCb(BLE_CONNECTION_OBJECT connObj)
+{
+    return 104;
+}
+
+/***********************************************************************
+ * C2 indication
+ ***********************************************************************/
+
+static gboolean bluezTobleC2Indicate(void *aClosure)
+{
+    BluezServerEndpoint * endpoint            = sEndpoint;
+    chip::System::PacketBuffer * msgBuf  = static_cast<chip::System::PacketBuffer *>(aClosure);
+    uint8_t * buffer                          = msgBuf->Start();
+    size_t len                                = msgBuf->DataLength();
+
+    GError *              error   = NULL;
+    GIOStatus             status;
+    size_t                written;
+    char *          buf;
+    GVariant *         val;
+
+    ChipLogProgress(DeviceLayer, "bluezTobleC2Indicate");
+
+    val = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, buffer, len * sizeof(uint8_t), sizeof(uint8_t));
+
+    if (bluez_gatt_characteristic1_get_notify_acquired(sEndpoint->c2) == TRUE)
+    {
+        ChipLogProgress(DeviceLayer, "bluezTobleC2Indicate acquire");
+        buf    = (char *)g_variant_get_fixed_array(val, &len, sizeof(uint8_t));
+        status = g_io_channel_write_chars(sEndpoint->c2Channel.channel, buf, len, &written, &error);
+        g_variant_unref(val);
+        val = NULL;
+
+        VerifyOrExit(status == G_IO_STATUS_NORMAL, ChipLogProgress(DeviceLayer, "FAIL: C2 Indicate: %s", error->message));
+    }
+    else
+    {
+        ChipLogProgress(DeviceLayer, "bluezTobleC2Indicate not acquire");
+        bluez_gatt_characteristic1_set_value(sEndpoint->c2, val);
+        val = NULL;
+    }
+
+exit:
+
+    //g_free(msgBuf);
+    if (error != NULL)
+        g_error_free(error);
+    return G_SOURCE_REMOVE;
+}
+
+bool WoBLEz_ScheduleSendIndication(void * data, chip::System::PacketBuffer * msgBuf)
+{
+    const char * msg               = NULL;
+    bool success                   = false;
+    BluezServerEndpoint * endpoint = static_cast<BluezServerEndpoint *>(data);
+
+    VerifyOrExit(endpoint != NULL, msg = "endpoint is NULL in WoBLEz_SendIndication");
+    //VerifyOrExit(endpoint == gBluezServerEndpoint, msg = "Unexpected endpoint in WoBLEz_SendIndication");
+    VerifyOrExit(endpoint->c2 != NULL, msg = "weaveC2 is NULL in WoBLEz_SendIndication");
+
+    ChipLogProgress(DeviceLayer, "WoBLEz_ScheduleSendIndication");
+    success = BluezRunOnBluezThread(bluezTobleC2Indicate, msgBuf);
+
+    exit:
+
+    if (NULL != msg)
+    {
+        ChipLogError(Ble, msg);
+    }
+
+    if (!success && msgBuf != NULL)
+    {
+        chip::System::PacketBuffer::Free(msgBuf);
+    }
+
+    return success;
+}
+
 /**
  * Initialize BlueZ platform beyond the otPlatTobleInit arguments
  *
@@ -1531,7 +1674,7 @@ exit:
  * @param[in] aBleName When non-null, adapter alias will be set to this string.
  *
  */
-void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId)
+void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, BlePlatformDelegate * platformDelegate, BleApplicationDelegate * appDelegate)
 {
     bool retval     = false;
     int  pthreadErr = 0;
@@ -1558,6 +1701,9 @@ void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t
     sEndpoint->connMap   = g_hash_table_new(g_str_hash, g_str_equal);
     sEndpoint->mtu       = HCI_MAX_MTU;
     sEndpoint->isCentral = aIsCentral;
+    gBluezBleApplicationDelegate = (BluezBleApplicationDelegate *)appDelegate;
+
+    gBluezBlePlatformDelegate = (BluezBlePlatformDelegate *)platformDelegate;
 
     gBluezBlePlatformDelegate->SetSendIndicationCallback(WoBLEz_ScheduleSendIndication);
     gBluezBlePlatformDelegate->SetGetMTUCallback(GetMTUWeaveCb);

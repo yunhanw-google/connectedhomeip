@@ -29,8 +29,14 @@
 #define __STDC_LIMIT_MACROS
 #endif
 
-#include <Weave/Support/logging/WeaveLogging.h>
-#include <Support/CodeUtils.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <support/CodeUtils.h>
+#include <inet/InetLayer.h>
+#include <system/SystemPacketBuffer.h>
 
 namespace chip {
     namespace DeviceLayer {
@@ -45,7 +51,7 @@ void WoBLEz_IndicationConfirmation(void * user_data);
 bool WoBLEz_TimerCb(void * user_data);
 
 // Called by BlePlatformDelegate:
-bool WoBLEz_ScheduleSendIndication(void * user_data, nl::Weave::System::PacketBuffer * msgBuf);
+bool WoBLEz_ScheduleSendIndication(void * user_data, chip::System::PacketBuffer * msgBuf);
 
 } // namespace BlueZ
 } // namespace Platform

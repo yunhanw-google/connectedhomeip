@@ -31,10 +31,10 @@
 
 #if CONFIG_BLE_PLATFORM_BLUEZ
 
-#include <BleLayer/BleLayer.h>
-#include <BleLayer/BleApplicationDelegate.h>
-
-using namespace ::nl;
+#include <ble/BleLayer.h>
+#include <ble/BleApplicationDelegate.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 namespace chip {
 namespace DeviceLayer {
@@ -49,7 +49,7 @@ typedef enum
     kWoBlePktRx
 } BleActivity;
 
-class BluezBleApplicationDelegate : public nl::Ble::BleApplicationDelegate
+class BluezBleApplicationDelegate : public Ble::BleApplicationDelegate
 {
 public:
     BluezBleApplicationDelegate() {};

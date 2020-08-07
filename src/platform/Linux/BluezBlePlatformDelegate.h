@@ -32,9 +32,12 @@
 
 #if CONFIG_BLE_PLATFORM_BLUEZ
 
-#include <BleLayer/BleLayer.h>
-#include <BleLayer/BlePlatformDelegate.h>
+#include <ble/BleLayer.h>
+#include <ble/BleUUID.h>
+#include <ble/BlePlatformDelegate.h>
 #include <support/CodeUtils.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 namespace chip {
 namespace DeviceLayer {
@@ -43,8 +46,6 @@ namespace Internal {
 typedef bool (*SendIndicationCallback)(void * data, chip::System::PacketBuffer * msgBuf);
 
 typedef uint16_t (*GetMTUCallback)(void * connObj);
-
-using namespace nl::Ble;
 
 class BluezBlePlatformDelegate;
 
@@ -61,20 +62,20 @@ struct InEventParam
 
     EventTypeEnum EventType;
     void * ConnectionObject;
-    BleLayer * Ble;
+    Ble::BleLayer * Ble;
     BluezBlePlatformDelegate *PlatformDelegate;
     union
     {
         struct
         {
-            const WeaveBleUUID * SvcId;
-            const WeaveBleUUID * CharId;
+            const chip::Ble::ChipBleUUID * SvcId;
+            const chip::Ble::ChipBleUUID * CharId;
         } IndicationConfirmation;
 
         struct
         {
-            const WeaveBleUUID * SvcId;
-            const WeaveBleUUID * CharId;
+            const chip::Ble::ChipBleUUID * SvcId;
+            const chip::Ble::ChipBleUUID * CharId;
         } SubscriptionChange;
 
         struct
@@ -84,55 +85,55 @@ struct InEventParam
 
         struct
         {
-            const WeaveBleUUID * SvcId;
-            const WeaveBleUUID * CharId;
-            nl::Weave::System::PacketBuffer * MsgBuf;
+            const chip::Ble::ChipBleUUID * SvcId;
+            const chip::Ble::ChipBleUUID * CharId;
+            chip::System::PacketBuffer * MsgBuf;
         } WriteReceived;
     };
 };
 
-class BluezBlePlatformDelegate : public nl::Ble::BlePlatformDelegate
+class BluezBlePlatformDelegate : public Ble::BlePlatformDelegate
 {
 public:
-    BleLayer * Ble;
+    Ble::BleLayer * Ble;
     SendIndicationCallback SendIndicationCb;
     GetMTUCallback GetMTUCb;
 
-    BluezBlePlatformDelegate(BleLayer * ble);
+    BluezBlePlatformDelegate(Ble::BleLayer * ble);
 
     uint16_t GetMTU(BLE_CONNECTION_OBJECT connObj) const;
 
-    bool SubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const nl::Ble::WeaveBleUUID * svcId,
-                                 const nl::Ble::WeaveBleUUID * charId);
+    bool SubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId,
+                                 const Ble::ChipBleUUID * charId);
 
-    bool UnsubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const nl::Ble::WeaveBleUUID * svcId,
-                                   const nl::Ble::WeaveBleUUID * charId);
+    bool UnsubscribeCharacteristic(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId,
+                                   const Ble::ChipBleUUID * charId);
 
     bool CloseConnection(BLE_CONNECTION_OBJECT connObj);
 
-    bool SendIndication(BLE_CONNECTION_OBJECT connObj, const nl::Ble::WeaveBleUUID * svcId, const nl::Ble::WeaveBleUUID * charId,
-                        nl::Weave::System::PacketBuffer * pBuf);
+    bool SendIndication(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId, const Ble::ChipBleUUID * charId,
+                        chip::System::PacketBuffer * pBuf);
 
-    bool SendWriteRequest(BLE_CONNECTION_OBJECT connObj, const nl::Ble::WeaveBleUUID * svcId, const nl::Ble::WeaveBleUUID * charId,
-                          nl::Weave::System::PacketBuffer * pBuf);
+    bool SendWriteRequest(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId, const Ble::ChipBleUUID * charId,
+                          chip::System::PacketBuffer * pBuf);
 
-    bool SendReadRequest(BLE_CONNECTION_OBJECT connObj, const nl::Ble::WeaveBleUUID * svcId, const nl::Ble::WeaveBleUUID * charId,
-                         nl::Weave::System::PacketBuffer * pBuf);
+    bool SendReadRequest(BLE_CONNECTION_OBJECT connObj, const Ble::ChipBleUUID * svcId, const Ble::ChipBleUUID * charId,
+                         chip::System::PacketBuffer * pBuf);
 
     bool SendReadResponse(BLE_CONNECTION_OBJECT connObj, BLE_READ_REQUEST_CONTEXT requestContext,
-                          const nl::Ble::WeaveBleUUID * svcId, const nl::Ble::WeaveBleUUID * charId);
+                          const Ble::ChipBleUUID * svcId, const Ble::ChipBleUUID * charId);
 
     void SetSendIndicationCallback(SendIndicationCallback cb);
 
     void SetGetMTUCallback(GetMTUCallback cb);
 
-    nl::Weave::System::Error SendToWeaveThread(InEventParam * aParams);
+    chip::System::Error SendToWeaveThread(InEventParam * aParams);
 
-    nl::Weave::System::Error NewEventParams(InEventParam ** aParam);
+    chip::System::Error NewEventParams(InEventParam ** aParam);
 
     void ReleaseEventParams(InEventParam * aParam);
 
-    static void HandleBleDelegate(nl::Weave::System::Layer * aLayer, void * aAppState, nl::Weave::System::Error aError);
+    static void HandleBleDelegate(chip::System::Layer * aLayer, void * aAppState, chip::System::Error aError);
 };
 
 } // namespace BlueZ

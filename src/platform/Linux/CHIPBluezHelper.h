@@ -49,7 +49,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "Linux/gen/DbusBluez.h"
-
+#include "BluezBleApplicationDelegate.h"
+#include "BluezBlePlatformDelegate.h"
+#include <ble/BlePlatformDelegate.h>
+#include <ble/BleApplicationDelegate.h>
 namespace chip {
 namespace DeviceLayer {
 namespace Internal {
@@ -96,6 +99,12 @@ namespace Internal {
         BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
     } ChipAdvType;
 
+    struct io_channel
+    {
+        GIOChannel *channel;
+        guint       watch;
+    };
+
     typedef struct BluezServerEndpoint {
         char *owningName;  // Bus owning name
 
@@ -121,9 +130,11 @@ namespace Internal {
 
         // map device path to the connection
         GHashTable *connMap;
-
+        struct io_channel         c1Channel;
+        struct io_channel         c2Channel;
         uint32_t nodeId;
         uint16_t mtu;
+        bool isNotify;
         bool isCentral;
         char * advertisingUUID;
         CHIPServiceData * chipServiceData;
@@ -156,7 +167,7 @@ namespace Internal {
 
 #define CHAR_TO_NIBBLE(c) (((c) <= '9') ? (c) - '0' : tolower((c)) - 'a' + 10)
 
-        void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId);
+        void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, chip::Ble::BlePlatformDelegate * platformDelegate, chip::Ble::BleApplicationDelegate * appDelegate);
 
 // IPC primitives
 
@@ -167,6 +178,7 @@ namespace Internal {
 
         void platformBluezUpdateFdSet(fd_set *aReadFds, fd_set *aWriteFds, int *aMaxFd);
 
+        bool BluezRunOnBluezThread(int (*aCallback)(void *), void *aClosure);
 // static DBusConnection * gBluezDbusConn;
 // static Adapter * gDefaultAdapter;
 
@@ -212,6 +224,10 @@ namespace Internal {
 #define TO_GENERIC_FUN(fn) (void (*)(void))(fn)
 #define PIPE_READ 0
 #define PIPE_WRITE 1
+
+
+extern BluezBleApplicationDelegate * gBluezBleApplicationDelegate;
+extern BluezBlePlatformDelegate * gBluezBlePlatformDelegate;
 
 }
 }

@@ -51,7 +51,7 @@
 // clang-format off
 
 // Define below to enable extremely verbose, BLE end point-specific debug logging.
-#undef CHIP_BLE_END_POINT_DEBUG_LOGGING_ENABLED
+#define CHIP_BLE_END_POINT_DEBUG_LOGGING_ENABLED
 
 #ifdef CHIP_BLE_END_POINT_DEBUG_LOGGING_ENABLED
 #define ChipLogDebugBleEndPoint(MOD, MSG, ...) ChipLogError(MOD, MSG, ## __VA_ARGS__)
@@ -211,7 +211,7 @@ BLE_ERROR BLEEndPoint::HandleReceiveConnectionComplete()
     {
         err = BLE_ERROR_NO_CONNECTION_RECEIVED_CALLBACK;
     }
-
+    ChipLogDebugBleEndPoint(Ble, "exit HandleReceiveConnectionComplete. %d", err);
     return err;
 }
 
@@ -623,6 +623,7 @@ BLE_ERROR BLEEndPoint::SendCharacteristic(PacketBuffer * buf)
     }
     else // (mRole == kBleRole_Peripheral), verified on Init
     {
+
         if (!SendIndication(buf))
         {
             err = BLE_ERROR_GATT_INDICATE_FAILED;

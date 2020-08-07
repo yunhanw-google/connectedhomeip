@@ -36,6 +36,8 @@ namespace Internal {
 
 using namespace chip::Ble;
 
+void HandleIncomingBleConnection(BLEEndPoint *bleEP);
+
 /**
  * Concrete implementation of the NetworkProvisioningServer singleton object for the Linux platforms.
  */

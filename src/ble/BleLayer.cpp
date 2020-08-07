@@ -458,6 +458,7 @@ exit:
 bool BleLayer::HandleWriteReceived(BLE_CONNECTION_OBJECT connObj, const ChipBleUUID * svcId, const ChipBleUUID * charId,
                                    PacketBuffer * pBuf)
 {
+    ChipLogError(Ble, "yunhan receive the firs c1 write");
     if (!UUIDsMatch(&CHIP_BLE_SVC_ID, svcId))
     {
         ChipLogError(Ble, "ble write rcvd on unknown svc id");
@@ -492,6 +493,7 @@ bool BleLayer::HandleWriteReceived(BLE_CONNECTION_OBJECT connObj, const ChipBleU
             {
                 ChipLogError(Ble, "failed handle new chip BLE connection, status = %d", status);
             }
+            ChipLogError(Ble, "create new chip ble connection");
         }
     }
     else
