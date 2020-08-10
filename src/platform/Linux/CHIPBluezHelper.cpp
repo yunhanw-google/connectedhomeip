@@ -35,8 +35,7 @@
 
 #include <support/CodeUtils.h>
 #include "CHIPBluezHelper.h"
-#include "WoBluez.h"
-#include "BluezBlePlatformDelegate.h"
+#include <ble/BlePlatformDelegate.h>
 
 
 using namespace ::nl;
@@ -44,8 +43,6 @@ using namespace ::nl;
 namespace chip {
 namespace DeviceLayer {
 namespace Internal {
-
-BluezBlePlatformDelegate * gBluezBlePlatformDelegate = NULL;
 
 #define CHIP_PLAT_BLE_UUID_THREAD_GROUP 0xfffb
 
@@ -156,7 +153,10 @@ static BluezLEAdvertisement1 *BluezAdvertisingCreate(ChipAdvConfig *aConfig)
             g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, sEndpoint->chipServiceData, sizeof(CHIPServiceData), sizeof(uint8_t)));
     g_variant_builder_add(&serviceUUIDsBuilder, "s", sEndpoint->advertisingUUID);
 
-    localName = g_strdup_printf("T-%04x", getpid() & 0xffff);
+    if (sEndpoint->adapterName != NULL)
+        localName = g_strdup_printf("%s", sEndpoint->adapterName);
+    else
+        localName= g_strdup_printf("C%04x", getpid() & 0xffff);
 
     serviceData = g_variant_builder_end(&serviceDataBuilder);
     debugStr    = g_variant_print(serviceData, TRUE);
@@ -223,7 +223,129 @@ exit:
      */
 }
 
+static void BluezTobleAdvStopDone(GObject *aObject, GAsyncResult *aResult, gpointer aClosure)
+{
+    BluezLEAdvertisingManager1 *advMgr = BLUEZ_LEADVERTISING_MANAGER1(aObject);
+    GError *                    error  = NULL;
+
+    gboolean success = bluez_leadvertising_manager1_call_unregister_advertisement_finish(advMgr, aResult, &error);
+
+    if (success == FALSE)
+    {
+        g_dbus_object_manager_server_unexport(sEndpoint->root, sEndpoint->advPath);
+    }
+    else
+    {
+        sAdvertising = FALSE;
+    }
+
+    VerifyOrExit(success == TRUE, ChipLogProgress(DeviceLayer, "FAIL: UnregisterAdvertisement : %s", error->message));
+
+    ChipLogProgress(DeviceLayer, "UnregisterAdvertisement complete");
+
+exit:
+    if (error != NULL)
+        g_error_free(error);
+
+    /*
+    g_mutex_lock (&otPlatMutex);
+    otPlatResult = success ? OT_ERROR_NONE : OT_ERROR_FAILED;
+    g_cond_signal (&otPlatCond);
+    g_mutex_unlock (&otPlatMutex);
+     */
+}
+
+static gboolean BluezTobleAdvSetup(void *aClosure)
+{
+    // create and register advertising object; get the LEAdvertisingManager proxy
+    // for the default adapter and register the object with the adapter
+
+    GDBusObject *               adapter;
+    ChipAdvConfig *          config = (ChipAdvConfig *)aClosure;
+    BluezLEAdvertisingManager1 *advMgr = NULL;
+    GVariantBuilder             optionsBuilder;
+    GVariant *                  options;
+    BluezLEAdvertisement1 *     adv;
+    gboolean dbusSent = FALSE;
+
+    VerifyOrExit(sAdvertising == FALSE, ChipLogProgress(DeviceLayer, "FAIL: Advertising already enabled in %s", __func__));
+
+    sEndpoint->isCentral = false;
+    VerifyOrExit(sEndpoint->adapter != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL sEndpoint->adapter in %s", __func__));
+
+    adv = BluezAdvertisingCreate(config);
+    VerifyOrExit(adv != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL adv in %s", __func__));
+
+
+    dbusSent = TRUE;
+
+exit:
+    //g_free((void *)config->mData); /* TODO should not need to cast this but we reuse ChipAdvConfig here */
+    //g_free(config);
+
+    /*
+    if (dbusSent == FALSE)
+    {
+        g_mutex_lock (&otPlatMutex);
+        otPlatResult = OT_ERROR_FAILED;
+        g_cond_signal (&otPlatCond);
+        g_mutex_unlock (&otPlatMutex);
+    }
+     */
+
+    return G_SOURCE_REMOVE;
+}
+
 static gboolean BluezTobleAdvStart(void *aClosure)
+{
+    // create and register advertising object; get the LEAdvertisingManager proxy
+    // for the default adapter and register the object with the adapter
+
+    GDBusObject *               adapter;
+    BluezLEAdvertisingManager1 *advMgr = NULL;
+    GVariantBuilder             optionsBuilder;
+    GVariant *                  options;
+    BluezLEAdvertisement1 *     adv;
+    gboolean dbusSent = FALSE;
+
+    ChipLogProgress(DeviceLayer, "start BluezTobleAdvStart", __func__);
+    VerifyOrExit(sAdvertising == FALSE, ChipLogProgress(DeviceLayer, "FAIL: Advertising already enabled in %s", __func__));
+
+    sEndpoint->isCentral = false;
+    VerifyOrExit(sEndpoint->adapter != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL sEndpoint->adapter in %s", __func__));
+
+    adapter = g_dbus_interface_get_object(G_DBUS_INTERFACE(sEndpoint->adapter));
+    VerifyOrExit(adapter != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL adapter in %s", __func__));
+
+    advMgr = bluez_object_get_leadvertising_manager1(BLUEZ_OBJECT(adapter));
+    VerifyOrExit(advMgr != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL advMgr in %s", __func__));
+
+    g_variant_builder_init(&optionsBuilder, G_VARIANT_TYPE("a{sv}"));
+    options = g_variant_builder_end(&optionsBuilder);
+
+    bluez_leadvertising_manager1_call_register_advertisement(advMgr, sEndpoint->advPath, options, NULL,
+                                                             BluezTobleAdvStartDone, NULL);
+
+    dbusSent = TRUE;
+
+    exit:
+    //g_free((void *)config->mData); /* TODO should not need to cast this but we reuse ChipAdvConfig here */
+    //g_free(config);
+
+    /*
+    if (dbusSent == FALSE)
+    {
+        g_mutex_lock (&otPlatMutex);
+        otPlatResult = OT_ERROR_FAILED;
+        g_cond_signal (&otPlatCond);
+        g_mutex_unlock (&otPlatMutex);
+    }
+     */
+
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean BluezTobleAdvStop(void *aClosure)
 {
     // create and register advertising object; get the LEAdvertisingManager proxy
     // for the default adapter and register the object with the adapter
@@ -247,14 +369,11 @@ static gboolean BluezTobleAdvStart(void *aClosure)
     advMgr = bluez_object_get_leadvertising_manager1(BLUEZ_OBJECT(adapter));
     VerifyOrExit(advMgr != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL advMgr in %s", __func__));
 
-    adv = BluezAdvertisingCreate(config);
-    VerifyOrExit(adv != NULL, ChipLogProgress(DeviceLayer, "FAIL: NULL adv in %s", __func__));
-
     g_variant_builder_init(&optionsBuilder, G_VARIANT_TYPE("a{sv}"));
     options = g_variant_builder_end(&optionsBuilder);
 
-    bluez_leadvertising_manager1_call_register_advertisement(advMgr, sEndpoint->advPath, options, NULL,
-                                                             BluezTobleAdvStartDone, NULL);
+    bluez_leadvertising_manager1_call_unregister_advertisement(advMgr, sEndpoint->advPath, NULL,
+                                                             BluezTobleAdvStopDone, NULL);
 
     dbusSent = TRUE;
 
@@ -348,7 +467,7 @@ static gboolean BluezCharacteristicWriteValue(BluezGattCharacteristic1 *aChar,
     buf    = (uint8_t *)g_memdup(tmpBuf, len);
 
 
-    WoBLEz_WriteReceived(sEndpoint, buf, len);
+    BLEManagerImpl::WoBLEz_WriteReceived(sEndpoint, buf, len);
 
     //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleC1Write), gOpenThreadInstance, conn, buf, len);
 
@@ -379,7 +498,7 @@ static gboolean BluezCharacteristicWriteValueError(BluezGattCharacteristic1 *aCh
     //buf    = (uint8_t *)g_memdup(tmpBuf, len);
 
 
-    //WoBLEz_WriteReceived(sEndpoint, buf, len);
+    //BLEManagerImpl::WoBLEz_WriteReceived(sEndpoint, buf, len);
 
     //bluez_gatt_characteristic1_complete_write_value(aChar, aInvocation);
 
@@ -419,7 +538,7 @@ static gboolean BluezCharacteristicWriteFD(GIOChannel *aChannel, GIOCondition aC
 
     newVal = g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, buf, len, sizeof(uint8_t));
     bluez_gatt_characteristic1_set_value(sEndpoint->c1, newVal);
-    WoBLEz_WriteReceived(sEndpoint, (const uint8_t*)buf, len);
+    BLEManagerImpl::WoBLEz_WriteReceived(sEndpoint, (const uint8_t*)buf, len);
 
 //    bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleC1Write), gOpenThreadInstance, conn, buf, len);
 exit:
@@ -567,7 +686,7 @@ static gboolean BluezCharacteristicAcquireNotify(BluezGattCharacteristic1 *aChar
     close(fds[1]);
 
     sEndpoint->isNotify = true;
-    WoBLEz_SubscriptionChange(sEndpoint);
+    BLEManagerImpl::WoBLEz_SubscriptionChange(sEndpoint);
     //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleC2Subscribed), gOpenThreadInstance, conn, true);
 
 exit:
@@ -604,7 +723,7 @@ static gboolean BluezCharacteristicStartNotify(BluezGattCharacteristic1 *aChar, 
         bluez_gatt_characteristic1_complete_start_notify(aChar, aInvocation);
         bluez_gatt_characteristic1_set_notifying(aChar, TRUE);
         sEndpoint->isNotify = true;
-        WoBLEz_SubscriptionChange(sEndpoint);
+        BLEManagerImpl::WoBLEz_SubscriptionChange(sEndpoint);
         //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleC2Subscribed), conn, true);
     }
 
@@ -648,7 +767,7 @@ static gboolean BluezCharacteristicConfirm(BluezGattCharacteristic1 *aChar, GDBu
     BluezConnection *conn = bluezCharacteristicGetTobleConnection(aChar, NULL);
 
     ChipLogDetail(Ble, "Indication confirmation");
-    WoBLEz_IndicationConfirmation(sEndpoint);
+    BLEManagerImpl::WoBLEz_IndicationConfirmation(sEndpoint);
 
     return TRUE;
 }
@@ -1174,12 +1293,12 @@ static void BluezSignalInterfacePropertiesChanged(GDBusObjectManagerClient *aMan
                         }
                         // for central, we do not call BluezConnectionInit until the services have been resolved
 
-                        WoBLEz_NewConnection(sEndpoint);
+                        BLEManagerImpl::WoBLEz_NewConnection(sEndpoint);
                         //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleConnected), gOpenThreadInstance, conn);
                     }
                     else
                     {
-                        WoBLEz_ConnectionClosed(sEndpoint);
+                        BLEManagerImpl::WoBLEz_ConnectionClosed(sEndpoint);
                         //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleDisconnected), gOpenThreadInstance, conn);
                         g_hash_table_remove(sEndpoint->connMap, g_dbus_proxy_get_object_path(aInterface));
                     }
@@ -1514,7 +1633,10 @@ static void *BluezMainLoop(void *aClosure)
     conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
     VerifyOrExit(conn != NULL, ChipLogProgress(DeviceLayer, "FAIL: get bus sync in %s, error: %s", __func__, error->message));
 
-    sEndpoint->owningName = g_strdup_printf("ble-%04x", getpid() & 0xffff);
+    if (sEndpoint->adapterName != NULL)
+        sEndpoint->owningName = g_strdup_printf("s", sEndpoint->adapterName);
+    else
+        sEndpoint->owningName = g_strdup_printf("C-%04x", getpid() & 0xffff);
 
     BluezOnBusAcquired(conn, sEndpoint->owningName, NULL);
 
@@ -1584,7 +1706,7 @@ exit:
     return msg == NULL;
 }
 
-uint16_t GetMTUWeaveCb(BLE_CONNECTION_OBJECT connObj)
+uint16_t GetBluezMTU(BLE_CONNECTION_OBJECT connObj)
 {
     return 104;
 }
@@ -1663,6 +1785,21 @@ bool WoBLEz_ScheduleSendIndication(void * data, chip::System::PacketBuffer * msg
     return success;
 }
 
+void StartBluezAdv()
+{
+    BluezRunOnBluezThread(BluezTobleAdvStart, NULL);
+}
+
+void StopBluezAdv()
+{
+    BluezRunOnBluezThread(BluezTobleAdvStop, NULL);
+}
+
+void BluezBleGattsAppRegister()
+{
+    BluezRunOnBluezThread(BluezPeripheralRegisterApp, NULL);
+}
+
 /**
  * Initialize BlueZ platform beyond the otPlatTobleInit arguments
  *
@@ -1672,18 +1809,19 @@ bool WoBLEz_ScheduleSendIndication(void * data, chip::System::PacketBuffer * msg
  * @param[in] aBleName When non-null, adapter alias will be set to this string.
  *
  */
-void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, BlePlatformDelegate * platformDelegate)
+CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, BLEManagerImpl * platformDelegate)
 {
     bool retval     = false;
     int  pthreadErr = 0;
     int  tmpErrno;
-
+    BLEManagerImpl * bLEManagerImpl = NULL;
     VerifyOrExit(pipe2(sBluezFD, O_DIRECT) == 0, ChipLogProgress(DeviceLayer, "FAIL: open pipe in %s", __func__));
 
     // initialize server endpoint
     sEndpoint = g_new0(BluezServerEndpoint, 1);
     VerifyOrExit(sEndpoint != NULL, ChipLogProgress(DeviceLayer, "FAIL: memory allocation in %s", __func__));
 
+    ChipLogProgress(DeviceLayer, "debug aBleName %s", aBleName);
     if (aBleName != NULL)
         sEndpoint->adapterName = g_strdup(aBleName);
     else
@@ -1700,11 +1838,6 @@ void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t
     sEndpoint->mtu       = HCI_MAX_MTU;
     sEndpoint->isCentral = aIsCentral;
 
-    gBluezBlePlatformDelegate = (BluezBlePlatformDelegate *)platformDelegate;
-
-    gBluezBlePlatformDelegate->SetSendIndicationCallback(WoBLEz_ScheduleSendIndication);
-    gBluezBlePlatformDelegate->SetGetMTUCallback(GetMTUWeaveCb);
-
     // peripheral properties
 
     VerifyOrExit(sEndpoint != NULL, ChipLogProgress(DeviceLayer, "FAIL: memory alloc in %s", __func__));
@@ -1716,9 +1849,9 @@ void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t
     tmpErrno   = errno;
     VerifyOrExit(pthreadErr == 0, ChipLogProgress(DeviceLayer, "FAIL: pthread_create (%s) in %s", strerror(tmpErrno), __func__));
     sleep(1);
-    BluezRunOnBluezThread(BluezPeripheralRegisterApp, NULL);
-    retval = TRUE;
 
+    BluezBleGattsAppRegister();
+    retval = TRUE;
     {
         ChipAdvConfig *closure;
 
@@ -1745,7 +1878,9 @@ void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t
         //closure->mData = (uint8_t *) chipServiceData;
         //closure->mLength = sizeof(CHIPServiceData);
 
-        BluezRunOnBluezThread(BluezTobleAdvStart, closure);
+        BluezRunOnBluezThread(BluezTobleAdvSetup, closure);
+        //StartBluezAdv();
+        //BluezRunOnBluezThread(BluezTobleAdvStart, NULL);
     }
 
 exit:
@@ -1753,6 +1888,7 @@ exit:
     {
         ChipLogProgress(DeviceLayer, "PlatformBlueZInit init success");
     }
+    return CHIP_NO_ERROR;
 }
 
 } // namespace Internal

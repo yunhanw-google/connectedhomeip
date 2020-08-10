@@ -49,9 +49,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "Linux/gen/DbusBluez.h"
-#include "BluezBlePlatformDelegate.h"
 #include <ble/BlePlatformDelegate.h>
 #include <ble/BleApplicationDelegate.h>
+#include "BLEManagerImpl.h"
+
 namespace chip {
 namespace DeviceLayer {
 namespace Internal {
@@ -166,7 +167,10 @@ namespace Internal {
 
 #define CHAR_TO_NIBBLE(c) (((c) <= '9') ? (c) - '0' : tolower((c)) - 'a' + 10)
 
-        void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, chip::Ble::BlePlatformDelegate * platformDelegate);
+        void StartBluezAdv();
+        void StopBluezAdv();
+        CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, BLEManagerImpl * platformDelegate);
+        uint16_t GetBluezMTU(BLE_CONNECTION_OBJECT connObj);
 
 // IPC primitives
 
@@ -178,6 +182,10 @@ namespace Internal {
         void platformBluezUpdateFdSet(fd_set *aReadFds, fd_set *aWriteFds, int *aMaxFd);
 
         bool BluezRunOnBluezThread(int (*aCallback)(void *), void *aClosure);
+
+        bool WoBLEz_ScheduleSendIndication(void * data, chip::System::PacketBuffer * msgBuf);
+
+        void BluezBleGattsAppRegister();
 // static DBusConnection * gBluezDbusConn;
 // static Adapter * gDefaultAdapter;
 
@@ -223,8 +231,6 @@ namespace Internal {
 #define TO_GENERIC_FUN(fn) (void (*)(void))(fn)
 #define PIPE_READ 0
 #define PIPE_WRITE 1
-
-extern BluezBlePlatformDelegate * gBluezBlePlatformDelegate;
 
 }
 }

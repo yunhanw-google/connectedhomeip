@@ -22,6 +22,7 @@
 #include "platform/internal/CHIPDeviceLayerInternal.h"
 
 #include "platform/PlatformManager.h"
+#include "platform/internal/BLEManager.h"
 
 #if CHIP_DEVICE_LAYER_TARGET == LINUX
 #include <thread>
@@ -48,7 +49,6 @@ void EventHandler(const chip::DeviceLayer::ChipDeviceEvent * event, intptr_t arg
 
 int TestThreadStackManager(void)
 {
-    //chip::DeviceLayer::Internal::BLEManagerImpl impl;
     /*
     chip::DeviceLayer::Internal::DeviceNetworkInfo info;
     uint16_t masterKey[16] = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
@@ -64,6 +64,10 @@ int TestThreadStackManager(void)
     chip::DeviceLayer::PlatformMgrImpl().InitChipStack();
 
     chip::DeviceLayer::PlatformMgrImpl().AddEventHandler(EventHandler, 0);
+
+    chip::DeviceLayer::ConnectivityMgr().SetBLEDeviceName("N0001");
+
+    chip::DeviceLayer::ConnectivityMgr().SetBLEAdvertisingEnabled(chip::DeviceLayer::ConnectivityManager::kCHIPoBLEServiceMode_Enabled);
 
     //impl.InitThreadStack();
     //impl.StartThreadTask();

@@ -23,8 +23,6 @@
 #ifndef WOBLUEZLAYER_H_
 #define WOBLUEZLAYER_H_
 
-#include "BluezBleApplicationDelegate.h"
-#include "BluezBlePlatformDelegate.h"
 #include <Support/CodeUtils.h>
 
 #define WEAVE_ID_INFO_PAIRING_STATUS_NOT_PAIRED (0)
@@ -44,8 +42,6 @@ struct BluezPeripheralArgs
     uint16_t productId;
     uint64_t deviceId;
     uint8_t pairingStatus;
-    BluezBleApplicationDelegate * bluezBleApplicationDelegate;
-    BluezBlePlatformDelegate * bluezBlePlatformDelegate;
 };
 
 /**
