@@ -40,8 +40,29 @@ namespace Internal {
 BLEManagerImpl BLEManagerImpl::sInstance;
 
 static BleLayer sBle;
-static BluezBleApplicationDelegate sBleApplicationDelegate;
 static BluezBlePlatformDelegate sBlePlatformDelegate(&sBle);
+
+static int CloseBleconnectionCB(void *aArg);
+
+void BLEManagerImpl::NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT connObj)
+{
+    bool status = true;
+
+    ChipLogRetain(Ble, "Got notification regarding chip connection closure");
+
+    status = BluezRunOnBluezThread(CloseBleconnectionCB, NULL);
+    if (!status)
+    {
+        ChipLogError(Ble, "Failed to schedule CloseBleconnection() on wobluez thread");
+    }
+};
+
+static int CloseBleconnectionCB(void *aArg)
+{
+    //CloseBleconnection();
+
+    return G_SOURCE_REMOVE;
+}
 
 uint8_t BLEManagerImpl::GetAdvertisingHandle(void)
 {
@@ -84,14 +105,14 @@ CHIP_ERROR BLEManagerImpl::_Init()
     CHIP_ERROR err;
     char *sBluezBleAddr;
     // Initialize the CHIP BleLayer.
-    err = sBle.Init(&sBlePlatformDelegate, &sBleApplicationDelegate, &SystemLayer);
+    err = sBle.Init(&sBlePlatformDelegate, this, &SystemLayer);
     //err = BleLayer::Init(this, this, &SystemLayer);
     //SuccessOrExit(err);
 
     sBle.mAppState = this;
     sBle.OnChipBleConnectReceived = HandleIncomingBleConnection;
     sBluezBleAddr = NULL;
-    PlatformBlueZInit(false, sBluezBleAddr, "N0001", 1, &sBlePlatformDelegate, &sBleApplicationDelegate);
+    PlatformBlueZInit(false, sBluezBleAddr, "N0001", 1, &sBlePlatformDelegate);
 
 //exit:
     return err;

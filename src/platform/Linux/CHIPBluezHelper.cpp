@@ -36,7 +36,6 @@
 #include <support/CodeUtils.h>
 #include "CHIPBluezHelper.h"
 #include "WoBluez.h"
-#include "BluezBleApplicationDelegate.h"
 #include "BluezBlePlatformDelegate.h"
 
 
@@ -47,7 +46,6 @@ namespace DeviceLayer {
 namespace Internal {
 
 BluezBlePlatformDelegate * gBluezBlePlatformDelegate = NULL;
-BluezBleApplicationDelegate * gBluezBleApplicationDelegate = NULL;
 
 #define CHIP_PLAT_BLE_UUID_THREAD_GROUP 0xfffb
 
@@ -1674,7 +1672,7 @@ bool WoBLEz_ScheduleSendIndication(void * data, chip::System::PacketBuffer * msg
  * @param[in] aBleName When non-null, adapter alias will be set to this string.
  *
  */
-void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, BlePlatformDelegate * platformDelegate, BleApplicationDelegate * appDelegate)
+void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, BlePlatformDelegate * platformDelegate)
 {
     bool retval     = false;
     int  pthreadErr = 0;
@@ -1701,7 +1699,6 @@ void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t
     sEndpoint->connMap   = g_hash_table_new(g_str_hash, g_str_equal);
     sEndpoint->mtu       = HCI_MAX_MTU;
     sEndpoint->isCentral = aIsCentral;
-    gBluezBleApplicationDelegate = (BluezBleApplicationDelegate *)appDelegate;
 
     gBluezBlePlatformDelegate = (BluezBlePlatformDelegate *)platformDelegate;
 

@@ -39,9 +39,9 @@ using namespace chip::Ble;
 void HandleIncomingBleConnection(BLEEndPoint *bleEP);
 
 /**
- * Concrete implementation of the NetworkProvisioningServer singleton object for the Linux platforms.
+ * Concrete implementation of the BLEManagerImpl singleton object for the Linux platforms.
  */
-class BLEManagerImpl final : public BLEManager, private BleLayer
+class BLEManagerImpl final : public BLEManager, private BleLayer, private BleApplicationDelegate
 {
     // Allow the BLEManager interface class to delegate method calls to
     // the implementation methods provided by this class.
@@ -50,8 +50,26 @@ class BLEManagerImpl final : public BLEManager, private BleLayer
 public:
     // ===== Platform-specific members available for use by the application.
 
+    // Enum to represent BLE activities
+    typedef enum
+    {
+        kBleConnect = 0,
+        kBleDisconnect,
+        kWoBlePktTx,
+        kWoBlePktRx
+    } BleActivity;
+
     uint8_t GetAdvertisingHandle(void);
     void SetAdvertisingHandle(uint8_t handle);
+
+    // Application can use this callback to get notification regarding
+    // BLE activity
+    virtual void NotifyBleActivity(BleActivity bleActivity) {};
+
+    // BleApplicationDelegate function overrides
+    // Application can use this callback to get notification regarding
+    // Chip connection closure
+    virtual void NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT connObj);
 
 private:
     // ===== Members that implement the BLEManager internal interface.
@@ -111,6 +129,8 @@ private:
         kFlag_AdvertisingRefreshNeeded =
             0x0010, /**< The advertising state/configuration has changed, but the SoftDevice has yet to be updated. */
     };
+
+
 
     enum
     {

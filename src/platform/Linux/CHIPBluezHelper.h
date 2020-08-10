@@ -49,7 +49,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "Linux/gen/DbusBluez.h"
-#include "BluezBleApplicationDelegate.h"
 #include "BluezBlePlatformDelegate.h"
 #include <ble/BlePlatformDelegate.h>
 #include <ble/BleApplicationDelegate.h>
@@ -167,7 +166,7 @@ namespace Internal {
 
 #define CHAR_TO_NIBBLE(c) (((c) <= '9') ? (c) - '0' : tolower((c)) - 'a' + 10)
 
-        void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, chip::Ble::BlePlatformDelegate * platformDelegate, chip::Ble::BleApplicationDelegate * appDelegate);
+        void PlatformBlueZInit(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, chip::Ble::BlePlatformDelegate * platformDelegate);
 
 // IPC primitives
 
@@ -225,8 +224,6 @@ namespace Internal {
 #define PIPE_READ 0
 #define PIPE_WRITE 1
 
-
-extern BluezBleApplicationDelegate * gBluezBleApplicationDelegate;
 extern BluezBlePlatformDelegate * gBluezBlePlatformDelegate;
 
 }

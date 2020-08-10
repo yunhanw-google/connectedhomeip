@@ -27,8 +27,9 @@
 #include <inet/InetLayer.h>
 #include <system/SystemPacketBuffer.h>
 #include "BluezBlePlatformDelegate.h"
-#include "BluezBleApplicationDelegate.h"
+//#include "BluezBleApplicationDelegate.h"
 #include "CHIPBluezHelper.h"
+#include "BLEManagerImpl.h"
 
 #if CONFIG_BLE_PLATFORM_BLUEZ
 
@@ -78,10 +79,12 @@ void WoBLEz_WriteReceived(void * data, const uint8_t * value, size_t len)
     syserr = gBluezBlePlatformDelegate->SendToWeaveThread(params);
     SuccessOrExit(syserr);
 
-    if (gBluezBleApplicationDelegate != NULL)
+    /*
     {
-        gBluezBleApplicationDelegate->NotifyBleActivity(kWoBlePktRx);
+        chip::DeviceLayer::Internal::BLEManagerImpl * s = &(s->BLEMgrImpl());
+        s->NotifyBleActivity(BLEManagerImpl::kWoBlePktRx);
     }
+     */
     params = NULL;
     msgBuf = NULL;
 
