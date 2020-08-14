@@ -246,6 +246,7 @@ public:
 
     char mDeviceName[kMaxDeviceNameLength + 1];
 
+    void * mpBluezEndpoint;
 };
 
 /**

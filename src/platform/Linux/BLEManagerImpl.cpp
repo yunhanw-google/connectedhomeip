@@ -208,12 +208,12 @@ CHIP_ERROR BLEManagerImpl::_SetDeviceName(const char * deviceName)
 
 CHIP_ERROR BLEManagerImpl::StartAdvertising(void)
 {
-    StartBluezAdv();
+    StartBluezAdv(mpBluezEndpoint);
 }
 
 CHIP_ERROR BLEManagerImpl::StopAdvertising(void)
 {
-    StopBluezAdv();
+    StopBluezAdv(mpBluezEndpoint);
 }
 
 void BLEManagerImpl::_OnPlatformEvent(const ChipDeviceEvent * event) {
@@ -278,9 +278,8 @@ uint16_t BLEManagerImpl::_NumConnections(void)
 
 uint16_t BLEManagerImpl::GetMTU(BLE_CONNECTION_OBJECT conId) const
 {
-    uint16_t mtu = 0;
-    mtu = GetBluezMTU((void *) conId);
-    return mtu;
+    BluezConnection * con = static_cast<BluezConnection *>(conId);
+    return (con != NULL) ? con->mMtu : 0;
 }
 
 bool BLEManagerImpl::SubscribeCharacteristic(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId,
@@ -415,23 +414,23 @@ void BLEManagerImpl::WoBLEz_SubscriptionChange(void * data)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
     InEventParam * params          = NULL;
-    BluezServerEndpoint * endpoint = static_cast<BluezServerEndpoint *>(data);
+    BluezConnection * connection   = static_cast<BluezConnection *>(data);
     const char * msg               = NULL;
 
-    VerifyOrExit(endpoint != NULL, msg = "endpoint is NULL in WoBLEz_SubscriptionChange");
+    VerifyOrExit(connection != NULL, msg = "connection is NULL in WoBLEz_SubscriptionChange");
     //VerifyOrExit(endpoint == gBluezServerEndpoint, msg = "Unexpected endpoint in WoBLEz_SubscriptionChange");
-    VerifyOrExit(endpoint->c2 != NULL, msg = "weaveC2 is NULL in WoBLEz_SubscriptionChange");
+    VerifyOrExit(connection->c2 != NULL, msg = "weaveC2 is NULL in WoBLEz_SubscriptionChange");
 
     // Post an event to the Chip queue to process either a CHIPoBLE Subscribe or Unsubscribe based on
     // whether the client is enabling or disabling indications.
     {
         ChipDeviceEvent event;
-        event.Type = (endpoint->isNotify) ? DeviceEventType::kCHIPoBLESubscribe : DeviceEventType::kCHIPoBLEUnsubscribe;
+        event.Type = (connection->mIsNotify) ? DeviceEventType::kCHIPoBLESubscribe : DeviceEventType::kCHIPoBLEUnsubscribe;
         event.CHIPoBLESubscribe.ConId = data;
         PlatformMgr().PostEvent(&event);
     }
 
-    ChipLogProgress(DeviceLayer, "CHIPoBLE %s received", (endpoint->isNotify) ? "subscribe" : "unsubscribe");
+    ChipLogProgress(DeviceLayer, "CHIPoBLE %s received", (connection->mIsNotify) ? "subscribe" : "unsubscribe");
 
 exit:
     if (err != CHIP_NO_ERROR)
@@ -476,7 +475,7 @@ void BLEManagerImpl::DriveBLEState(void)
     // Initializes the Bluez BLE layer if needed.
     if (mServiceMode == ConnectivityManager::kCHIPoBLEServiceMode_Enabled && !GetFlag(mFlags, kFlag_BluezBLELayerInitialized))
     {
-        err = InitBluezBleLayer(false, NULL, mDeviceName, 1, this);
+        err = InitBluezBleLayer(false, NULL, mDeviceName, 1, mpBluezEndpoint);
         SuccessOrExit(err);
         SetFlag(mFlags, kFlag_BluezBLELayerInitialized);
     }
@@ -518,7 +517,7 @@ void BLEManagerImpl::DriveBLEState(void)
             //}
 
             // Start advertising.  This is also an asynchronous step.
-            StartBluezAdv();
+            StartBluezAdv(mpBluezEndpoint);;
             SetFlag(sInstance.mFlags, kFlag_Advertising);
             ExitNow();
         }
@@ -529,7 +528,7 @@ void BLEManagerImpl::DriveBLEState(void)
     {
         if (GetFlag(mFlags, kFlag_Advertising))
         {
-            StopBluezAdv();
+            StopAdvertising();
             SetFlag(mFlags, kFlag_ControlOpInProgress);
 
             ExitNow();

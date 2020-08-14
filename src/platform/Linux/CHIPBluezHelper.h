@@ -57,88 +57,146 @@ namespace chip {
 namespace DeviceLayer {
 namespace Internal {
 
-    /**
-* This enumeration type represents BLE advertisement types.
-*
-*/
+#define CHIP_PLAT_BLE_UUID_THREAD_GROUP 0xfffb
 
-    /* Weave Identification Information */
-    struct CHIPIdInfo
+#define OT_PLAT_TOBLE_UUID_C1 \
+    0x11, 0x9D, 0x9F, 0x42, 0x9C, 0x4F, 0x9F, 0x95, 0x59, 0x45, 0x3D, 0x26, 0xF5, 0x2E, 0xEE, 0x18
+
+#define OT_PLAT_TOBLE_UUID_C2 \
+    0x12, 0x9D, 0x9F, 0x42, 0x9C, 0x4F, 0x9F, 0x95, 0x59, 0x45, 0x3D, 0x26, 0xF5, 0x2E, 0xEE, 0x18
+
+/**
+ * This type represents different BLE address types
+ *
+ */
+        typedef enum BluezAddressType
+        {
+            BLUEZ_ADDRESS_TYPE_PUBLIC                        = 0, ///< Bluetooth public device address.
+            BLUEZ_ADDRESS_TYPE_RANDOM_STATIC                 = 1, ///< Bluetooth random static address.
+            BLUEZ_ADDRESS_TYPE_RANDOM_PRIVATE_RESOLVABLE     = 2, ///< Bluetooth random private resolvable address.
+            BLUEZ_ADDRESS_TYPE_RANDOM_PRIVATE_NON_RESOLVABLE = 3, ///< Bluetooth random private non-resolvable address.
+        } BluezAddressType;
+
+#define BLUEZ_ADDRESS_SIZE 6 ///< BLE address size (in bytes)
+
+    typedef struct BluezAddress
     {
-        uint8_t major;
-        uint8_t minor;
-        uint16_t vendorId;
-        uint16_t productId;
-        uint64_t deviceId;
-        uint8_t pairingStatus;
-    } __attribute__((packed));
+        BluezAddressType mType;                           ///< Bluetooth device address type.
+        uint8_t            mAddress[BLUEZ_ADDRESS_SIZE]; ///< A 48-bit address of Bluetooth device in LSB format.
+    } BluezAddress;
 
-/* Weave Service Data*/
-    struct CHIPServiceData
-    {
-        uint8_t dataBlock0Len;
-        uint8_t dataBlock0Type;
-        CHIPIdInfo idInfo;
-    } __attribute__((packed));
-
-    typedef enum BluezAdvType
-    {
-        BLUEZ_ADV_TYPE_CONNECTABLE = 0x01,
-        BLUEZ_ADV_TYPE_SCANNABLE   = 0x02,
-        BLUEZ_ADV_TYPE_DIRECTED    = 0x04,
-
-        BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_NONSCANNABLE = 0,
-        BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_CONNECTABLE,
-        BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_SCANNABLE,
-        BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE = BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
-
-        BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_NONSCANNABLE = BLUEZ_ADV_TYPE_DIRECTED,
-        BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE,
-        BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_SCANNABLE,
-        BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_SCANNABLE =
-        BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
-    } ChipAdvType;
-
-    struct io_channel
+    typedef struct io_channel
     {
         GIOChannel *channel;
         guint       watch;
     };
 
-    typedef struct BluezServerEndpoint {
-        char *owningName;  // Bus owning name
 
-        // Adapter properties
-        char *adapterName;
-        char *adapterAddr;
+        /* Weave Identification Information */
+        struct CHIPIdInfo
+        {
+            uint8_t major;
+            uint8_t minor;
+            uint16_t vendorId;
+            uint16_t productId;
+            uint64_t deviceId;
+            uint8_t pairingStatus;
+        } __attribute__((packed));
 
-        // Paths for objects published by this service
-        char *rootPath;
-        char *advPath;
-        char *servicePath;
+        /* Weave Service Data*/
+        struct CHIPServiceData
+        {
+            uint8_t dataBlock0Len;
+            uint8_t dataBlock0Type;
+            CHIPIdInfo idInfo;
+        } __attribute__((packed));
 
-        // Objects (interfaces) subscibed to by this service
-        GDBusObjectManager *objMgr;
-        BluezAdapter1 *adapter;
-        BluezDevice1 *device;
+        typedef enum BluezAdvType
+        {
+            BLUEZ_ADV_TYPE_CONNECTABLE = 0x01,
+            BLUEZ_ADV_TYPE_SCANNABLE   = 0x02,
+            BLUEZ_ADV_TYPE_DIRECTED    = 0x04,
 
-        // Objects (interfaces) published by this service
-        GDBusObjectManagerServer *root;
-        BluezGattService1 *service;
+            BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_NONSCANNABLE = 0,
+            BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_CONNECTABLE,
+            BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_SCANNABLE,
+            BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE = BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
+
+            BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_NONSCANNABLE = BLUEZ_ADV_TYPE_DIRECTED,
+            BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE,
+            BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_SCANNABLE,
+            BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_SCANNABLE =
+            BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
+        } ChipAdvType;
+
+        typedef struct BluezServerEndpoint {
+            char *owningName;  // Bus owning name
+
+            // Adapter properties
+            char *adapterName;
+            char *adapterAddr;
+
+            // Paths for objects published by this service
+            char *rootPath;
+            char *advPath;
+            char *servicePath;
+
+            // Objects (interfaces) subscibed to by this service
+            GDBusObjectManager *objMgr;
+            BluezAdapter1 *adapter;
+            BluezDevice1 *device;
+
+            // Objects (interfaces) published by this service
+            GDBusObjectManagerServer *root;
+            BluezGattService1 *service;
+            BluezGattCharacteristic1 *c1;
+            BluezGattCharacteristic1 *c2;
+
+            // map device path to the connection
+            GHashTable *connMap;
+            struct io_channel         c1Channel;
+            struct io_channel         c2Channel;
+            uint32_t nodeId;
+            uint16_t mtu;
+            bool isNotify;
+            bool isCentral;
+            char * advertisingUUID;
+            CHIPServiceData * chipServiceData;
+            ChipAdvType mType;     ///< Advertisement type.
+            uint16_t       mInterval; ///< Advertisement interval (in ms).
+            const uint8_t *mData;     ///< Advertisement data - Formatted as sequence of "<len, type, data>" structures.
+            uint16_t       mLength;   ///< Advertisement data length (number of bytes).
+            bool           mIsAdvertising;
+            char *         mpPeerDevicePath;
+        } BluezServerEndpoint;
+
+    typedef struct BluezConnection
+    {
+        char *                    mPeerAddress;
+        BluezDevice1 *            mDevice;
+        BluezGattService1 *       mService;
         BluezGattCharacteristic1 *c1;
         BluezGattCharacteristic1 *c2;
-
-        // map device path to the connection
-        GHashTable *connMap;
+        bool                      mIsCentral;
+        bool                      mIsNotify;
+        uint16_t                  mMtu;
         struct io_channel         c1Channel;
         struct io_channel         c2Channel;
-        uint32_t nodeId;
-        uint16_t mtu;
-        bool isNotify;
-        bool isCentral;
-        char * advertisingUUID;
-        CHIPServiceData * chipServiceData;
-    } BluezServerEndpoint;
+        BluezServerEndpoint       *mpEndpoint;
+    };
+
+    typedef struct
+    {
+        BluezConnection   *mpConn;
+        GVariant *         mpVal;
+    } connectionDataBundle;
+
+    /**
+* This enumeration type represents BLE advertisement types.
+*
+*/
+
+
 
     /**
  * This type represents advertisement configuration.
@@ -150,6 +208,7 @@ namespace Internal {
         uint16_t       mInterval; ///< Advertisement interval (in ms).
         const uint8_t *mData;     ///< Advertisement data - Formatted as sequence of "<len, type, data>" structures.
         uint16_t       mLength;   ///< Advertisement data length (number of bytes).
+        BluezServerEndpoint *mpEndpoint;
     } ChipAdvConfig;
 
 #define BLUEZ_PATH                    "/org/bluez"
@@ -167,9 +226,9 @@ namespace Internal {
 
 #define CHAR_TO_NIBBLE(c) (((c) <= '9') ? (c) - '0' : tolower((c)) - 'a' + 10)
 
-        void StartBluezAdv();
-        void StopBluezAdv();
-        CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, BLEManagerImpl * platformDelegate);
+        void StartBluezAdv(void * apEndpoint);
+        void StopBluezAdv(void * apEndpoint);
+        CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, void *& apEndpoint);
         uint16_t GetBluezMTU(BLE_CONNECTION_OBJECT connObj);
 
 // IPC primitives
