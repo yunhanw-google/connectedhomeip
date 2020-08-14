@@ -40,50 +40,22 @@ typedef bool (*SendIndicationCallback)(void * data, chip::System::PacketBuffer *
 
 typedef uint16_t (*GetMTUCallback)(void * connObj);
 
+void HandleIncomingBleConnection(BLEEndPoint *bleEP);
+
 struct InEventParam
 {
     enum EventTypeEnum
     {
-        kEvent_IndicationConfirmation,
-        kEvent_SubscribeReceived,
-        kEvent_UnsubscribeReceived,
-        kEvent_ConnectionError,
-        kEvent_WriteReceived
+        kEvent_BluezPeripheralRegisterApp,
+        kEvent_BluezAdvertisingConfigured,
+        kEvent_BluezAdvertisingStart,
+        kEvent_BluezAdvertisingStop,
     };
 
-    EventTypeEnum EventType;
-    void * ConnectionObject;
-    Ble::BleLayer * Ble;
-
-    union
-    {
-        struct
-        {
-            const chip::Ble::ChipBleUUID * SvcId;
-            const chip::Ble::ChipBleUUID * CharId;
-        } IndicationConfirmation;
-
-        struct
-        {
-            const chip::Ble::ChipBleUUID * SvcId;
-            const chip::Ble::ChipBleUUID * CharId;
-        } SubscriptionChange;
-
-        struct
-        {
-            BLE_ERROR mErr;
-        } ConnectionError;
-
-        struct
-        {
-            const chip::Ble::ChipBleUUID * SvcId;
-            const chip::Ble::ChipBleUUID * CharId;
-            chip::System::PacketBuffer * MsgBuf;
-        } WriteReceived;
-    };
+    EventTypeEnum mEventType;
+    bool mIsSuccess;
+    void * mpAppstate;
 };
-
-void HandleIncomingBleConnection(BLEEndPoint *bleEP);
 
 /**
  * Concrete implementation of the BLEManagerImpl singleton object for the Linux platforms.
@@ -100,10 +72,10 @@ public:
     // Enum to represent BLE activities
     typedef enum
     {
-        kBleConnect = 0,
+        kBleConnect,
         kBleDisconnect,
-        kWoBlePktTx,
-        kWoBlePktRx
+        kChipBlePktTx,
+        kChipBlePktRx
     } BleActivity;
 
     uint8_t GetAdvertisingHandle(void);
@@ -177,8 +149,8 @@ public:
 
     CHIP_ERROR StartAdvertising(void);
     CHIP_ERROR StopAdvertising(void);
-    void DriveBLEState(void);
-
+    void DriveBLEState();
+    void HandleBluezSetupState(InEventParam * apEvent);
     enum
     {
         kFlag_AsyncInitCompleted       = 0x0001, /**< One-time asynchronous initialization actions have been performed. */
@@ -216,7 +188,7 @@ public:
     // static void SoftDeviceBLEEventCallback(const ble_evt_t * bleEvent, void * context);
     */
     static void DriveBLEState(intptr_t arg);
-
+    static void HandleBluezSetupState(intptr_t arg);
     Ble::BleLayer * Ble;
     SendIndicationCallback SendIndicationCb;
 
@@ -243,10 +215,21 @@ public:
     static void WoBLEz_SubscriptionChange(void * user_data);
     static void WoBLEz_IndicationConfirmation(void * user_data);
     static bool WoBLEz_TimerCb(void * user_data);
+    static void NotifyBluezPeripheralRegisterAppEvent(bool aIsSuccess, void * apAppstate);
+
+    static void NotifyBluezPeripheralAdvConfigueEvent(bool aIsSuccess, void * apAppstate);
+
+    static void NotifyBluezPeripheralAdvStartEvent(bool aIsSuccess, void * apAppstate);
+
+    static void NotifyBluezPeripheralAdvStopEvent(bool aIsSuccess, void * apAppstate);
+
+    static chip::System::Error NewEventParams(InEventParam ** aParam);
+
+    static void ReleaseEventParams(InEventParam * aParam);
 
     char mDeviceName[kMaxDeviceNameLength + 1];
 
-    void * mpBluezEndpoint;
+    void * mpAppState;
 };
 
 /**

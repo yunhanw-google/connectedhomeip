@@ -152,6 +152,8 @@ static BluezLEAdvertisement1 *BluezAdvertisingCreate(BluezServerEndpoint *apEndp
     g_dbus_object_manager_server_export(apEndpoint->root, G_DBUS_OBJECT_SKELETON(object));
     g_object_unref(object);
 
+    BLEManagerImpl::NotifyBluezPeripheralAdvConfigueEvent(true, NULL);
+
     return adv;
 }
 
@@ -173,6 +175,8 @@ static void BluezTobleAdvStartDone(GObject *aObject, GAsyncResult *aResult, gpoi
     VerifyOrExit(success == TRUE, ChipLogProgress(DeviceLayer, "FAIL: RegisterAdvertisement : %s", error->message));
 
     ChipLogProgress(DeviceLayer, "RegisterAdvertisement complete");
+
+    BLEManagerImpl::NotifyBluezPeripheralAdvStartEvent(true, NULL);
 
 exit:
     if (error != NULL)
@@ -205,6 +209,7 @@ static void BluezTobleAdvStopDone(GObject *aObject, GAsyncResult *aResult, gpoin
 
     VerifyOrExit(success == TRUE, ChipLogProgress(DeviceLayer, "FAIL: UnregisterAdvertisement : %s", error->message));
 
+    BLEManagerImpl::NotifyBluezPeripheralAdvStopEvent(true, NULL);
     ChipLogProgress(DeviceLayer, "UnregisterAdvertisement complete");
 
 exit:
@@ -219,7 +224,7 @@ exit:
      */
 }
 
-static gboolean BluezTobleAdvSetup(void *aClosure)
+static gboolean BluezBleAdvSetup(void *aClosure)
 {
     // create and register advertising object; get the LEAdvertisingManager proxy
     // for the default adapter and register the object with the adapter
@@ -1001,9 +1006,14 @@ static void BluezPeripheralRegisterAppDone(GObject *aObject, GAsyncResult *aResu
 
     VerifyOrExit(success == TRUE, ChipLogProgress(DeviceLayer, "FAIL: RegisterApplication : %s", error->message));
 
+    BLEManagerImpl::NotifyBluezPeripheralRegisterAppEvent(true, NULL);
+    ChipLogProgress(DeviceLayer, "BluezPeripheralRegisterAppDone done");
 exit:
     if (error != NULL)
+    {
+        BLEManagerImpl::NotifyBluezPeripheralRegisterAppEvent(false, NULL);
         g_error_free(error);
+    }
     return;
 }
 
@@ -1718,24 +1728,32 @@ bool WoBLEz_ScheduleSendIndication(void * apConn, chip::System::PacketBuffer * a
         ChipLogError(Ble, msg);
     }
 
+    if (NULL != apBuf)
+    {
+        chip::System::PacketBuffer::Free(apBuf);
+    }
+
     return success;
 }
 
-void StartBluezAdv(void * apEndpoint)
+void StartBluezAdv(void * apAppState)
 {
-    BluezServerEndpoint *endpoint = (BluezServerEndpoint*) apEndpoint;
-    BluezRunOnBluezThread(BluezTobleAdvStart, endpoint);
+    BluezRunOnBluezThread(BluezTobleAdvStart, apAppState);
 }
 
-void StopBluezAdv(void * apEndpoint)
+void StopBluezAdv(void * apAppState)
 {
-    BluezServerEndpoint *endpoint = (BluezServerEndpoint*) apEndpoint;
-    BluezRunOnBluezThread(BluezTobleAdvStop, endpoint);
+    BluezRunOnBluezThread(BluezTobleAdvStop, apAppState);
 }
 
-void BluezBleGattsAppRegister(BluezServerEndpoint *apEndpoint)
+void BluezBleAdvertisementSetup(void *apAppState)
 {
-    BluezRunOnBluezThread(BluezPeripheralRegisterApp, (void *)apEndpoint);
+    BluezRunOnBluezThread(BluezBleAdvSetup, apAppState);
+}
+
+void BluezBleGattsAppRegister(void *apAppState)
+{
+    BluezRunOnBluezThread(BluezPeripheralRegisterApp, apAppState);
 }
 
 /**
@@ -1780,6 +1798,24 @@ CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, ui
     endpoint->mtu       = HCI_MAX_MTU;
     endpoint->isCentral = aIsCentral;
 
+    /**
+* Data arranged in "Length Type Value" pairs inside Weave service data.
+* Length should include size of value + size of Type field, which is 1 byte
+*/
+    endpoint->mType = BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE;
+    endpoint->mInterval = 20;
+    endpoint->chipServiceData = (CHIPServiceData * )g_malloc(sizeof(CHIPServiceData) + 1);
+    endpoint->advertisingUUID = g_strdup("0xFEAF");
+    endpoint->chipServiceData->dataBlock0Len = sizeof(CHIPIdInfo) + 1;
+    endpoint->chipServiceData->dataBlock0Type = 1;
+    endpoint->chipServiceData->idInfo.major         = 1;
+    endpoint->chipServiceData->idInfo.minor         = 1;
+    endpoint->chipServiceData->idInfo.vendorId      = 1;
+    endpoint->chipServiceData->idInfo.productId     = 1;
+    endpoint->chipServiceData->idInfo.deviceId      = 1;
+    endpoint->chipServiceData->idInfo.pairingStatus = 1;
+    endpoint->mIsAdvertising = false;
+
     // peripheral properties
 
     VerifyOrExit(endpoint != NULL, ChipLogProgress(DeviceLayer, "FAIL: memory alloc in %s", __func__));
@@ -1792,39 +1828,13 @@ CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, ui
     VerifyOrExit(pthreadErr == 0, ChipLogProgress(DeviceLayer, "FAIL: pthread_create (%s) in %s", strerror(tmpErrno), __func__));
     sleep(1);
 
-    BluezBleGattsAppRegister(endpoint);
+
+
+    //BluezBleGattsAppRegister(endpoint);
     retval = TRUE;
-    {
-        //ChipAdvConfig *closure;
 
-        //closure = g_new0(ChipAdvConfig, 1);
-        endpoint->mType = BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE;
-        endpoint->mInterval = 20;
-
-        /**
-         * Data arranged in "Length Type Value" pairs inside Weave service data.
-         * Length should include size of value + size of Type field, which is 1 byte
-         */
-
-        endpoint->chipServiceData = (CHIPServiceData * )g_malloc(sizeof(CHIPServiceData) + 1);
-        endpoint->advertisingUUID = g_strdup("0xFEAF");
-        endpoint->chipServiceData->dataBlock0Len = sizeof(CHIPIdInfo) + 1;
-        endpoint->chipServiceData->dataBlock0Type = 1;
-        endpoint->chipServiceData->idInfo.major         = 1;
-        endpoint->chipServiceData->idInfo.minor         = 1;
-        endpoint->chipServiceData->idInfo.vendorId      = 1;
-        endpoint->chipServiceData->idInfo.productId     = 1;
-        endpoint->chipServiceData->idInfo.deviceId      = 1;
-        endpoint->chipServiceData->idInfo.pairingStatus = 1;
-        endpoint->mIsAdvertising = false;
-        //closure->mData = (uint8_t *) chipServiceData;
-        //closure->mLength = sizeof(CHIPServiceData);
-
-        BluezRunOnBluezThread(BluezTobleAdvSetup, endpoint);
-        //StartBluezAdv();
-        //BluezRunOnBluezThread(BluezTobleAdvStart, NULL);
-    }
-
+    //StartBluezAdv();
+    //BluezRunOnBluezThread(BluezTobleAdvStart, NULL);
 exit:
     if (retval)
     {

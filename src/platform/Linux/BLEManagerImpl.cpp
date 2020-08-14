@@ -208,12 +208,12 @@ CHIP_ERROR BLEManagerImpl::_SetDeviceName(const char * deviceName)
 
 CHIP_ERROR BLEManagerImpl::StartAdvertising(void)
 {
-    StartBluezAdv(mpBluezEndpoint);
+    StartBluezAdv(mpAppState);
 }
 
 CHIP_ERROR BLEManagerImpl::StopAdvertising(void)
 {
-    StopBluezAdv(mpBluezEndpoint);
+    StopBluezAdv(mpAppState);
 }
 
 void BLEManagerImpl::_OnPlatformEvent(const ChipDeviceEvent * event) {
@@ -310,13 +310,10 @@ bool BLEManagerImpl::CloseConnection(BLE_CONNECTION_OBJECT conId)
         ChipLogError(Ble, "Failed to schedule CloseBleconnection() on chipobluez thread");
     }
 
-    // Release the associated connection state record.
-    //ReleaseConnectionState(conId);
-
     // Force a refresh of the advertising state.
-    SetFlag(mFlags, kFlag_AdvertisingRefreshNeeded);
-    ClearFlag(mFlags, kFlag_AdvertisingConfigured);
-    PlatformMgr().ScheduleWork(DriveBLEState, 0);
+    //SetFlag(mFlags, kFlag_AdvertisingRefreshNeeded);
+    //ClearFlag(mFlags, kFlag_AdvertisingConfigured);
+    //PlatformMgr().ScheduleWork(DriveBLEState, 0);
 
     return (err == CHIP_NO_ERROR);
 }
@@ -413,7 +410,6 @@ void BLEManagerImpl::WoBLEz_ConnectionClosed(void * data)
 void BLEManagerImpl::WoBLEz_SubscriptionChange(void * data)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
-    InEventParam * params          = NULL;
     BluezConnection * connection   = static_cast<BluezConnection *>(data);
     const char * msg               = NULL;
 
@@ -449,7 +445,7 @@ void BLEManagerImpl::WoBLEz_IndicationConfirmation(void * data)
     PlatformMgr().PostEvent(&event);
 }
 
-void BLEManagerImpl::DriveBLEState(void)
+void BLEManagerImpl::DriveBLEState()
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
 
@@ -469,15 +465,25 @@ void BLEManagerImpl::DriveBLEState(void)
 #endif // CHIP_DEVICE_CONFIG_CHIPOBLE_DISABLE_ADVERTISING_WHEN_PROVISIONED
     }
 
+    ChipLogProgress(DeviceLayer, "CHIPoBLE before check control in progress");
     // If there's already a control operation in progress, wait until it completes.
     VerifyOrExit(!GetFlag(mFlags, kFlag_ControlOpInProgress), /* */);
 
     // Initializes the Bluez BLE layer if needed.
     if (mServiceMode == ConnectivityManager::kCHIPoBLEServiceMode_Enabled && !GetFlag(mFlags, kFlag_BluezBLELayerInitialized))
     {
-        err = InitBluezBleLayer(false, NULL, mDeviceName, 1, mpBluezEndpoint);
+        err = InitBluezBleLayer(false, NULL, mDeviceName, 1, mpAppState);
         SuccessOrExit(err);
         SetFlag(mFlags, kFlag_BluezBLELayerInitialized);
+    }
+
+    // Register the CHIPoBLE application with the ESP BLE layer if needed.
+    if (mServiceMode == ConnectivityManager::kCHIPoBLEServiceMode_Enabled && !GetFlag(mFlags, kFlag_AppRegistered))
+    {
+        BluezBleGattsAppRegister(mpAppState);
+        SetFlag(mFlags, kFlag_ControlOpInProgress);
+
+        ExitNow();
     }
 
     /*
@@ -510,14 +516,14 @@ void BLEManagerImpl::DriveBLEState(void)
             // Configure advertising data if it hasn't been done yet.  This is an asynchronous step which
             // must complete before advertising can be started.  When that happens, this method will
             // be called again, and execution will proceed to the code below.
-           // if (!GetFlag(mFlags, kFlag_AdvertisingConfigured))
-            //{
-            //    err = ConfigureAdvertisingData();
-            //    ExitNow();
-            //}
+            if (!GetFlag(mFlags, kFlag_AdvertisingConfigured))
+            {
+                BluezBleAdvertisementSetup(mpAppState);
+                ExitNow();
+            }
 
             // Start advertising.  This is also an asynchronous step.
-            StartBluezAdv(mpBluezEndpoint);;
+            StartBluezAdv(mpAppState);
             SetFlag(sInstance.mFlags, kFlag_Advertising);
             ExitNow();
         }
@@ -528,7 +534,7 @@ void BLEManagerImpl::DriveBLEState(void)
     {
         if (GetFlag(mFlags, kFlag_Advertising))
         {
-            StopAdvertising();
+            StopBluezAdv(mpAppState);
             SetFlag(mFlags, kFlag_ControlOpInProgress);
 
             ExitNow();
@@ -566,9 +572,145 @@ void BLEManagerImpl::DriveBLEState(intptr_t arg)
     sInstance.DriveBLEState();
 }
 
+void BLEManagerImpl::HandleBluezSetupState(InEventParam * apEvent)
+{
+    CHIP_ERROR err         = CHIP_NO_ERROR;
+    bool controlOpComplete = false;
+    ChipLogProgress(DeviceLayer, "internal HandleBluezSetupState , %d", apEvent->mEventType);
+    switch (apEvent->mEventType)
+    {
+        case InEventParam::kEvent_BluezAdvertisingConfigured:
+            SetFlag(sInstance.mFlags, kFlag_AdvertisingConfigured);
+            ClearFlag(sInstance.mFlags, kFlag_ControlOpInProgress);
+            controlOpComplete = true;
+            break;
+        case InEventParam::kEvent_BluezAdvertisingStart:
+            ClearFlag(sInstance.mFlags, kFlag_ControlOpInProgress);
+            ClearFlag(sInstance.mFlags, kFlag_AdvertisingRefreshNeeded);
+
+            if (!GetFlag(sInstance.mFlags, kFlag_Advertising))
+            {
+                ChipLogProgress(DeviceLayer, "CHIPoBLE advertising started");
+
+                SetFlag(sInstance.mFlags, kFlag_Advertising);
+            }
+            break;
+        case InEventParam::kEvent_BluezAdvertisingStop:
+            ClearFlag(sInstance.mFlags, kFlag_ControlOpInProgress);
+            ClearFlag(sInstance.mFlags, kFlag_AdvertisingRefreshNeeded);
+
+            // Transition to the not Advertising state...
+            if (GetFlag(sInstance.mFlags, kFlag_Advertising))
+            {
+                ClearFlag(sInstance.mFlags, kFlag_Advertising);
+
+                ChipLogProgress(DeviceLayer, "CHIPoBLE advertising stopped");
+            }
+            break;
+        case InEventParam::kEvent_BluezPeripheralRegisterApp:
+            ChipLogProgress(DeviceLayer, "kBluezPeripheralRegisterApp");
+            if (apEvent->mIsSuccess)
+            {
+                ChipLogProgress(DeviceLayer, "kBluezPeripheralRegisterApp success");
+                SetFlag(mFlags, kFlag_AppRegistered);
+                controlOpComplete = true;
+            }
+            else
+            {
+                err = CHIP_ERROR_INCORRECT_STATE;
+            }
+            break;
+        default:
+            break;
+    }
+
+exit:
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(DeviceLayer, "Disabling CHIPoBLE service due to error: %s", ErrorStr(err));
+        mServiceMode = ConnectivityManager::kCHIPoBLEServiceMode_Disabled;
+    }
+    if (controlOpComplete)
+    {
+        ChipLogProgress(DeviceLayer, "drive ble state");
+        ClearFlag(mFlags, kFlag_ControlOpInProgress);
+        DriveBLEState();
+    }
+}
+
+chip::System::Error BLEManagerImpl::NewEventParams(InEventParam ** aParam)
+{
+    *aParam = new InEventParam();
+    return CHIP_SYSTEM_NO_ERROR;
+}
+
+void BLEManagerImpl::ReleaseEventParams(InEventParam * aParam)
+{
+    if (aParam != NULL)
+    {
+        delete aParam;
+    }
+}
+
+void BLEManagerImpl::HandleBluezSetupState(intptr_t arg)
+{
+    ChipLogProgress(DeviceLayer, "HandleBluezSetupState ");
+    if (arg != 0)
+    {
+        InEventParam * event = (InEventParam *) arg;
+            ChipLogProgress(DeviceLayer, "HandleBluezSetupState 1");
+        sInstance.HandleBluezSetupState(event);
+        ReleaseEventParams(event);
+    }
+}
+
 void BLEManagerImpl::NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT conId)
 {
     ChipLogRetain(Ble, "Got notification regarding chip connection closure");
+}
+
+void BLEManagerImpl::NotifyBluezPeripheralRegisterAppEvent(bool aIsSuccess, void * apAppstate)
+{
+    InEventParam * pEvent = NULL;
+
+    NewEventParams(&pEvent);
+    pEvent->mIsSuccess = aIsSuccess;
+    pEvent->mpAppstate = apAppstate;
+    pEvent->mEventType  = InEventParam::kEvent_BluezPeripheralRegisterApp;
+    PlatformMgr().ScheduleWork(HandleBluezSetupState, (intptr_t)(pEvent));
+}
+
+void BLEManagerImpl::NotifyBluezPeripheralAdvConfigueEvent(bool aIsSuccess, void * apAppstate)
+{
+    InEventParam * pEvent = NULL;
+
+    NewEventParams(&pEvent);
+    pEvent->mIsSuccess = aIsSuccess;
+    pEvent->mpAppstate = apAppstate;
+    pEvent->mEventType  = InEventParam::kEvent_BluezAdvertisingConfigured;
+    PlatformMgr().ScheduleWork(HandleBluezSetupState, (intptr_t)(pEvent));
+}
+
+void BLEManagerImpl::NotifyBluezPeripheralAdvStartEvent(bool aIsSuccess, void * apAppstate)
+{
+    InEventParam * pEvent = NULL;
+
+    NewEventParams(&pEvent);
+    pEvent->mIsSuccess = aIsSuccess;
+    pEvent->mpAppstate = apAppstate;
+    pEvent->mEventType  = InEventParam::kEvent_BluezAdvertisingStart;
+    PlatformMgr().ScheduleWork(HandleBluezSetupState, (intptr_t)(pEvent));
+}
+
+void BLEManagerImpl::NotifyBluezPeripheralAdvStopEvent(bool aIsSuccess, void * apAppstate)
+{
+    InEventParam * pEvent = NULL;
+
+    NewEventParams(&pEvent);
+    pEvent->mIsSuccess = aIsSuccess;
+    pEvent->mpAppstate = apAppstate;
+    pEvent->mEventType  = InEventParam::kEvent_BluezAdvertisingStop;
+    PlatformMgr().ScheduleWork(HandleBluezSetupState, (intptr_t)pEvent);
 }
 
 } // namespace Internal

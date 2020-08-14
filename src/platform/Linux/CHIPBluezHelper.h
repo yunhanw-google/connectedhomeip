@@ -244,7 +244,8 @@ namespace Internal {
 
         bool WoBLEz_ScheduleSendIndication(void * data, chip::System::PacketBuffer * msgBuf);
 
-        void BluezBleGattsAppRegister();
+        void BluezBleGattsAppRegister(void *apAppState);
+        void BluezBleAdvertisementSetup(void *apAppState);
 // static DBusConnection * gBluezDbusConn;
 // static Adapter * gDefaultAdapter;
 
