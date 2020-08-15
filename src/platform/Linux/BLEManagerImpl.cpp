@@ -373,6 +373,7 @@ void BLEManagerImpl::WoBLEz_WriteReceived(void * data, const uint8_t * value, si
     {
         ChipDeviceEvent event;
         event.Type                        = DeviceEventType::kCHIPoBLEWriteReceived;
+        ChipLogProgress(Ble, "Write request received debug %p", data);
         event.CHIPoBLEWriteReceived.ConId = data;
         event.CHIPoBLEWriteReceived.Data  = buf;
         PlatformMgr().PostEvent(&event);
@@ -422,6 +423,7 @@ void BLEManagerImpl::WoBLEz_SubscriptionChange(void * data)
     {
         ChipDeviceEvent event;
         event.Type = (connection->mIsNotify) ? DeviceEventType::kCHIPoBLESubscribe : DeviceEventType::kCHIPoBLEUnsubscribe;
+        ChipLogProgress(DeviceLayer, "CHIPoBLE WoBLEz_SubscriptionChange %p", data);
         event.CHIPoBLESubscribe.ConId = data;
         PlatformMgr().PostEvent(&event);
     }
@@ -472,7 +474,21 @@ void BLEManagerImpl::DriveBLEState()
     // Initializes the Bluez BLE layer if needed.
     if (mServiceMode == ConnectivityManager::kCHIPoBLEServiceMode_Enabled && !GetFlag(mFlags, kFlag_BluezBLELayerInitialized))
     {
-        err = InitBluezBleLayer(false, NULL, mDeviceName, 1, mpAppState);
+        BleConfig bleConfig;
+        bleConfig.mIsCentral = false;
+        bleConfig.mpBleAddr = NULL;
+        bleConfig.mpBleName = mDeviceName;
+        bleConfig.mNodeId = 1;
+        bleConfig.mMajor = 1;
+        bleConfig.mMinor = 1;
+        bleConfig.mVendorId = 1;
+        bleConfig.mProductId = 1;
+        bleConfig.mDeviceId = 1;
+        bleConfig.mDuration = 2;
+        bleConfig.mPairingStatus = 1;
+        bleConfig.mType = ChipAdvType::BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE;
+
+        err = InitBluezBleLayer(bleConfig, mpAppState);
         SuccessOrExit(err);
         SetFlag(mFlags, kFlag_BluezBLELayerInitialized);
     }

@@ -75,11 +75,13 @@ static gboolean BluezAdvertisingRelease(BluezLEAdvertisement1 *aAdv,
                                         gpointer               apClosure)
 {
     BluezServerEndpoint *          endpoint = (BluezServerEndpoint *)apClosure;
+    VerifyOrExit(aAdv != NULL, ChipLogProgress(DeviceLayer, "BluezLEAdvertisement1 is null"));
     ChipLogProgress(DeviceLayer, "RELEASE adv object at %s", g_dbus_proxy_get_object_path(G_DBUS_PROXY(aAdv)));
 
     g_dbus_object_manager_server_unexport(endpoint->root, endpoint->advPath);
     sAdvertising = FALSE;
 
+exit:
     return TRUE;
 }
 
@@ -140,8 +142,11 @@ static BluezLEAdvertisement1 *BluezAdvertisingCreate(BluezServerEndpoint *apEndp
     // advertising name corresponding to the PID and object path, for debug purposes
     bluez_leadvertisement1_set_local_name(adv, localName);
     bluez_leadvertisement1_set_service_uuids(adv, array);
+
     // 0xffff means no appearance
     bluez_leadvertisement1_set_appearance(adv, 0xffff);
+
+    bluez_leadvertisement1_set_duration(adv, apEndpoint->mDuration);
     // empty duration, we don't have a clear notion what it would mean to timeslice between toble and anyone else
     bluez_leadvertisement1_set_timeout(adv, 0);
     // empty secondary channel for now
@@ -423,7 +428,7 @@ static gboolean BluezCharacteristicWriteValue(BluezGattCharacteristic1 *aChar,
     }
 
     BluezServerEndpoint *endpoint = (BluezServerEndpoint *) apClosure;
-    BluezConnection *conn   = BluezCharacteristicGetBluezConnection(aChar, aOptions, endpoint);
+    BluezConnection *conn   = GetBluezConnectionViaDevice(endpoint);
     GVariant * temp = g_variant_get_child_value (aValue, 0);
     char *             valStr = g_variant_print(temp, TRUE);
 
@@ -590,8 +595,8 @@ static gboolean BluezCharacteristicAcquireWrite(BluezGattCharacteristic1 *aChar,
     g_io_channel_set_encoding(channel, NULL, NULL);
     g_io_channel_set_close_on_unref(channel, TRUE);
     g_io_channel_set_buffered(channel, FALSE);
-    //conn->c1Channel.channel  = channel;
-    g_io_add_watch(channel,(GIOCondition)(G_IO_HUP | G_IO_IN | G_IO_ERR | G_IO_NVAL),
+    conn->c1Channel.channel  = channel;
+    conn->c1Channel.watch = g_io_add_watch(channel,(GIOCondition)(G_IO_HUP | G_IO_IN | G_IO_ERR | G_IO_NVAL),
                                             BluezCharacteristicWriteFD, conn);
 
     bluez_gatt_characteristic1_set_write_acquired(aChar, TRUE);
@@ -1069,7 +1074,7 @@ static void BluezHandleAdvertisementFromDevice(BluezDevice1 *aDevice)
     src = g_new0(BluezAddress, 1);
 
     BluezStringAddressToCHIPAddress(address, src);
-    type     = BLUEZ_ADV_TYPE_CONNECTABLE;
+    type     = ChipAdvType::BLUEZ_ADV_TYPE_CONNECTABLE;
     debugStr = g_variant_print(serviceData, TRUE);
     ChipLogProgress(DeviceLayer, "TRACE: Device %s Service data: %s", address, debugStr);
     g_free(debugStr);
@@ -1218,9 +1223,8 @@ static void BluezSignalInterfacePropertiesChanged(GDBusObjectManagerClient *aMan
                             conn->mDevice      = (BluezDevice1 *)g_object_ref(device);
                             conn->mpEndpoint   = endpoint;
                             BluezConnectionInit(conn);
-
-                            ChipLogProgress(DeviceLayer, "coonnected, insert, conn:%p, c1:%p, c2:%p", conn, conn->c1, conn->c2);
                             endpoint->mpPeerDevicePath = g_strdup(g_dbus_proxy_get_object_path(aInterface));
+                            ChipLogProgress(DeviceLayer, "coonnected, insert, conn:%p, c1:%p, c2:%p and %s", conn, conn->c1, conn->c2, endpoint->mpPeerDevicePath);
                             g_hash_table_insert(endpoint->connMap, endpoint->mpPeerDevicePath, conn);
                         }
                         // for central, we do not call BluezConnectionInit until the services have been resolved
@@ -1230,7 +1234,10 @@ static void BluezSignalInterfacePropertiesChanged(GDBusObjectManagerClient *aMan
                     }
                     else
                     {
+                        ChipLogProgress(DeviceLayer, "try to clean up connection from connMap %s", g_strdup(g_dbus_proxy_get_object_path(aInterface)));
+
                         BLEManagerImpl::WoBLEz_ConnectionClosed(endpoint);
+                        BluezOTConnectionDestroy(conn);
                         //bluezRunOnOTThread(TO_GENERIC_FUN(otPlatTobleHandleDisconnected), gOpenThreadInstance, conn);
                         g_hash_table_remove(endpoint->connMap, g_dbus_proxy_get_object_path(aInterface));
                     }
@@ -1765,7 +1772,7 @@ void BluezBleGattsAppRegister(void *apAppState)
  * @param[in] aBleName When non-null, adapter alias will be set to this string.
  *
  */
-CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, void *& apEndpoint)
+CHIP_ERROR InitBluezBleLayer(BleConfig & aBleConfig, void *& apEndpoint)
 {
     bool retval     = false;
     int  pthreadErr = 0;
@@ -1781,39 +1788,39 @@ CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, ui
     // initialize server endpoint
     VerifyOrExit(endpoint != NULL, ChipLogProgress(DeviceLayer, "FAIL: memory allocation in %s", __func__));
 
-    ChipLogProgress(DeviceLayer, "debug aBleName %s", aBleName);
-    if (aBleName != NULL)
-        endpoint->adapterName = g_strdup(aBleName);
+    ChipLogProgress(DeviceLayer, "debug aBleName %s", aBleConfig.mpBleName);
+    if (aBleConfig.mpBleName != NULL)
+        endpoint->adapterName = g_strdup(aBleConfig.mpBleName);
     else
         endpoint->adapterName = NULL;
 
-    if (aBleAddr != NULL)
-        endpoint->adapterAddr = g_strdup(aBleAddr);
+    if (aBleConfig.mpBleAddr != NULL)
+        endpoint->adapterAddr = g_strdup(aBleConfig.mpBleAddr);
     else
         endpoint->adapterAddr = NULL;
 
-    endpoint->nodeId = aNodeId;
+    endpoint->nodeId = aBleConfig.mNodeId;
 
     endpoint->connMap   = g_hash_table_new(g_str_hash, g_str_equal);
-    endpoint->mtu       = HCI_MAX_MTU;
-    endpoint->isCentral = aIsCentral;
+    endpoint->isCentral = aBleConfig.mIsCentral;
 
     /**
 * Data arranged in "Length Type Value" pairs inside Weave service data.
 * Length should include size of value + size of Type field, which is 1 byte
 */
-    endpoint->mType = BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE;
-    endpoint->mInterval = 20;
+    endpoint->mType = aBleConfig.mType;
+    endpoint->mDuration = aBleConfig.mDuration;
     endpoint->chipServiceData = (CHIPServiceData * )g_malloc(sizeof(CHIPServiceData) + 1);
     endpoint->advertisingUUID = g_strdup("0xFEAF");
     endpoint->chipServiceData->dataBlock0Len = sizeof(CHIPIdInfo) + 1;
     endpoint->chipServiceData->dataBlock0Type = 1;
-    endpoint->chipServiceData->idInfo.major         = 1;
-    endpoint->chipServiceData->idInfo.minor         = 1;
-    endpoint->chipServiceData->idInfo.vendorId      = 1;
-    endpoint->chipServiceData->idInfo.productId     = 1;
-    endpoint->chipServiceData->idInfo.deviceId      = 1;
-    endpoint->chipServiceData->idInfo.pairingStatus = 1;
+    endpoint->chipServiceData->idInfo.major         = aBleConfig.mMajor;
+    endpoint->chipServiceData->idInfo.minor         = aBleConfig.mMinor;
+    endpoint->chipServiceData->idInfo.vendorId      = aBleConfig.mVendorId;
+    endpoint->chipServiceData->idInfo.productId     = aBleConfig.mProductId;
+    endpoint->chipServiceData->idInfo.deviceId      = aBleConfig.mDeviceId;
+    endpoint->chipServiceData->idInfo.pairingStatus = aBleConfig.mPairingStatus;
+    endpoint->mDuration = aBleConfig.mDuration;
     endpoint->mIsAdvertising = false;
 
     // peripheral properties

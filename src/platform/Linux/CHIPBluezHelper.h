@@ -111,23 +111,6 @@ namespace Internal {
             CHIPIdInfo idInfo;
         } __attribute__((packed));
 
-        typedef enum BluezAdvType
-        {
-            BLUEZ_ADV_TYPE_CONNECTABLE = 0x01,
-            BLUEZ_ADV_TYPE_SCANNABLE   = 0x02,
-            BLUEZ_ADV_TYPE_DIRECTED    = 0x04,
-
-            BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_NONSCANNABLE = 0,
-            BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_CONNECTABLE,
-            BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_SCANNABLE,
-            BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE = BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
-
-            BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_NONSCANNABLE = BLUEZ_ADV_TYPE_DIRECTED,
-            BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE,
-            BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_SCANNABLE,
-            BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_SCANNABLE =
-            BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
-        } ChipAdvType;
 
         typedef struct BluezServerEndpoint {
             char *owningName;  // Bus owning name
@@ -154,16 +137,13 @@ namespace Internal {
 
             // map device path to the connection
             GHashTable *connMap;
-            struct io_channel         c1Channel;
-            struct io_channel         c2Channel;
             uint32_t nodeId;
-            uint16_t mtu;
             bool isNotify;
             bool isCentral;
             char * advertisingUUID;
             CHIPServiceData * chipServiceData;
             ChipAdvType mType;     ///< Advertisement type.
-            uint16_t       mInterval; ///< Advertisement interval (in ms).
+            uint16_t       mDuration; ///< Advertisement interval (in ms).
             const uint8_t *mData;     ///< Advertisement data - Formatted as sequence of "<len, type, data>" structures.
             uint16_t       mLength;   ///< Advertisement data length (number of bytes).
             bool           mIsAdvertising;
@@ -228,7 +208,7 @@ namespace Internal {
 
         void StartBluezAdv(void * apEndpoint);
         void StopBluezAdv(void * apEndpoint);
-        CHIP_ERROR InitBluezBleLayer(bool aIsCentral, char *aBleAddr, char *aBleName, uint32_t aNodeId, void *& apEndpoint);
+        CHIP_ERROR InitBluezBleLayer(BleConfig & aBleConfig, void *& apEndpoint);
         uint16_t GetBluezMTU(BLE_CONNECTION_OBJECT connObj);
 
 // IPC primitives

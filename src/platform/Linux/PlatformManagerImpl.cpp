@@ -51,10 +51,10 @@ CHIP_ERROR PlatformManagerImpl::_InitChipStack(void)
 #if CHIP_WITH_GIO
     GError * error = NULL;
 
-    //this->mpGDBusConnection = UniqueGDBusConnection(g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error));
+    this->mpGDBusConnection = UniqueGDBusConnection(g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error));
 
-    //std::thread gdbusThread(GDBus_Thread);
-    //gdbusThread.detach();
+    std::thread gdbusThread(GDBus_Thread);
+    gdbusThread.detach();
 #endif
 
     // Initialize the configuration system.

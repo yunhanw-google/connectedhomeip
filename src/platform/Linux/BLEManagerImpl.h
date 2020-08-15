@@ -57,6 +57,40 @@ struct InEventParam
     void * mpAppstate;
 };
 
+enum ChipAdvType
+{
+    BLUEZ_ADV_TYPE_CONNECTABLE = 0x01,
+    BLUEZ_ADV_TYPE_SCANNABLE   = 0x02,
+    BLUEZ_ADV_TYPE_DIRECTED    = 0x04,
+
+    BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_NONSCANNABLE = 0,
+    BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_CONNECTABLE,
+    BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_SCANNABLE,
+    BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE = BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
+
+    BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_NONSCANNABLE = BLUEZ_ADV_TYPE_DIRECTED,
+    BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE,
+    BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_SCANNABLE,
+    BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_SCANNABLE =
+    BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
+};
+struct BleConfig{
+    bool mIsCentral;
+    char *mpBleAddr;
+    char *mpBleName;
+    uint32_t mNodeId;
+    uint8_t mMajor;
+    uint8_t mMinor;
+    uint16_t mVendorId;
+    uint16_t mProductId;
+    uint64_t mDeviceId;
+    uint8_t mPairingStatus;
+    ChipAdvType    mType;     ///< Advertisement type.
+    uint16_t       mDuration; ///< Advertisement interval (in ms).
+    const uint8_t *mData;     ///< Advertisement data - Formatted as sequence of "<len, type, data>" structures.
+    uint16_t       mLength;   ///< Advertisement data length (number of bytes).
+};
+
 /**
  * Concrete implementation of the BLEManagerImpl singleton object for the Linux platforms.
  */
@@ -228,7 +262,6 @@ public:
     static void ReleaseEventParams(InEventParam * aParam);
 
     char mDeviceName[kMaxDeviceNameLength + 1];
-
     void * mpAppState;
 };
 
