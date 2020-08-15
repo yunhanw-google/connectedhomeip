@@ -215,13 +215,13 @@ public:
     static void WoBLEz_SubscriptionChange(void * user_data);
     static void WoBLEz_IndicationConfirmation(void * user_data);
     static bool WoBLEz_TimerCb(void * user_data);
-    static void NotifyBluezPeripheralRegisterAppEvent(bool aIsSuccess, void * apAppstate);
+    static void NotifyBluezPeripheralRegisterAppComplete(bool aIsSuccess, void * apAppstate);
 
-    static void NotifyBluezPeripheralAdvConfigueEvent(bool aIsSuccess, void * apAppstate);
+    static void NotifyBluezPeripheralAdvConfigueComplete(bool aIsSuccess, void * apAppstate);
 
-    static void NotifyBluezPeripheralAdvStartEvent(bool aIsSuccess, void * apAppstate);
+    static void NotifyBluezPeripheralAdvStartComplete(bool aIsSuccess, void * apAppstate);
 
-    static void NotifyBluezPeripheralAdvStopEvent(bool aIsSuccess, void * apAppstate);
+    static void NotifyBluezPeripheralAdvStopComplete(bool aIsSuccess, void * apAppstate);
 
     static chip::System::Error NewEventParams(InEventParam ** aParam);
 

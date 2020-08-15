@@ -152,7 +152,7 @@ static BluezLEAdvertisement1 *BluezAdvertisingCreate(BluezServerEndpoint *apEndp
     g_dbus_object_manager_server_export(apEndpoint->root, G_DBUS_OBJECT_SKELETON(object));
     g_object_unref(object);
 
-    BLEManagerImpl::NotifyBluezPeripheralAdvConfigueEvent(true, NULL);
+    BLEManagerImpl::NotifyBluezPeripheralAdvConfigueComplete(true, NULL);
 
     return adv;
 }
@@ -176,7 +176,7 @@ static void BluezTobleAdvStartDone(GObject *aObject, GAsyncResult *aResult, gpoi
 
     ChipLogProgress(DeviceLayer, "RegisterAdvertisement complete");
 
-    BLEManagerImpl::NotifyBluezPeripheralAdvStartEvent(true, NULL);
+    BLEManagerImpl::NotifyBluezPeripheralAdvStartComplete(true, NULL);
 
 exit:
     if (error != NULL)
@@ -209,7 +209,7 @@ static void BluezTobleAdvStopDone(GObject *aObject, GAsyncResult *aResult, gpoin
 
     VerifyOrExit(success == TRUE, ChipLogProgress(DeviceLayer, "FAIL: UnregisterAdvertisement : %s", error->message));
 
-    BLEManagerImpl::NotifyBluezPeripheralAdvStopEvent(true, NULL);
+    BLEManagerImpl::NotifyBluezPeripheralAdvStopComplete(true, NULL);
     ChipLogProgress(DeviceLayer, "UnregisterAdvertisement complete");
 
 exit:
@@ -1006,12 +1006,12 @@ static void BluezPeripheralRegisterAppDone(GObject *aObject, GAsyncResult *aResu
 
     VerifyOrExit(success == TRUE, ChipLogProgress(DeviceLayer, "FAIL: RegisterApplication : %s", error->message));
 
-    BLEManagerImpl::NotifyBluezPeripheralRegisterAppEvent(true, NULL);
+    BLEManagerImpl::NotifyBluezPeripheralRegisterAppComplete(true, NULL);
     ChipLogProgress(DeviceLayer, "BluezPeripheralRegisterAppDone done");
 exit:
     if (error != NULL)
     {
-        BLEManagerImpl::NotifyBluezPeripheralRegisterAppEvent(false, NULL);
+        BLEManagerImpl::NotifyBluezPeripheralRegisterAppComplete(false, NULL);
         g_error_free(error);
     }
     return;

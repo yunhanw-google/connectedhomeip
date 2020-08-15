@@ -669,7 +669,7 @@ void BLEManagerImpl::NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT conId)
     ChipLogRetain(Ble, "Got notification regarding chip connection closure");
 }
 
-void BLEManagerImpl::NotifyBluezPeripheralRegisterAppEvent(bool aIsSuccess, void * apAppstate)
+void BLEManagerImpl::NotifyBluezPeripheralRegisterAppComplete(bool aIsSuccess, void * apAppstate)
 {
     InEventParam * pEvent = NULL;
 
@@ -680,7 +680,7 @@ void BLEManagerImpl::NotifyBluezPeripheralRegisterAppEvent(bool aIsSuccess, void
     PlatformMgr().ScheduleWork(HandleBluezSetupState, (intptr_t)(pEvent));
 }
 
-void BLEManagerImpl::NotifyBluezPeripheralAdvConfigueEvent(bool aIsSuccess, void * apAppstate)
+void BLEManagerImpl::NotifyBluezPeripheralAdvConfigueComplete(bool aIsSuccess, void * apAppstate)
 {
     InEventParam * pEvent = NULL;
 
@@ -691,7 +691,7 @@ void BLEManagerImpl::NotifyBluezPeripheralAdvConfigueEvent(bool aIsSuccess, void
     PlatformMgr().ScheduleWork(HandleBluezSetupState, (intptr_t)(pEvent));
 }
 
-void BLEManagerImpl::NotifyBluezPeripheralAdvStartEvent(bool aIsSuccess, void * apAppstate)
+void BLEManagerImpl::NotifyBluezPeripheralAdvStartComplete(bool aIsSuccess, void * apAppstate)
 {
     InEventParam * pEvent = NULL;
 
@@ -702,7 +702,7 @@ void BLEManagerImpl::NotifyBluezPeripheralAdvStartEvent(bool aIsSuccess, void * 
     PlatformMgr().ScheduleWork(HandleBluezSetupState, (intptr_t)(pEvent));
 }
 
-void BLEManagerImpl::NotifyBluezPeripheralAdvStopEvent(bool aIsSuccess, void * apAppstate)
+void BLEManagerImpl::NotifyBluezPeripheralAdvStopComplete(bool aIsSuccess, void * apAppstate)
 {
     InEventParam * pEvent = NULL;
 
