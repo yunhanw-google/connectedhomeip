@@ -135,6 +135,7 @@ CHIP_ERROR GenericPlatformManagerImpl<ImplClass>::_AddEventHandler(PlatformManag
 
     mAppEventHandlerList = eventHandler;
 
+    ChipLogProgress(DeviceLayer, "CHIPoBLE test add  %p", eventHandler->Handler);
 exit:
     return err;
 }
@@ -198,10 +199,12 @@ void GenericPlatformManagerImpl<ImplClass>::_DispatchEvent(const ChipDeviceEvent
         // For all other events, deliver the event to each of the components in the Device Layer.
         Impl()->DispatchEventToDeviceLayer(event);
 
+        ChipLogProgress(DeviceLayer, "CHIPoBLE type %d", event->Type);
         // If the event is not an internal event, also deliver it to the application's registered
         // event handlers.
         if (!event->IsInternal())
         {
+            ChipLogProgress(DeviceLayer, "CHIPoBLE internal type %d ", event->Type);
             Impl()->DispatchEventToApplication(event);
         }
 
@@ -254,6 +257,7 @@ void GenericPlatformManagerImpl<ImplClass>::DispatchEventToApplication(const Chi
     // Dispatch the event to each of the registered application event handlers.
     for (AppEventHandler * eventHandler = mAppEventHandlerList; eventHandler != NULL; eventHandler = eventHandler->Next)
     {
+        ChipLogProgress(DeviceLayer, "CHIPoBLE internal2 type %d in %p", event->Type, eventHandler->Handler);
         eventHandler->Handler(event, eventHandler->Arg);
     }
 }

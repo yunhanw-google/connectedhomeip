@@ -24,8 +24,6 @@
 #ifndef BLE_MANAGER_IMPL_H
 #define BLE_MANAGER_IMPL_H
 
-#include <ble/BleError.h>
-#include <ble/BleLayer.h>
 #include <platform/internal/BLEManager.h>
 
 #if CHIP_DEVICE_CONFIG_ENABLE_CHIPOBLE
@@ -36,26 +34,7 @@ namespace Internal {
 
 using namespace chip::Ble;
 
-typedef bool (*SendIndicationCallback)(void * data, chip::System::PacketBuffer * msgBuf);
-
-typedef uint16_t (*GetMTUCallback)(void * connObj);
-
 void HandleIncomingBleConnection(BLEEndPoint *bleEP);
-
-struct InEventParam
-{
-    enum EventTypeEnum
-    {
-        kEvent_BluezPeripheralRegisterApp,
-        kEvent_BluezAdvertisingConfigured,
-        kEvent_BluezAdvertisingStart,
-        kEvent_BluezAdvertisingStop,
-    };
-
-    EventTypeEnum mEventType;
-    bool mIsSuccess;
-    void * mpAppstate;
-};
 
 enum ChipAdvType
 {
@@ -74,9 +53,8 @@ enum ChipAdvType
     BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_SCANNABLE =
     BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
 };
-struct BleConfig{
-    bool mIsCentral;
-    char *mpBleAddr;
+
+struct BLEAdvConfig{
     char *mpBleName;
     uint32_t mNodeId;
     uint8_t mMajor;
@@ -85,10 +63,9 @@ struct BleConfig{
     uint16_t mProductId;
     uint64_t mDeviceId;
     uint8_t mPairingStatus;
-    ChipAdvType    mType;     ///< Advertisement type.
-    uint16_t       mDuration; ///< Advertisement interval (in ms).
-    const uint8_t *mData;     ///< Advertisement data - Formatted as sequence of "<len, type, data>" structures.
-    uint16_t       mLength;   ///< Advertisement data length (number of bytes).
+    ChipAdvType    mType;
+    uint16_t       mDuration;
+    char * mpAdvertisingUUID;
 };
 
 /**
@@ -101,30 +78,22 @@ class BLEManagerImpl final : public BLEManager, private BleLayer, private BlePla
     friend BLEManager;
 
 public:
-    // ===== Platform-specific members available for use by the application.
+    CHIP_ERROR ConfigureBle(uint32_t aNodeId, bool aIsCentral);
 
-    // Enum to represent BLE activities
-    typedef enum
-    {
-        kBleConnect,
-        kBleDisconnect,
-        kChipBlePktTx,
-        kChipBlePktRx
-    } BleActivity;
+    // Driven by BlueZ IO
+    static void CHIPoBluez_NewConnection(void * user_data);
+    static void HandleRXCharWrite(void * user_data, const uint8_t * value, size_t len);
+    static void CHIPoBluez_ConnectionClosed(void * user_data);
+    static void HandleTXCharCCCDWrite(void * user_data);
+    static void HandleTXComplete(void * user_data);
+    static bool WoBLEz_TimerCb(void * user_data);
 
-    uint8_t GetAdvertisingHandle(void);
-    void SetAdvertisingHandle(uint8_t handle);
+    static void NotifyBLEPeripheralRegisterAppComplete(bool aIsSuccess, void * apAppstate);
+    static void NotifyBLEPeripheralAdvConfiguredComplete(bool aIsSuccess, void * apAppstate);
+    static void NotifyBLEPeripheralAdvStartComplete(bool aIsSuccess, void * apAppstate);
+    static void NotifyBLEPeripheralAdvStopComplete(bool aIsSuccess, void * apAppstate);
 
-    // Application can use this callback to get notification regarding
-    // BLE activity
-    virtual void NotifyBleActivity(BleActivity bleActivity) {};
-
-    // BleApplicationDelegate function overrides
-    // Application can use this callback to get notification regarding
-    // Chip connection closure
-    virtual void NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT connObj);
-
-public:
+private:
     // ===== Members that implement the BLEManager internal interface.
 
     CHIP_ERROR _Init(void);
@@ -138,100 +107,17 @@ public:
     CHIP_ERROR _GetDeviceName(char * buf, size_t bufSize);
     CHIP_ERROR _SetDeviceName(const char * deviceName);
     uint16_t _NumConnections(void);
+
     void _OnPlatformEvent(const ChipDeviceEvent * event);
+    void HandlePlatformSpecificBLEEvent(const ChipDeviceEvent * event);
     BleLayer * _GetBleLayer(void) const;
-/*
+
     // ===== Members that implement virtual methods on BlePlatformDelegate.
-
-
-
-    // ===== Members that implement virtual methods on BleApplicationDelegate.
-
-    void NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT conId) override;
-*/
-    // ===== Members for internal use by the following friends.
-
-    friend BLEManager & BLEMgr(void){
-            return BLEManagerImpl::sInstance;
-    };
-    friend BLEManagerImpl & BLEMgrImpl(void){
-        return BLEManagerImpl::sInstance;
-    };
-
-    static BLEManagerImpl sInstance;
-
-    // ===== Private members reserved for use by this class only.
-
-
-
-    enum
-    {
-        kMaxConnections             = 1,
-        kMaxDeviceNameLength        = 20, // TODO: right-size this
-        kMaxAdvertismentDataSetSize = 31  // TODO: verify this
-    };
-
-//    ble_gatts_char_handles_t mCHIPoBLECharHandle_RX;
-//    ble_gatts_char_handles_t mCHIPoBLECharHandle_TX;
-    CHIPoBLEServiceMode mServiceMode;
-    uint16_t mFlags;
-    uint16_t mNumGAPCons;
-    uint16_t mSubscribedConIds[kMaxConnections];
-    uint8_t mAdvHandle;
-    uint8_t mAdvDataBuf[kMaxAdvertismentDataSetSize];
-    uint8_t mScanRespDataBuf[kMaxAdvertismentDataSetSize];
-
-    CHIP_ERROR StartAdvertising(void);
-    CHIP_ERROR StopAdvertising(void);
-    void DriveBLEState();
-    void HandleBluezSetupState(InEventParam * apEvent);
-    enum
-    {
-        kFlag_AsyncInitCompleted       = 0x0001, /**< One-time asynchronous initialization actions have been performed. */
-        kFlag_BluezBLELayerInitialized   = 0x0002, /**< The ESP BLE layer has been initialized. */
-        kFlag_AppRegistered            = 0x0004, /**< The CHIPoBLE application has been registered with the ESP BLE layer. */
-        kFlag_AttrsRegistered          = 0x0008, /**< The CHIPoBLE GATT attributes have been registered with the ESP BLE layer. */
-        kFlag_GATTServiceStarted       = 0x0010, /**< The CHIPoBLE GATT service has been started. */
-        kFlag_AdvertisingConfigured    = 0x0020, /**< CHIPoBLE advertising has been configured in the ESP BLE layer. */
-        kFlag_Advertising              = 0x0040, /**< The system is currently CHIPoBLE advertising. */
-        kFlag_ControlOpInProgress      = 0x0080, /**< An async control operation has been issued to the ESP BLE layer. */
-        kFlag_AdvertisingEnabled       = 0x0100, /**< The application has enabled CHIPoBLE advertising. */
-        kFlag_FastAdvertisingEnabled   = 0x0200, /**< The application has enabled fast advertising. */
-        kFlag_UseCustomDeviceName      = 0x0400, /**< The application has configured a custom BLE device name. */
-        kFlag_AdvertisingRefreshNeeded = 0x0800, /**< The advertising configuration/state in ESP BLE layer needs to be updated. */
-    };
-/*
-    CHIP_ERROR ConfigureAdvertising(void);
-//    CHIP_ERROR EncodeAdvertisingData(ble_gap_adv_data_t & gapAdvData);
-    CHIP_ERROR StartAdvertising(void);
-    CHIP_ERROR StopAdvertising(void);
-    void HandleSoftDeviceBLEEvent(const ChipDeviceEvent * event);
-    CHIP_ERROR HandleGAPConnect(const ChipDeviceEvent * event);
-    CHIP_ERROR HandleGAPDisconnect(const ChipDeviceEvent * event);
-    CHIP_ERROR HandleRXCharWrite(const ChipDeviceEvent * event);
-    CHIP_ERROR HandleTXCharCCCDWrite(const ChipDeviceEvent * event);
-    CHIP_ERROR HandleTXComplete(const ChipDeviceEvent * event);
-    CHIP_ERROR SetSubscribed(uint16_t conId);
-    bool UnsetSubscribed(uint16_t conId);
-    bool IsSubscribed(uint16_t conId);
-
-
-    //
-    //
-    //
-    // static void SoftDeviceBLEEventCallback(const ble_evt_t * bleEvent, void * context);
-    */
-    static void DriveBLEState(intptr_t arg);
-    static void HandleBluezSetupState(intptr_t arg);
-    Ble::BleLayer * Ble;
-    SendIndicationCallback SendIndicationCb;
-
 
     bool SubscribeCharacteristic(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId) override;
     bool UnsubscribeCharacteristic(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId) override;
     bool CloseConnection(BLE_CONNECTION_OBJECT conId) override;
     uint16_t GetMTU(BLE_CONNECTION_OBJECT conId) const override;
-
     bool SendIndication(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId,
                         PacketBuffer * pBuf) override;
     bool SendWriteRequest(BLE_CONNECTION_OBJECT conId, const ChipBleUUID * svcId, const ChipBleUUID * charId,
@@ -241,27 +127,51 @@ public:
     bool SendReadResponse(BLE_CONNECTION_OBJECT conId, BLE_READ_REQUEST_CONTEXT requestContext, const ChipBleUUID * svcId,
                           const ChipBleUUID * charId) override;
 
+    // ===== Members that implement virtual methods on BleApplicationDelegate.
 
-    // Driven by BlueZ IO, calling into BleLayer:
-    static void WoBLEz_NewConnection(void * user_data);
-    static void WoBLEz_WriteReceived(void * user_data, const uint8_t * value, size_t len);
-    static void WoBLEz_ConnectionClosed(void * user_data);
-    static void WoBLEz_SubscriptionChange(void * user_data);
-    static void WoBLEz_IndicationConfirmation(void * user_data);
-    static bool WoBLEz_TimerCb(void * user_data);
-    static void NotifyBluezPeripheralRegisterAppComplete(bool aIsSuccess, void * apAppstate);
+    void NotifyChipConnectionClosed(BLE_CONNECTION_OBJECT conId) override;
 
-    static void NotifyBluezPeripheralAdvConfigueComplete(bool aIsSuccess, void * apAppstate);
+    // ===== Members for internal use by the following friends.
 
-    static void NotifyBluezPeripheralAdvStartComplete(bool aIsSuccess, void * apAppstate);
+    friend BLEManager & BLEMgr(void);
+    friend BLEManagerImpl & BLEMgrImpl(void);
 
-    static void NotifyBluezPeripheralAdvStopComplete(bool aIsSuccess, void * apAppstate);
+    static BLEManagerImpl sInstance;
 
-    static chip::System::Error NewEventParams(InEventParam ** aParam);
+    // ===== Private members reserved for use by this class only.
+    enum
+    {
+        kFlag_AsyncInitCompleted       = 0x0001, /**< One-time asynchronous initialization actions have been performed. */
+        kFlag_BluezBLELayerInitialized = 0x0002, /**< The Bluez layer has been initialized. */
+        kFlag_AppRegistered            = 0x0004, /**< The CHIPoBLE application has been registered with the Bluez layer. */
+        kFlag_AdvertisingConfigured    = 0x0008, /**< CHIPoBLE advertising has been configured in the Bluez layer. */
+        kFlag_Advertising              = 0x0010, /**< The system is currently CHIPoBLE advertising. */
+        kFlag_ControlOpInProgress      = 0x0020, /**< An async control operation has been issued to the ESP BLE layer. */
+        kFlag_AdvertisingEnabled       = 0x0040, /**< The application has enabled CHIPoBLE advertising. */
+        kFlag_FastAdvertisingEnabled   = 0x0080, /**< The application has enabled fast advertising. */
+        kFlag_UseCustomDeviceName      = 0x0100, /**< The application has configured a custom BLE device name. */
+        kFlag_AdvertisingRefreshNeeded = 0x0200, /**< The advertising configuration/state in ESP BLE layer needs to be updated. */
+    };
 
-    static void ReleaseEventParams(InEventParam * aParam);
+    enum
+    {
+        kMaxConnections             = 1,  // TODO: right max connection
+        kMaxDeviceNameLength        = 20, // TODO: right-size this
+        kMaxAdvertismentDataSetSize = 31  // TODO: verify this
+    };
 
+    CHIP_ERROR StartBLEAdvertising(void);
+    CHIP_ERROR StopBLEAdvertising(void);
+
+    void DriveBLEState();
+    static void DriveBLEState(intptr_t arg);
+
+    CHIPoBLEServiceMode mServiceMode;
+    BLEAdvConfig mBLEAdvConfig;
+    uint16_t mFlags;
     char mDeviceName[kMaxDeviceNameLength + 1];
+    bool mIsCentral;
+    char * mpBleAddr;
     void * mpAppState;
 };
 
@@ -271,6 +181,46 @@ public:
  * Internal components should use this to access features of the BLEManager object
  * that are common to all platforms.
  */
+inline BLEManager & BLEMgr(void)
+{
+    return BLEManagerImpl::sInstance;
+}
+
+/**
+ * Returns the platform-specific implementation of the BLEManager singleton object.
+ *
+ * Internal components can use this to gain access to features of the BLEManager
+ * that are specific to the Linux platforms.
+ */
+inline BLEManagerImpl & BLEMgrImpl(void)
+{
+    return BLEManagerImpl::sInstance;
+}
+
+inline BleLayer * BLEManagerImpl::_GetBleLayer() const
+{
+    return (BleLayer *) (this);
+}
+
+inline BLEManager::CHIPoBLEServiceMode BLEManagerImpl::_GetCHIPoBLEServiceMode(void)
+{
+    return mServiceMode;
+}
+
+inline bool BLEManagerImpl::_IsAdvertisingEnabled(void)
+{
+    return GetFlag(mFlags, kFlag_AdvertisingEnabled);
+}
+
+inline bool BLEManagerImpl::_IsFastAdvertisingEnabled(void)
+{
+    return GetFlag(mFlags, kFlag_FastAdvertisingEnabled);
+}
+
+inline bool BLEManagerImpl::_IsAdvertising(void)
+{
+    return GetFlag(mFlags, kFlag_Advertising);
+}
 
 } // namespace Internal
 } // namespace DeviceLayer
