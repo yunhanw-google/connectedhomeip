@@ -805,7 +805,7 @@ static uint16_t BluezUUIDStringToShortServiceID(const char *aService)
     {
         for (i = 0; i < 4; i++)
         {
-            shortService = (shortService << 8) | (CHAR_TO_BLUEZ(aService[2 * i]) << 4) | CHAR_TO_BLUEZ(aService[2 * i + 1])
+            shortService = (shortService << 8) | (CHAR_TO_BLUEZ(aService[2 * i]) << 4) | CHAR_TO_BLUEZ(aService[2 * i + 1]);
         }
 
         ChipLogProgress(DeviceLayer, "TRACE: full service UUID: %s, short service %08x", aService, shortService);

@@ -107,7 +107,7 @@ struct BluezAddress
 {
     BluezAddressType mType;                           ///< Bluetooth device address type.
     uint8_t            mAddress[BLUEZ_ADDRESS_SIZE]; ///< A 48-bit address of Bluetooth device in LSB format.
-} BluezAddress;
+};
 
 struct io_channel
 {
@@ -132,43 +132,43 @@ struct CHIPServiceData
     CHIPIdInfo idInfo;
 } __attribute__((packed));
 
-typedef struct BluezEndpoint {
-    char *owningName;  // Bus owning name
+struct BluezEndpoint {
+    char *mpOwningName;  // Bus owning name
 
     // Adapter properties
-    char *adapterName;
-    char *adapterAddr;
+    char *mpAdapterName;
+    char *mpAdapterAddr;
 
     // Paths for objects published by this service
-    char *rootPath;
-    char *advPath;
-    char *servicePath;
+    char *mpRootPath;
+    char *mpAdvPath;
+    char *mpServicePath;
 
     // Objects (interfaces) subscibed to by this service
-    GDBusObjectManager *objMgr;
-    BluezAdapter1 *adapter;
-    BluezDevice1 *device;
+    GDBusObjectManager *mpObjMgr;
+    BluezAdapter1 *mpAdapter;
+    BluezDevice1 *mpDevice;
 
     // Objects (interfaces) published by this service
-    GDBusObjectManagerServer *root;
-    BluezGattService1 *service;
-    BluezGattCharacteristic1 *c1;
-    BluezGattCharacteristic1 *c2;
+    GDBusObjectManagerServer *mpRoot;
+    BluezGattService1 *mpService;
+    BluezGattCharacteristic1 *mpC1;
+    BluezGattCharacteristic1 *mpC2;
 
     // map device path to the connection
-    GHashTable *connMap;
-    uint32_t nodeId;
-    bool isNotify;
-    bool isCentral;
-    char * advertisingUUID;
-    CHIPServiceData * chipServiceData;
+    GHashTable *mpConnMap;
+    uint32_t mNodeId;
+    bool mIsNotify;
+    bool mIsCentral;
+    char * mpAdvertisingUUID;
+    CHIPServiceData * mpChipServiceData;
     ChipAdvType mType;     ///< Advertisement type.
     uint16_t       mDuration; ///< Advertisement interval (in ms).
     const uint8_t *mData;     ///< Advertisement data - Formatted as sequence of "<len, type, data>" structures.
     uint16_t       mLength;   ///< Advertisement data length (number of bytes).
     bool           mIsAdvertising;
     char *         mpPeerDevicePath;
-} BluezEndpoint;
+};
 
 struct BluezConnection
 {
