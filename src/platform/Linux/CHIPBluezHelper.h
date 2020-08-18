@@ -45,7 +45,7 @@
 
 /**
  *    @file
- *          Provides Bluez dbus implementatioon for BLE
+ *          Provides Bluez dbus implementation for BLE
  */
 
 #ifndef CHIP_BLUEZ_HELPER_H
@@ -103,11 +103,11 @@ enum BluezAddressType
 
 struct BluezAddress
 {
-    BluezAddressType mType;                           ///< Bluetooth device address type.
+    BluezAddressType   mType;                           ///< Bluetooth device address type.
     uint8_t            mAddress[BLUEZ_ADDRESS_SIZE]; ///< A 48-bit address of Bluetooth device in LSB format.
 };
 
-struct io_channel
+struct IOChannel
 {
     GIOChannel * mpChannel;
     guint mWatch;
@@ -115,19 +115,19 @@ struct io_channel
 
 struct CHIPIdInfo
 {
-    uint8_t major;
-    uint8_t minor;
-    uint16_t vendorId;
-    uint16_t productId;
-    uint64_t deviceId;
-    uint8_t pairingStatus;
+    uint8_t mMajor;
+    uint8_t mMinor;
+    uint16_t mVendorId;
+    uint16_t mProductId;
+    uint64_t mDeviceId;
+    uint8_t mPairingStatus;
 } __attribute__((packed));
 
 struct CHIPServiceData
 {
-    uint8_t dataBlock0Len;
-    uint8_t dataBlock0Type;
-    CHIPIdInfo idInfo;
+    uint8_t mDataBlock0Len;
+    uint8_t mDataBlock0Type;
+    CHIPIdInfo mIdInfo;
 } __attribute__((packed));
 
 struct BluezEndpoint {
@@ -162,8 +162,6 @@ struct BluezEndpoint {
     CHIPServiceData * mpChipServiceData;
     ChipAdvType mType;     ///< Advertisement type.
     uint16_t       mDuration; ///< Advertisement interval (in ms).
-    const uint8_t *mData;     ///< Advertisement data - Formatted as sequence of "<len, type, data>" structures.
-    uint16_t       mLength;   ///< Advertisement data length (number of bytes).
     bool           mIsAdvertising;
     char *         mpPeerDevicePath;
 };
@@ -177,8 +175,8 @@ struct BluezConnection
     BluezGattCharacteristic1 * mpC2;
     bool mIsNotify;
     uint16_t mMtu;
-    struct io_channel mC1Channel;
-    struct io_channel mC2Channel;
+    struct IOChannel mC1Channel;
+    struct IOChannel mC2Channel;
     BluezEndpoint * mpEndpoint;
 };
 
