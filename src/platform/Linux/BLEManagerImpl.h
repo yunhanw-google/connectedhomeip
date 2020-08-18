@@ -34,7 +34,7 @@ namespace Internal {
 
 using namespace chip::Ble;
 
-void HandleIncomingBleConnection(BLEEndPoint * bleEP);
+void HandleIncomingBleConnection(BLEEndPoint *bleEP);
 
 enum ChipAdvType
 {
@@ -45,17 +45,17 @@ enum ChipAdvType
     BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_NONSCANNABLE = 0,
     BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_CONNECTABLE,
     BLUEZ_ADV_TYPE_UNDIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_SCANNABLE,
-    BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE       = BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
+    BLUEZ_ADV_TYPE_UNDIRECTED_CONNECTABLE_SCANNABLE = BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
 
     BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_NONSCANNABLE = BLUEZ_ADV_TYPE_DIRECTED,
     BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_NONSCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE,
     BLUEZ_ADV_TYPE_DIRECTED_NONCONNECTABLE_SCANNABLE    = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_SCANNABLE,
-    BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_SCANNABLE = BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
+    BLUEZ_ADV_TYPE_DIRECTED_CONNECTABLE_SCANNABLE =
+    BLUEZ_ADV_TYPE_DIRECTED | BLUEZ_ADV_TYPE_CONNECTABLE | BLUEZ_ADV_TYPE_SCANNABLE,
 };
 
-struct BLEAdvConfig
-{
-    char * mpBleName;
+struct BLEAdvConfig{
+    char *mpBleName;
     uint32_t mNodeId;
     uint8_t mMajor;
     uint8_t mMinor;
@@ -63,15 +63,15 @@ struct BLEAdvConfig
     uint16_t mProductId;
     uint64_t mDeviceId;
     uint8_t mPairingStatus;
-    ChipAdvType mType;
-    uint16_t mDuration;
+    ChipAdvType    mType;
+    uint16_t       mDuration;
     char * mpAdvertisingUUID;
 };
 
 /**
  * Concrete implementation of the BLEManagerImpl singleton object for the Linux platforms.
  */
-class BLEManagerImpl final : public BLEManager, private BleLayer, private BlePlatformDelegate, private BleApplicationDelegate
+class BLEManagerImpl final : public BLEManager, private BleLayer, private BlePlatformDelegate,  private BleApplicationDelegate
 {
     // Allow the BLEManager interface class to delegate method calls to
     // the implementation methods provided by this class.
