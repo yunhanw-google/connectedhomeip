@@ -54,8 +54,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "Linux/gen/DbusBluez.h"
-#include <ble/BlePlatformDelegate.h>
-#include <ble/BleApplicationDelegate.h>
 #include "BLEManagerImpl.h"
 
 namespace chip {
