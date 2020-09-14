@@ -2565,6 +2565,7 @@ src/app/util/Makefile
 src/ble/Makefile
 src/ble/tests/Makefile
 src/controller/java/Makefile
+src/controller/python/Makefile
 src/crypto/Makefile
 src/crypto/tests/Makefile
 src/lwip/Makefile
