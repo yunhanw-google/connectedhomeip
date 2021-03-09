@@ -122,6 +122,11 @@ struct Timestamp {
     };
     Timestamp(Type aType) : mType(aType) { mValue = 0;};
     Timestamp(Type aType, uint64_t aValue) : mType(aType), mValue(aValue) {};
+    void Init(Type aType, uint64_t aValue)
+    {
+        mType = aType;
+        mValue = aValue;
+    }
     static Timestamp UTC(uint64_t aValue)
     {
         Timestamp timestamp(Type::kUTC, aValue);

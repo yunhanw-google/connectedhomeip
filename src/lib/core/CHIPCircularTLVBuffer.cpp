@@ -98,6 +98,30 @@ CHIPCircularTLVBuffer::CHIPCircularTLVBuffer(uint8_t * inBuffer, uint32_t inBuff
 
 /**
  * @brief
+ *   CHIPCircularTLVBuffer Init function
+ *
+ * @param[in] inBuffer       A pointer to the backing store for the queue
+ *
+ * @param[in] inBufferLength Length, in bytes, of the backing store
+ */
+void CHIPCircularTLVBuffer::Init(uint8_t * inBuffer, uint32_t inBufferLength)
+{
+    mQueue       = inBuffer;
+    mQueueSize   = inBufferLength;
+    mQueueLength = 0;
+    mQueueHead   = mQueue;
+
+    mProcessEvictedElement = nullptr;
+    mAppData               = nullptr;
+
+    // use common as opposed to unspecified, s.t. the reader that
+    // skips over the elements does not complain about implicit
+    // profile tags.
+    mImplicitProfileId = kCommonProfileId;
+}
+
+/**
+ * @brief
  *   Evicts the oldest top-level TLV element in the CHIPCircularTLVBuffer
  *
  * This function removes the oldest top level TLV element in the

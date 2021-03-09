@@ -73,6 +73,23 @@ public:
 
     /**
      * @brief
+     *   A Init for the CircularEventBuffer (internal API).
+     *
+     * @param[in] apBuffer       The actual storage to use for event storage.
+     *
+     * @param[in] aBufferLength The length of the \c apBuffer in bytes.
+     *
+     * @param[in] apPrev         The pointer to CircularEventBuffer storing
+     *                           events of lesser priority.
+     *
+     * @param[in] apNext         The pointer to CircularEventBuffer storing
+     *                           events of greater priority.
+     *
+     */
+    void Init(uint8_t * apBuffer, uint32_t aBufferLength, CircularEventBuffer * apPrev, CircularEventBuffer * apNext);
+
+    /**
+     * @brief
      *   A helper function that determines whether the event of
      *   specified priority is final destination
      *
@@ -84,7 +101,7 @@ public:
 
     /**
      * @brief
-     *   Allocate a new event ID based on the event priority, and advance the counter
+     *   Allocate a new event Number based on the event priority, and advance the counter
      *   if we have one.
      *
      * @return chip::EventNumber Event Number for this priority.
@@ -117,20 +134,20 @@ private:
     friend class LoggingManagement;
     friend class CircularEventReader;
 
-    CircularEventBuffer * mpPrev; //< A pointer CircularEventBuffer storing events less important events
-    CircularEventBuffer * mpNext; //< A pointer CircularEventBuffer storing events more important events
+    CircularEventBuffer * mpPrev = nullptr; //< A pointer CircularEventBuffer storing events less important events
+    CircularEventBuffer * mpNext = nullptr; //< A pointer CircularEventBuffer storing events more important events
 
-    PriorityLevel mPriority; //< The buffer is the final bucket for events of this priority.  Events of lesser priority are
+    PriorityLevel mPriority = PriorityLevel::Invalid; //< The buffer is the final bucket for events of this priority.  Events of lesser priority are
     //< dropped when they get bumped out of this buffer
 
-    chip::EventNumber mFirstEventNumber; //< First event Number stored in the logging subsystem for this priority
-    chip::EventNumber mLastEventNumber;  //< Last event Number vended for this priority
+    chip::EventNumber mFirstEventNumber = 0; //< First event Number stored in the logging subsystem for this priority
+    chip::EventNumber mLastEventNumber = 0;  //< Last event Number vended for this priority
 
     Timestamp mFirstEventSystemTimestamp; //< The timestamp of the first event in this buffer
     Timestamp mLastEventSystemTimestamp;  //< The timestamp of the last event in this buffer
 
     // The counter we're going to actually use.
-    chip::MonotonicallyIncreasingCounter * mpEventNumberCounter;
+    chip::MonotonicallyIncreasingCounter * mpEventNumberCounter = nullptr;
 
     // The backup counter to use if no counter is provided for us.
     chip::MonotonicallyIncreasingCounter mNonPersistedCounter;
@@ -420,6 +437,7 @@ void LoggingManagement::SkipEvent(EventLoadOutContext * apContext)
 void LoggingManagement::CreateLoggingManagement(Messaging::ExchangeManager * apMgr, size_t aNumBuffers,
                                                 const LogStorageResources * const apLogStorageResources)
 {
+
     new (&sInstance) LoggingManagement(apMgr, aNumBuffers, apLogStorageResources);
     static_assert(std::is_trivially_destructible<chip::app::reporting::LoggingManagement>::value,
                   "LoggingManagement must be trivially destructible");
@@ -455,18 +473,18 @@ LoggingManagement::LoggingManagement(Messaging::ExchangeManager * apMgr, size_t 
         next = (bufferIndex > 0) ? static_cast<CircularEventBuffer *>(apLogStorageResources[bufferIndex - 1].mpBuffer) : nullptr;
 
         VerifyOrDie(apLogStorageResources[bufferIndex].mBufferSize > sizeof(CircularEventBuffer));
+        current = static_cast<CircularEventBuffer *>(apLogStorageResources[bufferIndex].mpBuffer);
+        current->Init(static_cast<uint8_t *>(apLogStorageResources[bufferIndex].mpBuffer) + sizeof(CircularEventBuffer),
+                (uint32_t)(apLogStorageResources[bufferIndex].mBufferSize - sizeof(CircularEventBuffer)), prev, next);
 
-        new (apLogStorageResources[bufferIndex].mpBuffer) CircularEventBuffer(
-            static_cast<uint8_t *>(apLogStorageResources[bufferIndex].mpBuffer) + sizeof(CircularEventBuffer),
-            (uint32_t)(apLogStorageResources[bufferIndex].mBufferSize - sizeof(CircularEventBuffer)), prev, next);
-
-        current = prev                  = static_cast<CircularEventBuffer *>(apLogStorageResources[bufferIndex].mpBuffer);
+        prev                  = current;
         current->mProcessEvictedElement = AlwaysFail;
         current->mAppData               = nullptr;
         current->mPriority              = apLogStorageResources[bufferIndex].mPriority;
         if ((apLogStorageResources[bufferIndex].mCounterStorage != nullptr) &&
             (apLogStorageResources[bufferIndex].mCounterKey != nullptr) && (apLogStorageResources[bufferIndex].mCounterEpoch != 0))
         {
+            ChipLogError(EventLogging, "debug persistend");
             // We have been provided storage for a counter for this priority level.
             new (apLogStorageResources[bufferIndex].mCounterStorage) PersistedCounter();
             CHIP_ERROR err = apLogStorageResources[bufferIndex].mCounterStorage->Init(
@@ -485,7 +503,7 @@ LoggingManagement::LoggingManagement(Messaging::ExchangeManager * apMgr, size_t 
             current->mpEventNumberCounter = &(current->mNonPersistedCounter);
         }
 
-        current->mFirstEventNumber = (chip::EventNumber) current->mpEventNumberCounter->GetValue();
+        current->mFirstEventNumber = static_cast<chip::EventNumber>(current->mpEventNumberCounter->GetValue());
     }
     mpEventBuffer = static_cast<CircularEventBuffer *>(apLogStorageResources[CHIP_NUM_PRIORITY_LEVEL - 1].mpBuffer);
 
@@ -985,6 +1003,19 @@ CircularEventBuffer::CircularEventBuffer(uint8_t * apBuffer, uint32_t aBufferLen
     mpPrev(apPrev), mpNext(apNext), mPriority(PriorityLevel::First), mFirstEventNumber(1), mLastEventNumber(0),
     mFirstEventSystemTimestamp(Timestamp::Type::kSystem, 0), mLastEventSystemTimestamp(Timestamp::Type::kSystem, 0), mpEventNumberCounter(nullptr)
 {}
+
+void CircularEventBuffer::Init(uint8_t * apBuffer, uint32_t aBufferLength, CircularEventBuffer * apPrev, CircularEventBuffer * apNext)
+{
+    CHIPCircularTLVBuffer::Init(apBuffer, aBufferLength);
+    mpPrev = apPrev;
+    mpNext = apNext;
+    mPriority = PriorityLevel::First;
+    mFirstEventNumber = 1;
+    mLastEventNumber = 0;
+    mFirstEventSystemTimestamp.Init(Timestamp::Type::kSystem, 0);
+    mLastEventSystemTimestamp.Init(Timestamp::Type::kSystem, 0);
+    mpEventNumberCounter = nullptr;
+}
 
 bool CircularEventBuffer::IsFinalDestinationForPriority(PriorityLevel aPriority) const
 {
