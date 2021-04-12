@@ -166,9 +166,7 @@ public:
         mBleLayer = params.bleLayer;
 #endif
 
-#if CHIP_ENABLE_INTERACTION_MODEL
         InitCommandSender();
-#endif
     }
 
     /**
