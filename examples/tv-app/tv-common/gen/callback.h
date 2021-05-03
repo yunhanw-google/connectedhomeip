@@ -2094,15 +2094,6 @@ bool emberAfAccountLoginClusterGetSetupPINCallback(chip::app::Command * commandO
 bool emberAfAccountLoginClusterLoginCallback(chip::app::Command * commandObj, uint8_t * tempAccountIdentifier, uint8_t * setupPIN);
 
 /**
- * @brief Application Launcher Cluster LaunchApp Command callback
- * @param data
- * @param application
- */
-
-bool emberAfApplicationLauncherClusterLaunchAppCallback(chip::app::Command * commandObj, uint8_t * data,
-                                                        /* TYPE WARNING: array array defaults to */ uint8_t * application);
-
-/**
  * @brief Audio Output Cluster RenameOutput Command callback
  * @param index
  * @param name
@@ -2116,6 +2107,19 @@ bool emberAfAudioOutputClusterRenameOutputCallback(chip::app::Command * commandO
  */
 
 bool emberAfAudioOutputClusterSelectOutputCallback(chip::app::Command * commandObj, uint8_t index);
+
+/**
+ * @brief Barrier Control Cluster BarrierControlGoToPercent Command callback
+ * @param percentOpen
+ */
+
+bool emberAfBarrierControlClusterBarrierControlGoToPercentCallback(chip::app::Command * commandObj, uint8_t percentOpen);
+
+/**
+ * @brief Barrier Control Cluster BarrierControlStop Command callback
+ */
+
+bool emberAfBarrierControlClusterBarrierControlStopCallback(chip::app::Command * commandObj);
 
 /**
  * @brief Binding Cluster Bind Command callback
@@ -2138,6 +2142,17 @@ bool emberAfBindingClusterBindCallback(chip::app::Command * commandObj, chip::No
 
 bool emberAfBindingClusterUnbindCallback(chip::app::Command * commandObj, chip::NodeId nodeId, chip::GroupId groupId,
                                          chip::EndpointId endpointId, chip::ClusterId clusterId);
+
+/**
+ * @brief Color Control Cluster MoveColor Command callback
+ * @param rateX
+ * @param rateY
+ * @param optionsMask
+ * @param optionsOverride
+ */
+
+bool emberAfColorControlClusterMoveColorCallback(chip::app::Command * commandObj, int16_t rateX, int16_t rateY, uint8_t optionsMask,
+                                                 uint8_t optionsOverride);
 
 /**
  * @brief Color Control Cluster MoveColorTemperature Command callback
@@ -2174,6 +2189,18 @@ bool emberAfColorControlClusterMoveHueCallback(chip::app::Command * commandObj, 
 
 bool emberAfColorControlClusterMoveSaturationCallback(chip::app::Command * commandObj, uint8_t moveMode, uint8_t rate,
                                                       uint8_t optionsMask, uint8_t optionsOverride);
+
+/**
+ * @brief Color Control Cluster MoveToColor Command callback
+ * @param colorX
+ * @param colorY
+ * @param transitionTime
+ * @param optionsMask
+ * @param optionsOverride
+ */
+
+bool emberAfColorControlClusterMoveToColorCallback(chip::app::Command * commandObj, uint16_t colorX, uint16_t colorY,
+                                                   uint16_t transitionTime, uint8_t optionsMask, uint8_t optionsOverride);
 
 /**
  * @brief Color Control Cluster MoveToColorTemperature Command callback
@@ -2222,6 +2249,18 @@ bool emberAfColorControlClusterMoveToHueAndSaturationCallback(chip::app::Command
 
 bool emberAfColorControlClusterMoveToSaturationCallback(chip::app::Command * commandObj, uint8_t saturation,
                                                         uint16_t transitionTime, uint8_t optionsMask, uint8_t optionsOverride);
+
+/**
+ * @brief Color Control Cluster StepColor Command callback
+ * @param stepX
+ * @param stepY
+ * @param transitionTime
+ * @param optionsMask
+ * @param optionsOverride
+ */
+
+bool emberAfColorControlClusterStepColorCallback(chip::app::Command * commandObj, int16_t stepX, int16_t stepY,
+                                                 uint16_t transitionTime, uint8_t optionsMask, uint8_t optionsOverride);
 
 /**
  * @brief Color Control Cluster StepColorTemperature Command callback
@@ -2388,6 +2427,13 @@ bool emberAfDoorLockClusterGetWeekdayScheduleCallback(chip::app::Command * comma
 bool emberAfDoorLockClusterGetYeardayScheduleCallback(chip::app::Command * commandObj, uint8_t scheduleId, uint16_t userId);
 
 /**
+ * @brief Door Lock Cluster LockDoor Command callback
+ * @param pin
+ */
+
+bool emberAfDoorLockClusterLockDoorCallback(chip::app::Command * commandObj, uint8_t * PIN);
+
+/**
  * @brief Door Lock Cluster SetHolidaySchedule Command callback
  * @param scheduleId
  * @param localStartTime
@@ -2455,6 +2501,13 @@ bool emberAfDoorLockClusterSetYeardayScheduleCallback(chip::app::Command * comma
                                                       uint32_t localStartTime, uint32_t localEndTime);
 
 /**
+ * @brief Door Lock Cluster UnlockDoor Command callback
+ * @param pin
+ */
+
+bool emberAfDoorLockClusterUnlockDoorCallback(chip::app::Command * commandObj, uint8_t * PIN);
+
+/**
  * @brief Door Lock Cluster UnlockWithTimeout Command callback
  * @param timeoutInSeconds
  * @param pin
@@ -2490,6 +2543,51 @@ bool emberAfGeneralCommissioningClusterSetRegulatoryConfigCallback(chip::app::Co
                                                                    uint8_t * countryCode, uint64_t breadcrumb, uint32_t timeoutMs);
 
 /**
+ * @brief Groups Cluster AddGroup Command callback
+ * @param groupId
+ * @param groupName
+ */
+
+bool emberAfGroupsClusterAddGroupCallback(chip::app::Command * commandObj, uint16_t groupId, uint8_t * groupName);
+
+/**
+ * @brief Groups Cluster AddGroupIfIdentifying Command callback
+ * @param groupId
+ * @param groupName
+ */
+
+bool emberAfGroupsClusterAddGroupIfIdentifyingCallback(chip::app::Command * commandObj, uint16_t groupId, uint8_t * groupName);
+
+/**
+ * @brief Groups Cluster GetGroupMembership Command callback
+ * @param groupCount
+ * @param groupList
+ */
+
+bool emberAfGroupsClusterGetGroupMembershipCallback(chip::app::Command * commandObj, uint8_t groupCount,
+                                                    /* TYPE WARNING: array array defaults to */ uint8_t * groupList);
+
+/**
+ * @brief Groups Cluster RemoveAllGroups Command callback
+ */
+
+bool emberAfGroupsClusterRemoveAllGroupsCallback(chip::app::Command * commandObj);
+
+/**
+ * @brief Groups Cluster RemoveGroup Command callback
+ * @param groupId
+ */
+
+bool emberAfGroupsClusterRemoveGroupCallback(chip::app::Command * commandObj, uint16_t groupId);
+
+/**
+ * @brief Groups Cluster ViewGroup Command callback
+ * @param groupId
+ */
+
+bool emberAfGroupsClusterViewGroupCallback(chip::app::Command * commandObj, uint16_t groupId);
+
+/**
  * @brief IAS Zone Cluster ZoneEnrollResponse Command callback
  * @param enrollResponseCode
  * @param zoneId
@@ -2498,44 +2596,92 @@ bool emberAfGeneralCommissioningClusterSetRegulatoryConfigCallback(chip::app::Co
 bool emberAfIasZoneClusterZoneEnrollResponseCallback(chip::app::Command * commandObj, uint8_t enrollResponseCode, uint8_t zoneId);
 
 /**
- * @brief Keypad Input Cluster SendKey Command callback
- * @param keyCode
+ * @brief Identify Cluster Identify Command callback
+ * @param identifyTime
  */
 
-bool emberAfKeypadInputClusterSendKeyCallback(chip::app::Command * commandObj, uint8_t keyCode);
+bool emberAfIdentifyClusterIdentifyCallback(chip::app::Command * commandObj, uint16_t identifyTime);
 
 /**
- * @brief Low Power Cluster Sleep Command callback
+ * @brief Identify Cluster IdentifyQuery Command callback
  */
 
-bool emberAfLowPowerClusterSleepCallback(chip::app::Command * commandObj);
+bool emberAfIdentifyClusterIdentifyQueryCallback(chip::app::Command * commandObj);
 
 /**
- * @brief Media Input Cluster HideInputStatus Command callback
+ * @brief Level Control Cluster Move Command callback
+ * @param moveMode
+ * @param rate
+ * @param optionMask
+ * @param optionOverride
  */
 
-bool emberAfMediaInputClusterHideInputStatusCallback(chip::app::Command * commandObj);
+bool emberAfLevelControlClusterMoveCallback(chip::app::Command * commandObj, uint8_t moveMode, uint8_t rate, uint8_t optionMask,
+                                            uint8_t optionOverride);
 
 /**
- * @brief Media Input Cluster RenameInput Command callback
- * @param index
- * @param name
+ * @brief Level Control Cluster MoveToLevel Command callback
+ * @param level
+ * @param transitionTime
+ * @param optionMask
+ * @param optionOverride
  */
 
-bool emberAfMediaInputClusterRenameInputCallback(chip::app::Command * commandObj, uint8_t index, uint8_t * name);
+bool emberAfLevelControlClusterMoveToLevelCallback(chip::app::Command * commandObj, uint8_t level, uint16_t transitionTime,
+                                                   uint8_t optionMask, uint8_t optionOverride);
 
 /**
- * @brief Media Input Cluster SelectInput Command callback
- * @param index
+ * @brief Level Control Cluster MoveToLevelWithOnOff Command callback
+ * @param level
+ * @param transitionTime
  */
 
-bool emberAfMediaInputClusterSelectInputCallback(chip::app::Command * commandObj, uint8_t index);
+bool emberAfLevelControlClusterMoveToLevelWithOnOffCallback(chip::app::Command * commandObj, uint8_t level,
+                                                            uint16_t transitionTime);
 
 /**
- * @brief Media Input Cluster ShowInputStatus Command callback
+ * @brief Level Control Cluster MoveWithOnOff Command callback
+ * @param moveMode
+ * @param rate
  */
 
-bool emberAfMediaInputClusterShowInputStatusCallback(chip::app::Command * commandObj);
+bool emberAfLevelControlClusterMoveWithOnOffCallback(chip::app::Command * commandObj, uint8_t moveMode, uint8_t rate);
+
+/**
+ * @brief Level Control Cluster Step Command callback
+ * @param stepMode
+ * @param stepSize
+ * @param transitionTime
+ * @param optionMask
+ * @param optionOverride
+ */
+
+bool emberAfLevelControlClusterStepCallback(chip::app::Command * commandObj, uint8_t stepMode, uint8_t stepSize,
+                                            uint16_t transitionTime, uint8_t optionMask, uint8_t optionOverride);
+
+/**
+ * @brief Level Control Cluster StepWithOnOff Command callback
+ * @param stepMode
+ * @param stepSize
+ * @param transitionTime
+ */
+
+bool emberAfLevelControlClusterStepWithOnOffCallback(chip::app::Command * commandObj, uint8_t stepMode, uint8_t stepSize,
+                                                     uint16_t transitionTime);
+
+/**
+ * @brief Level Control Cluster Stop Command callback
+ * @param optionMask
+ * @param optionOverride
+ */
+
+bool emberAfLevelControlClusterStopCallback(chip::app::Command * commandObj, uint8_t optionMask, uint8_t optionOverride);
+
+/**
+ * @brief Level Control Cluster StopWithOnOff Command callback
+ */
+
+bool emberAfLevelControlClusterStopWithOnOffCallback(chip::app::Command * commandObj);
 
 /**
  * @brief Media Playback Cluster MediaFastForward Command callback
@@ -2673,35 +2819,65 @@ bool emberAfOnOffClusterOnCallback(chip::app::Command * commandObj);
 bool emberAfOnOffClusterToggleCallback(chip::app::Command * commandObj);
 
 /**
- * @brief TV Channel Cluster ChangeChannel Command callback
- * @param match
+ * @brief Scenes Cluster AddScene Command callback
+ * @param groupId
+ * @param sceneId
+ * @param transitionTime
+ * @param sceneName
+ * @param extensionFieldSets
  */
 
-bool emberAfTvChannelClusterChangeChannelCallback(chip::app::Command * commandObj, uint8_t * match);
+bool emberAfScenesClusterAddSceneCallback(chip::app::Command * commandObj, uint16_t groupId, uint8_t sceneId,
+                                          uint16_t transitionTime, uint8_t * sceneName,
+                                          /* TYPE WARNING: array array defaults to */ uint8_t * extensionFieldSets);
 
 /**
- * @brief TV Channel Cluster ChangeChannelByNumber Command callback
- * @param majorNumber
- * @param minorNumber
+ * @brief Scenes Cluster GetSceneMembership Command callback
+ * @param groupId
  */
 
-bool emberAfTvChannelClusterChangeChannelByNumberCallback(chip::app::Command * commandObj, uint16_t majorNumber,
-                                                          uint16_t minorNumber);
+bool emberAfScenesClusterGetSceneMembershipCallback(chip::app::Command * commandObj, uint16_t groupId);
 
 /**
- * @brief TV Channel Cluster SkipChannel Command callback
- * @param count
+ * @brief Scenes Cluster RecallScene Command callback
+ * @param groupId
+ * @param sceneId
+ * @param transitionTime
  */
 
-bool emberAfTvChannelClusterSkipChannelCallback(chip::app::Command * commandObj, uint16_t Count);
+bool emberAfScenesClusterRecallSceneCallback(chip::app::Command * commandObj, uint16_t groupId, uint8_t sceneId,
+                                             uint16_t transitionTime);
 
 /**
- * @brief Target Navigator Cluster NavigateTarget Command callback
- * @param target
- * @param data
+ * @brief Scenes Cluster RemoveAllScenes Command callback
+ * @param groupId
  */
 
-bool emberAfTargetNavigatorClusterNavigateTargetCallback(chip::app::Command * commandObj, uint8_t target, uint8_t * data);
+bool emberAfScenesClusterRemoveAllScenesCallback(chip::app::Command * commandObj, uint16_t groupId);
+
+/**
+ * @brief Scenes Cluster RemoveScene Command callback
+ * @param groupId
+ * @param sceneId
+ */
+
+bool emberAfScenesClusterRemoveSceneCallback(chip::app::Command * commandObj, uint16_t groupId, uint8_t sceneId);
+
+/**
+ * @brief Scenes Cluster StoreScene Command callback
+ * @param groupId
+ * @param sceneId
+ */
+
+bool emberAfScenesClusterStoreSceneCallback(chip::app::Command * commandObj, uint16_t groupId, uint8_t sceneId);
+
+/**
+ * @brief Scenes Cluster ViewScene Command callback
+ * @param groupId
+ * @param sceneId
+ */
+
+bool emberAfScenesClusterViewSceneCallback(chip::app::Command * commandObj, uint16_t groupId, uint8_t sceneId);
 
 //
 // Non-Cluster Related Callbacks
