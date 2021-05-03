@@ -69,7 +69,7 @@ void Dispatch{{asCamelCased side false}}Command(app::Command * apCommandObj, Com
     {
       apCommandObj->AddStatusCode(nullptr, Protocols::SecureChannel::GeneralStatusCode::kBadRequest, Protocols::SecureChannel::Id,
                       Protocols::SecureChannel::kProtocolCodeGeneralFailure);
-      ChipLogProgress(Zcl, "Failed to dispatch command, %d/%" PRIu32 " arguments parsed, TLVError=%" PRIu32 ", UnpackError=%" PRIu32 " (last decoded tag = %" PRIu32, {{zcl_command_arguments_count this.id}}, validArgumentCount, TLVError, TLVUnpackError, currentDecodeTagId);
+      ChipLogProgress(Zcl, "Failed to dispatch command, %d/%" PRIu32 " arguments parsed, TLVError=%" PRIu32 ", UnpackError=%" PRIu32 " (last decoded tag = %" PRIu32, validArgumentCount, expectArgumentCount, TLVError, TLVUnpackError, currentDecodeTagId);
     }
 }
 
