@@ -9,4 +9,4 @@ ot-ctl panid 0x1234
 ot-ctl ifconfig up
 ot-ctl thread start
 
-chip-lighting-app --thread
+gdb -return-child-result -q -ex run -ex bt --args chip-lighting-app --thread

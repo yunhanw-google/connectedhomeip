@@ -17,7 +17,7 @@ name: Darwin
 on:
     push:
     pull_request:
-
+    workflow_dispatch:
 jobs:
     darwin_build:
         name: Build

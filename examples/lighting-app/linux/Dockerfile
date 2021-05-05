@@ -16,7 +16,8 @@
 #
 
 FROM connectedhomeip/chip-cirque-device-base:latest
-
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y gdb
 COPY out/debug/chip-lighting-app /usr/bin/
 COPY entrypoint.sh /
 
