@@ -37,6 +37,8 @@
 #include <core/CHIPEncoding.h>
 #include <messaging/ExchangeContext.h>
 #include <messaging/ExchangeMgr.h>
+#include <platform/CHIPDeviceLayer.h>
+#include <platform/PlatformManager.h>
 #include <protocols/Protocols.h>
 #include <support/CHIPFaultInjection.h>
 #include <support/CodeUtils.h>
@@ -94,6 +96,7 @@ CHIP_ERROR ExchangeManager::Init(SecureSessionMgr * sessionMgr)
 
 CHIP_ERROR ExchangeManager::Shutdown()
 {
+    DeviceLayer::PlatformMgr().LockChipStack();
     mReliableMessageMgr.Shutdown();
 
     mContextPool.ForEachActiveObject([](auto * ec) {
@@ -109,6 +112,7 @@ CHIP_ERROR ExchangeManager::Shutdown()
     }
 
     mState = State::kState_NotInitialized;
+    DeviceLayer::PlatformMgr().UnlockChipStack();
 
     return CHIP_NO_ERROR;
 }
