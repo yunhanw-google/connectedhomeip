@@ -156,6 +156,21 @@
             "path": "templates/app/CHIPClusters-src.zapt",
             "name": "C++ ZCL API",
             "output": "CHIPClusters.cpp"
+        },
+        {
+            "path": "templates/app/im-cluster-header.zapt",
+            "name": "CHIP IM cluster header for Interaction Model",
+            "output": "IMCluster.h"
+        },
+        {
+            "path": "templates/app/im-cluster.zapt",
+            "name": "CHIP IM cluster cpp for Interaction Model",
+            "output": "IMCluster.cpp"
+        },
+        {
+            "path": "templates/app/im-cluster-Gen.zapt",
+            "name": "CHIP IM cluster cpp for Interaction Model",
+            "output": "IMClusterGen.h"
         }
     ]
 }

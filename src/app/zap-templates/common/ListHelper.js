@@ -16,12 +16,42 @@
  */
 
 const listType = 'ARRAY';
+const StructType = 'STRUCT';
 
 function isList(type)
 {
   return type.toUpperCase() == listType;
 }
 
+function isInt8U(type)
+{
+  return type == 'INT8U';
+}
+
+function isInt16U(type)
+{
+  return type == 'INT16U';
+}
+
+function isInt32U(type)
+{
+  return type == 'INT32U';
+}
+
+function isInt64U(type)
+{
+  return type == 'INT64U';
+}
+
+function isStruct(type)
+{
+  return type == StructType;
+}
+exports.isInt8U = isInt8U;
+exports.isInt16U = isInt16U;
+exports.isInt32U = isInt32U;
+exports.isInt64U = isInt64U;
+exports.isStruct = isStruct;
 //
 // Module exports
 //

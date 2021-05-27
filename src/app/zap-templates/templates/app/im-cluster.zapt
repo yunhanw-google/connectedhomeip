@@ -1,0 +1,47 @@
+{{> header}}
+
+#pragma once
+#include im-cluster-Gen.h
+#include <type_traits>
+#include <array>
+#include <SchemaTypes.h>
+
+namespace chip {
+    namespace app {
+        namespace clusters {
+        {{#all_user_clusters}}
+{{#if (user_cluster_has_enabled_command name side)}}
+namespace {{asCamelCased name false}}Cluster {
+    struct ClusterDescriptor ClusterDescriptor = {
+            .ClusterId = kClusterId
+    };
+    {{#zcl_commands}}
+    namespace {{asType label}}Command
+    {
+        constexpr std::array<TypeOffsetInfo,NumImplementedFields> InitializeOffsets()
+        {
+            std::array<TypeOffsetInfo,NumImplementedFields> r = {};
+
+            uint32_t i = 0;
+            {{#zcl_command_arguments}}
+            r[i++] = {offsetof(class Type, {{asType label}}), sizeof({{#if (isOctetString type)}}chip::ByteSpan{{else}}{{asUnderlyingZclType type}}{{/if}})};
+            {{/zcl_command_arguments}}
+            return r;
+        }
+
+        constexpr std::array<TypeOffsetInfo, NumImplementedFields> Offsets = InitializeOffsets();
+
+        const StructDescriptor<NumImplementedFields> Descriptor = {
+                .FieldList = PopulateFieldDescriptors<NumImplementedFields, std::size(_Schema)>(_Schema, Offsets)
+        };
+
+        const StructDescriptor<NumImplementedFields>& Type::mDescriptor = Descriptor;
+    }
+    {{/zcl_commands}}
+
+{{/if}}
+{{/all_user_clusters}}
+
+} // namespace clusters
+} // namespace app
+} // namespace chip

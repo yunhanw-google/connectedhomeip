@@ -1,0 +1,44 @@
+{{> header}}
+
+#pragma once
+#include <type_traits>
+#include <array>
+#include <SchemaTypes.h>
+
+namespace chip {
+    namespace app {
+        namespace clusters {
+
+        {{#all_user_clusters}}
+{{#if (user_cluster_has_enabled_command name side)}}
+namespace {{asCamelCased name false}}Cluster {
+    constexpr ClusterId_t kClusterId = {{asHex code 4}};
+    enum CommandId {
+        {{#zcl_commands}}
+        k{{asType label}} = {{code}},
+        {{/zcl_commands}}
+    };
+
+    {{#zcl_commands}}
+    namespace {{asType label}} {
+
+    enum FieldId {
+        {{#zcl_command_arguments}}
+        kFieldId{{asType label}} = {{index}},
+        {{/zcl_command_arguments}}
+    };
+
+constexpr _FieldDescriptor _Schema[] = {
+        {{#zcl_command_arguments}}
+        {kFieldId{{asType label}},    BitFlags({{#if (isOctetString type)}}TYPE_OCTSTR{{else if (isString type)}}TYPE_STRING{{else if (isList type)}}TYPE_ARRAY{{else if (isStruct type)}}TYPE_STRUCT{{else if (isInt8U type)}}TYPE_UINT8{{else if (isInt32U type)}}TYPE_UINT32{{else if (isInt64U type)}}TYPE_UINT64{{else}}{{asUnderlyingZclType type}}{{/if}}),      kNone,   (kClusterId << 32) | {{index}},       {}},
+        {{/zcl_command_arguments}}
+        };
+    }
+    {{/zcl_commands}}
+
+{{/if}}
+{{/all_user_clusters}}
+
+} // namespace clusters
+} // namespace app
+} // namespace chip
