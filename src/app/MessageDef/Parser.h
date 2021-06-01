@@ -39,9 +39,10 @@ public:
      *
      *  @param [in] aReader TLVReader
      *  @param [in] aOuterContainerType outer container type
+     *  @return #CHIP_NO_ERROR on success
      *
      */
-    void Init(const chip::TLV::TLVReader & aReader, chip::TLV::TLVType aOuterContainerType);
+    CHIP_ERROR Init(const chip::TLV::TLVReader & aReader, chip::TLV::TLVType aOuterContainerType);
 
     /**
      *  @brief Initialize a TLVReader to point to the beginning of any tagged element in this request

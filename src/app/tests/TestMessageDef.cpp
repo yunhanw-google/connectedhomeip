@@ -1131,13 +1131,15 @@ void AttributeDataElementTest(nlTestSuite * apSuite, void * apContext)
     err = writer.Finalize(&buf);
     NL_TEST_ASSERT(apSuite, err == CHIP_NO_ERROR);
 
-    DebugPrettyPrint(buf);
+    //DebugPrettyPrint(buf);
 
     reader.Init(std::move(buf));
     err = reader.Next();
     NL_TEST_ASSERT(apSuite, err == CHIP_NO_ERROR);
 
     attributeDataElementParser.Init(reader);
+    err = attributeDataElementParser.CheckSchemaValidity();
+    NL_TEST_ASSERT(apSuite, err == CHIP_NO_ERROR);
     ParseAttributeDataElement(apSuite, attributeDataElementParser);
 }
 

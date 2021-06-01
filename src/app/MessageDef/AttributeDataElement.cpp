@@ -37,15 +37,10 @@ namespace app {
 CHIP_ERROR AttributeDataElement::Parser::Init(const chip::TLV::TLVReader & aReader)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
-
-    // make a copy of the reader here
-    mReader.Init(aReader);
-
+    chip::TLV::TLVType dummyContainerType = chip::TLV::kTLVType_NotSpecified;
+    err = chip::app::Parser::Init(aReader, dummyContainerType);
+    SuccessOrExit(err);
     VerifyOrExit(chip::TLV::kTLVType_Structure == mReader.GetType(), err = CHIP_ERROR_WRONG_TLV_TYPE);
-
-    // This is just a dummy, as we're not going to exit this container ever
-    chip::TLV::TLVType OuterContainerType;
-    err = mReader.EnterContainer(OuterContainerType);
 
 exit:
     ChipLogFunctError(err);
@@ -322,6 +317,8 @@ CHIP_ERROR AttributeDataElement::Parser::CheckSchemaValidity() const
             err = CHIP_ERROR_IM_MALFORMED_ATTRIBUTE_DATA_ELEMENT;
         }
     }
+    SuccessOrExit(err);
+    err = reader.ExitContainer(mOuterContainerType);
 
 exit:
     ChipLogFunctError(err);

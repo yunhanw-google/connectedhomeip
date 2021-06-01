@@ -35,10 +35,11 @@ namespace app {
 
 Parser::Parser() : mOuterContainerType(chip::TLV::kTLVType_NotSpecified) {}
 
-void Parser::Init(const chip::TLV::TLVReader & aReader, chip::TLV::TLVType aOuterContainerType)
+CHIP_ERROR Parser::Init(const chip::TLV::TLVReader & aReader, chip::TLV::TLVType aOuterContainerType)
 {
     mReader.Init(aReader);
     mOuterContainerType = aOuterContainerType;
+    return mReader.EnterContainer(mOuterContainerType);
 }
 
 CHIP_ERROR Parser::GetReaderOnTag(const uint64_t aTagToFind, chip::TLV::TLVReader * const apReader) const

@@ -38,16 +38,10 @@ CHIP_ERROR CommandPath::Parser::Init(const chip::TLV::TLVReader & aReader)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
 
-    // make a copy of the reader here
-    mReader.Init(aReader);
-
-    VerifyOrExit(chip::TLV::kTLVType_List == mReader.GetType(), err = CHIP_ERROR_WRONG_TLV_TYPE);
-
-    // This is just a dummy, as we're not going to exit this container ever
-    chip::TLV::TLVType dummyContainerType;
-    // enter into the Path
-    err = mReader.EnterContainer(dummyContainerType);
+    chip::TLV::TLVType dummyContainerType = chip::TLV::kTLVType_NotSpecified;
+    err = chip::app::Parser::Init(aReader, dummyContainerType);
     SuccessOrExit(err);
+    VerifyOrExit(chip::TLV::kTLVType_List == mReader.GetType(), err = CHIP_ERROR_WRONG_TLV_TYPE);
 
 exit:
     ChipLogFunctError(err);
@@ -147,6 +141,8 @@ CHIP_ERROR CommandPath::Parser::CheckSchemaValidity() const
         }
     }
     SuccessOrExit(err);
+    err = reader.ExitContainer(mOuterContainerType);
+
 exit:
     ChipLogFunctError(err);
 
