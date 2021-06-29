@@ -38,7 +38,7 @@ DEVICE_CONFIG = {
         'base_image': 'chip_mobile_device',
         'capability': ['Interactive', 'TrafficControl'],
         'rcp_mode': True,
-        'traffic_control': {'latencyMs': 100}
+        'traffic_control': {'latencyMs': 100, "loss": 5 }
     },
     'device1': {
         'type': 'CHIPEndDevice',

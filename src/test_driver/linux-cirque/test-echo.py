@@ -37,7 +37,7 @@ DEVICE_CONFIG = {
         'base_image': 'chip_echo_requester',
         'capability': ['Thread', 'Interactive', 'TrafficControl'],
         'rcp_mode': True,
-        'traffic_control': {'latencyMs': 100}
+        'traffic_control': {'latencyMs': 100, "loss": 5}
     },
     'device1': {
         'type': 'CHIP-Echo-Responder',
