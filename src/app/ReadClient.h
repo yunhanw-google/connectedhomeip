@@ -79,8 +79,10 @@ public:
 
     uint64_t GetAppIdentifier() const { return mAppIdentifier; }
     Messaging::ExchangeContext * GetExchangeContext() const { return mpExchangeCtx; }
+    virtual bool IsSubscription() const { return false; };
+    virtual CHIP_ERROR SendStatusReport(CHIP_ERROR aError, bool aExpectResponse);
 
-private:
+protected:
     friend class TestReadInteraction;
     friend class InteractionModelEngine;
 
@@ -89,6 +91,8 @@ private:
         Uninitialized = 0, ///< The client has not been initialized
         Initialized,       ///< The client has been initialized and is ready for a SendReadRequest
         AwaitingResponse,  ///< The client has sent out the read request message
+        Subscribing,
+        SubscriptionIdle,
     };
 
     /**
@@ -104,7 +108,7 @@ private:
      *  @retval #CHIP_NO_ERROR On success.
      *
      */
-    CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate, uint64_t aAppIdentifier);
+    virtual CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate, uint64_t aAppIdentifier);
 
     virtual ~ReadClient() = default;
 
@@ -116,25 +120,33 @@ private:
      *  Check if current read client is being used
      *
      */
-    bool IsFree() const { return mState == ClientState::Uninitialized; };
+    bool IsFree() const { return mState == ClientState::Uninitialized; }
+    bool IsSubscribing() const { return mState == ClientState::Uninitialized; }
+    bool IsSubscriptionIdle() const { return mState == ClientState::Subscribing; }
 
-    CHIP_ERROR GenerateEventPathList(ReadRequest::Builder & aRequest, EventPathParams * apEventPathParamsList,
-                                     size_t aEventPathParamsListSize, EventNumber & aEventNumber);
-    CHIP_ERROR GenerateAttributePathList(ReadRequest::Builder & aRequest, AttributePathParams * apAttributePathParamsList,
+    CHIP_ERROR GenerateEventPathList(EventPathList::Builder & aEventPathListBuilder, EventPathParams * apEventPathParamsList,
+                                     size_t aEventPathParamsListSize);
+    CHIP_ERROR GenerateAttributePathList(AttributePathList::Builder & aAttributeathListBuilder, AttributePathParams * apAttributePathParamsList,
                                          size_t aAttributePathParamsListSize);
     CHIP_ERROR ProcessAttributeDataList(TLV::TLVReader & aAttributeDataListReader);
 
     void MoveToState(const ClientState aTargetState);
-    CHIP_ERROR ProcessReportData(System::PacketBufferHandle && aPayload);
+    virtual CHIP_ERROR ProcessReportData(System::PacketBufferHandle && aPayload);
     CHIP_ERROR AbortExistingExchangeContext();
     const char * GetStateStr() const;
+
+    virtual bool IsValidSubscription(uint64_t & aSubscriptionId) {
+        return false;
+    }
 
     /**
      * Internal shutdown method that we use when we know what's going on with
      * our exchange and don't need to manually close it.
      */
-    void ShutdownInternal();
+    virtual void ShutdownInternal();
 
+    void SetExchangeContext(Messaging::ExchangeContext *apExchangeContext) { mpExchangeCtx = apExchangeContext; }
+    void ClearExchangeContext() { mpExchangeCtx = nullptr; }
     Messaging::ExchangeManager * mpExchangeMgr = nullptr;
     Messaging::ExchangeContext * mpExchangeCtx = nullptr;
     InteractionModelDelegate * mpDelegate      = nullptr;
