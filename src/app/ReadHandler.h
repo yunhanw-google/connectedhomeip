@@ -47,7 +47,7 @@ namespace app {
  *         for the relevant data, and sending a reply.
  *
  */
-class ReadHandler
+class ReadHandler : public Messaging::ExchangeDelegate
 {
 public:
     /**
@@ -63,14 +63,15 @@ public:
      *  @retval #CHIP_NO_ERROR On success.
      *
      */
-    CHIP_ERROR Init(InteractionModelDelegate * apDelegate);
+    CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate,
+                    Messaging::ExchangeContext * apExchangeContext, bool aSubscription);
 
     /**
      *  Shut down the ReadHandler. This terminates this instance
      *  of the object and releases all held resources.
      *
      */
-    void Shutdown();
+    void Shutdown(bool aAbort=false);
     /**
      *  Process a read request.  Parts of the processing may end up being asynchronous, but the ReadHandler
      *  guarantees that it will call Shutdown on itself when processing is done (including if OnReadRequest
@@ -98,7 +99,7 @@ public:
 
     bool IsFree() const { return mState == HandlerState::Uninitialized; }
     bool IsReportable() const { return mState == HandlerState::Reportable; }
-
+    bool IsReporting() const { return mState == HandlerState::Reporting; }
     virtual ~ReadHandler() = default;
 
     ClusterInfo * GetAttributeClusterInfolist() { return mpAttributeClusterInfoList; }
@@ -115,28 +116,46 @@ public:
     // is larger than current self vended event number
     void MoveToNextScheduledDirtyPriority();
 
+    bool IsSubscription() { return mSubscription; }
+    bool IsInitialReport() { return mInitialReport; }
+    void ClearInitialReport() { mInitialReport = false; }
+    CHIP_ERROR OnSubscribeRequest(Messaging::ExchangeContext * apExchangeContext, System::PacketBufferHandle && aPayload);
+    void GetSubscriptionId(uint64_t & aSubscriptionId){ aSubscriptionId = mSubscriptionId; }
+
 private:
     enum class HandlerState
     {
         Uninitialized = 0, ///< The handler has not been initialized
         Initialized,       ///< The handler has been initialized and is ready
-        Reportable,        ///< The handler has received read request and is waiting for the data to send to be available
+        Reportable, ///< The handler has received read request and is waiting for the data to send to be available or subscription
+                    ///< has been established, and ready for generating report
+        Reporting,
+        SubscribingResponding,
     };
 
-    CHIP_ERROR ProcessReadRequest(System::PacketBufferHandle && aPayload);
+    InteractionModelDelegate * mpDelegate = nullptr;
+    // Current Handler state
+    HandlerState mState                        = HandlerState::Uninitialized;
+    Messaging::ExchangeContext * mpExchangeCtx = nullptr;
+    const char * GetStateStr() const;
+    void MoveToState(const HandlerState aTargetState);
     CHIP_ERROR ProcessAttributePathList(AttributePathList::Parser & aAttributePathListParser);
     CHIP_ERROR ProcessEventPathList(EventPathList::Parser & aEventPathListParser);
-    void MoveToState(const HandlerState aTargetState);
 
-    const char * GetStateStr() const;
+    CHIP_ERROR OnMessageReceived(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                                 const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload) override;
+    void OnResponseTimeout(Messaging::ExchangeContext * apExchangeContext) override;
 
-    Messaging::ExchangeContext * mpExchangeCtx = nullptr;
+    CHIP_ERROR OnStatusReport(Messaging::ExchangeContext * apExchangeContext, System::PacketBufferHandle && aPayload);
+    CHIP_ERROR ProcessReadRequest(System::PacketBufferHandle && aPayload);
+    CHIP_ERROR AbortExistingExchangeContext();
+    CHIP_ERROR OnUnknownMsgType(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                                const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
+    void SetInitialReport() { mInitialReport = true; }
 
     // Don't need the response for report data if true
     bool mSuppressResponse = false;
 
-    // Current Handler state
-    HandlerState mState                      = HandlerState::Uninitialized;
     ClusterInfo * mpAttributeClusterInfoList = nullptr;
     ClusterInfo * mpEventClusterInfoList     = nullptr;
 
@@ -147,6 +166,19 @@ private:
 
     // The last schedule event number snapshoted in the beginning when preparing to fill new events to reports
     EventNumber mLastScheduledEventNumber[kNumPriorityLevel];
+
+    bool mInitialReport = false;
+    bool mSubscription  = false;
+
+    CHIP_ERROR SendSubscribeResponse();
+    CHIP_ERROR ProcessSubscribeRequest(System::PacketBufferHandle && aPayload);
+    static void OnRefreshSubscribeTimerSyncCallback(System::Layer * apSystemLayer, void * apAppState);
+    CHIP_ERROR RefreshSubscribeSyncTimer(void);
+    Messaging::ExchangeManager * mpExchangeMgr = nullptr;
+    uint64_t mSubscriptionId                   = 0;
+    uint16_t mMinIntervalSeconds         = 0;
+    uint16_t mMaxIntervalSeconds         = 0;
+    SessionHandle mSecureHandle;
 };
 } // namespace app
 } // namespace chip

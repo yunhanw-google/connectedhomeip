@@ -70,6 +70,25 @@ public:
      */
     CHIP_ERROR ScheduleRun();
 
+    void SetDirty(ClusterInfo & aClusterInfo);
+
+    /**
+     * Should be invoked when the device receives a Status report, or when the Report data request times out.
+     * This allows the engine to do some clean-up.
+     *
+     */
+    void OnReportConfirm();
+#if !CHIP_SYSTEM_CONFIG_NO_LOCKING
+    class ScopedLock
+    {
+    public:
+        ScopedLock(Engine & aEngine) : mEngine(aEngine) { mEngine.mAccessLock.Lock(); }
+        ~ScopedLock() { mEngine.mAccessLock.Unlock(); }
+
+    private:
+        Engine & mEngine;
+    };
+#endif // !CHIP_SYSTEM_CONFIG_NO_LOCKING
 private:
     friend class TestReportingEngine;
     /**
@@ -88,13 +107,6 @@ private:
      *
      */
     CHIP_ERROR SendReport(ReadHandler * apReadHandler, System::PacketBufferHandle && aPayload);
-
-    /**
-     * Should be invoked when the device receives a Status report, or when the Report data request times out.
-     * This allows the engine to do some clean-up.
-     *
-     */
-    void OnReportConfirm();
 
     /**
      * Generate and send the report data request when there exists subscription or read request
@@ -119,6 +131,12 @@ private:
      *
      */
     uint32_t mCurReadHandlerIdx = 0;
+
+    ClusterInfo mDirtyPathList[CHIP_IM_MAX_NUM_SERVER_DIRTY_PATHS];
+
+#if !CHIP_SYSTEM_CONFIG_NO_LOCKING
+    System::Mutex mAccessLock;
+#endif // !CHIP_SYSTEM_CONFIG_NO_LOCKING
 };
 
 }; // namespace reporting

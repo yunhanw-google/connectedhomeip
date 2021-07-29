@@ -229,20 +229,29 @@ exit:
     return err;
 }
 
-CHIP_ERROR InteractionModelEngine::OnReadRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
-                                                 const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload)
+CHIP_ERROR InteractionModelEngine::OnReadOrSubscribeRequest(Messaging::ExchangeContext * apExchangeContext,
+                                                            const PacketHeader & aPacketHeader,
+                                                            const PayloadHeader & aPayloadHeader,
+                                                            System::PacketBufferHandle && aPayload, bool aSubscription)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
 
-    ChipLogDetail(InteractionModel, "Receive Read request");
+    ChipLogDetail(InteractionModel, "Receive %s request", aSubscription ? "Subscribe" : "Read");
 
     for (auto & readHandler : mReadHandlers)
     {
         if (readHandler.IsFree())
         {
-            err = readHandler.Init(mpDelegate);
+            err = readHandler.Init(mpExchangeMgr, mpDelegate, apExchangeContext, aSubscription);
             SuccessOrExit(err);
-            err               = readHandler.OnReadRequest(apExchangeContext, std::move(aPayload));
+            if (aSubscription)
+            {
+                err = readHandler.OnSubscribeRequest(apExchangeContext, std::move(aPayload));
+            }
+            else
+            {
+                err = readHandler.OnReadRequest(apExchangeContext, std::move(aPayload));
+            }
             apExchangeContext = nullptr;
             break;
         }
@@ -288,6 +297,39 @@ exit:
     return err;
 }
 
+CHIP_ERROR InteractionModelEngine::OnReportData(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                                                const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload)
+{
+    CHIP_ERROR err          = CHIP_NO_ERROR;
+    uint64_t subscriptionId = 0;
+    ReportData::Parser report;
+    System::PacketBufferTLVReader reader;
+    reader.Init(aPayload.Retain());
+    reader.Next();
+    err = report.Init(reader);
+    SuccessOrExit(err);
+    err = report.GetSubscriptionId(&subscriptionId);
+    SuccessOrExit(err);
+
+    for (auto & readClient : mReadClients)
+    {
+        if (readClient.IsSubscriptionIdle())
+        {
+            if (readClient.IsValidSubscription(subscriptionId))
+            {
+                readClient.SetExchangeContext(apExchangeContext);
+                err = readClient.ProcessReportData(std::move(aPayload));
+                readClient.ClearExchangeContext();
+                apExchangeContext = nullptr;
+                break;
+            }
+        }
+    }
+
+exit:
+    return err;
+}
+
 CHIP_ERROR InteractionModelEngine::OnMessageReceived(Messaging::ExchangeContext * apExchangeContext,
                                                      const PacketHeader & aPacketHeader, const PayloadHeader & aPayloadHeader,
                                                      System::PacketBufferHandle && aPayload)
@@ -299,11 +341,21 @@ CHIP_ERROR InteractionModelEngine::OnMessageReceived(Messaging::ExchangeContext 
     }
     else if (aPayloadHeader.HasMessageType(Protocols::InteractionModel::MsgType::ReadRequest))
     {
-        err = OnReadRequest(apExchangeContext, aPacketHeader, aPayloadHeader, std::move(aPayload));
+        err = OnReadOrSubscribeRequest(apExchangeContext, aPacketHeader, aPayloadHeader, std::move(aPayload),
+                                       false /*aSubscription*/);
     }
     else if (aPayloadHeader.HasMessageType(Protocols::InteractionModel::MsgType::WriteRequest))
     {
         err = OnWriteRequest(apExchangeContext, aPacketHeader, aPayloadHeader, std::move(aPayload));
+    }
+    else if (aPayloadHeader.HasMessageType(Protocols::InteractionModel::MsgType::SubscribeRequest))
+    {
+        err =
+            OnReadOrSubscribeRequest(apExchangeContext, aPacketHeader, aPayloadHeader, std::move(aPayload), true /*aSubscription*/);
+    }
+    else if (aPayloadHeader.HasMessageType(Protocols::InteractionModel::MsgType::ReportData))
+    {
+        err = OnReportData(apExchangeContext, aPacketHeader, aPayloadHeader, std::move(aPayload));
     }
     else
     {
@@ -314,7 +366,7 @@ CHIP_ERROR InteractionModelEngine::OnMessageReceived(Messaging::ExchangeContext 
 
 void InteractionModelEngine::OnResponseTimeout(Messaging::ExchangeContext * ec)
 {
-    ChipLogProgress(InteractionModel, "Time out! failed to receive echo response from Exchange: %d", ec->GetExchangeId());
+    ChipLogProgress(InteractionModel, "Time out! failed to receive IM response from Exchange: %d", ec->GetExchangeId());
 }
 
 CHIP_ERROR InteractionModelEngine::SendReadRequest(NodeId aNodeId, FabricIndex aFabricIndex, SessionHandle * apSecureSession,
@@ -328,6 +380,19 @@ CHIP_ERROR InteractionModelEngine::SendReadRequest(NodeId aNodeId, FabricIndex a
     ReturnErrorOnFailure(NewReadClient(&client, aAppIdentifier));
     err = client->SendReadRequest(aNodeId, aFabricIndex, apSecureSession, apEventPathParamsList, aEventPathParamsListSize,
                                   apAttributePathParamsList, aAttributePathParamsListSize, aEventNumber);
+    if (err != CHIP_NO_ERROR)
+    {
+        client->Shutdown();
+    }
+    return err;
+}
+
+CHIP_ERROR InteractionModelEngine::SendSubscribeRequest(SubscribePrepareParams && aSubscribePrepareParams, uint64_t aAppIdentifier)
+{
+    ReadClient * client = nullptr;
+    CHIP_ERROR err      = CHIP_NO_ERROR;
+    ReturnErrorOnFailure(NewReadClient(&client, aAppIdentifier));
+    err = client->SendSubscribeRequest(std::move(aSubscribePrepareParams));
     if (err != CHIP_NO_ERROR)
     {
         client->Shutdown();

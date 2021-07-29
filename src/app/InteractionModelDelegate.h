@@ -23,8 +23,8 @@
 
 #pragma once
 
-#include <app/AttributePathParams.h>
 #include <app/ClusterInfo.h>
+#include <app/SubscribePrepareParams.h>
 #include <core/CHIPCore.h>
 #include <core/CHIPTLV.h>
 #include <messaging/ExchangeContext.h>
@@ -34,10 +34,9 @@
 
 namespace chip {
 namespace app {
-
 static constexpr uint32_t kImMessageTimeoutMsec = 12000;
-
 class ReadClient;
+class ReadHandler;
 class WriteClient;
 class CommandSender;
 
@@ -87,7 +86,7 @@ public:
      *                            multiple read interactions
      * @retval # CHIP_ERROR_NOT_IMPLEMENTED if not implemented
      */
-    virtual CHIP_ERROR ReportProcessed(const ReadClient * apReadClient) { return CHIP_ERROR_NOT_IMPLEMENTED; }
+    virtual CHIP_ERROR ReportProcessed(ReadClient * apReadClient) { return CHIP_ERROR_NOT_IMPLEMENTED; }
 
     /**
      * Notification that a read attempt encountered an asynchronous failure.
@@ -194,6 +193,48 @@ public:
     {
         return CHIP_ERROR_NOT_IMPLEMENTED;
     }
+
+    /**
+     * Notification that a Subscribe Response has been processed and application can do further work .
+     */
+    virtual CHIP_ERROR SubscribeResponseProcessed(const ReadClient * apReadClient) { return CHIP_ERROR_NOT_IMPLEMENTED; }
+
+    /**
+     * Notification that a subscribe attempt encountered an asynchronous failure.
+     * @param[in]  apSubscribeInitiator   A current subscribe Client which can identify the subscribe to the consumer, particularly
+     * during multiple subscribe interactions
+     * @param[in]  aError         A error that could be CHIP_ERROR_TIMEOUT when read client fails to receive, or other error when
+     *                            fail to process subscribe response.
+     * @retval # CHIP_ERROR_NOT_IMPLEMENTED if not implemented
+     */
+    virtual CHIP_ERROR SubscribeError(const ReadClient * apReadClient, CHIP_ERROR aError) { return CHIP_ERROR_NOT_IMPLEMENTED; }
+
+    /**
+     * Application can provide the customized GetSubscribeFinalSyncInterval to set final sync interval, at default, we use
+     * minIntervalSeconds
+     */
+    virtual CHIP_ERROR GetSubscribeFinalSyncInterval(uint16_t aMinIntervalSeconds, uint16_t aMaxIntervalSeconds,
+                                                     uint16_t & aFinalSyncIntervalSeconds)
+    {
+        aFinalSyncIntervalSeconds = aMinIntervalSeconds;
+        return CHIP_NO_ERROR;
+    }
+
+    /**
+     * Apply subscribe policy and get next retry timer value
+     */
+    virtual CHIP_ERROR ApplyResubscribePolicy(uint32_t aRetryCounter, uint16_t & aRetryTimerSec, bool & aEnableResubscribe)
+    {
+        aRetryTimerSec = 1;
+        return CHIP_NO_ERROR;
+    }
+
+    /**
+     * SubscriptionEstablished
+     */
+    virtual CHIP_ERROR SubscriptionEstablished(const ReadHandler * apReadHandler) { return CHIP_NO_ERROR; }
+
+    virtual CHIP_ERROR SubscriptionDone(const ReadClient * apReadClient, SubscribePrepareParams && aSubscribePrepareParams) { return CHIP_NO_ERROR; }
 
     virtual ~InteractionModelDelegate() = default;
 };

@@ -20,7 +20,7 @@
  *      This file implements a chip-im-responder, for the
  *      CHIP Interaction Data Model Protocol.
  *
- *      Currently it provides simple command and read handler with sample cluster
+ *      Currently it provides simple command, read, write, subscribe handler with sample cluster
  *
  */
 
@@ -41,6 +41,9 @@
 #include <transport/SecureSessionMgr.h>
 #include <transport/raw/UDP.h>
 
+namespace {
+bool testSyncReport = false;
+}
 namespace chip {
 namespace app {
 
@@ -161,12 +164,46 @@ void InitializeEventLogging(chip::Messaging::ExchangeManager * apMgr)
     chip::app::EventManagement::CreateEventManagement(apMgr, sizeof(logStorageResources) / sizeof(logStorageResources[0]),
                                                       gCircularEventBuffer, logStorageResources);
 }
+
+void MutateClusterHandler(chip::System::Layer * systemLayer, void * appState)
+{
+    chip::app::ClusterInfo dirtyPath;
+    dirtyPath.mClusterId  = kTestClusterId;
+    dirtyPath.mEndpointId = kTestEndpointId;
+    dirtyPath.mFlags.Set(chip::app::ClusterInfo::Flags::kFieldIdValid);
+    // send dirty change
+    if (!testSyncReport)
+    {
+        dirtyPath.mFieldId = 1;
+        chip::app::InteractionModelEngine::GetInstance()->GetReportingEngine().SetDirty(dirtyPath);
+        chip::app::InteractionModelEngine::GetInstance()->GetReportingEngine().ScheduleRun();
+        chip::DeviceLayer::SystemLayer.StartTimer(1000, MutateClusterHandler, NULL);
+        testSyncReport = true;
+    }
+    else
+    {
+        dirtyPath.mFieldId = 10; // unknown field
+        chip::app::InteractionModelEngine::GetInstance()->GetReportingEngine().SetDirty(dirtyPath);
+        // send sync message(empty report)
+        chip::app::InteractionModelEngine::GetInstance()->GetReportingEngine().ScheduleRun();
+    }
+}
+
+class MockInteractionModelApp : public chip::app::InteractionModelDelegate
+{
+public:
+    virtual CHIP_ERROR SubscriptionEstablished(const chip::app::ReadHandler * apReadHandler)
+    {
+        chip::DeviceLayer::SystemLayer.StartTimer(1000, MutateClusterHandler, NULL);
+        return CHIP_NO_ERROR;
+    }
+};
 } // namespace
 
 int main(int argc, char * argv[])
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
-    chip::app::InteractionModelDelegate mockDelegate;
+    MockInteractionModelApp mockDelegate;
     chip::Optional<chip::Transport::PeerAddress> peer(chip::Transport::Type::kUndefined);
     const chip::FabricIndex gFabricIndex = 0;
     chip::Transport::FabricTable fabrics;

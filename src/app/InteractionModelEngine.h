@@ -115,6 +115,7 @@ public:
                                AttributePathParams * apAttributePathParamsList, size_t aAttributePathParamsListSize,
                                EventNumber aEventNumber, uint64_t aAppIdentifier = 0);
 
+    CHIP_ERROR SendSubscribeRequest(SubscribePrepareParams && aSubscribePrepareParams, uint64_t aAppIdentifier = 0);
     /**
      *  Retrieve a WriteClient that the SDK consumer can use to send a write.  If the call succeeds,
      *  see WriteClient documentation for lifetime handling.
@@ -160,8 +161,9 @@ private:
      * Called when Interaction Model receives a Read Request message.  Errors processing
      * the Read Request are handled entirely within this function.
      */
-    CHIP_ERROR OnReadRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
-                             const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
+    CHIP_ERROR OnReadOrSubscribeRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                                        const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload,
+                                        bool aSubscription);
 
     /**
      * Called when Interaction Model receives a Write Request message.  Errors processing
@@ -170,6 +172,8 @@ private:
     CHIP_ERROR OnWriteRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
                               const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
 
+    CHIP_ERROR OnReportData(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                            const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
     /**
      *  Retrieve a ReadClient that the SDK consumer can use to send do a read.  If the call succeeds, the consumer
      *  is responsible for calling Shutdown() on the ReadClient once it's done using it.
@@ -192,6 +196,9 @@ private:
     ReadHandler mReadHandlers[CHIP_IM_MAX_NUM_READ_HANDLER];
     WriteClient mWriteClients[CHIP_IM_MAX_NUM_WRITE_CLIENT];
     WriteHandler mWriteHandlers[CHIP_IM_MAX_NUM_WRITE_HANDLER];
+
+    // BitMapObjectPool<InvokeResponder, CHIP_IM_MAX_NUM_READ_HANDLER> mInvokeResponders;
+
     reporting::Engine mReportingEngine;
     ClusterInfo mClusterInfoPool[CHIP_IM_SERVER_MAX_NUM_PATH_GROUPS];
     ClusterInfo * mpNextAvailableClusterInfo = nullptr;

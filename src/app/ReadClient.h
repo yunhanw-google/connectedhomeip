@@ -82,6 +82,19 @@ public:
 
     uint64_t GetAppIdentifier() const { return mAppIdentifier; }
     Messaging::ExchangeContext * GetExchangeContext() const { return mpExchangeCtx; }
+    bool IsSubscription() const { return mSubscription; };
+    CHIP_ERROR SendStatusReport(CHIP_ERROR aError, bool aExpectResponse);
+
+    /**
+     *  Send a Subscribe Request.  There can be one Subscribe Request outstanding on a given SubscribeInitiator.
+     *  If SendSubscribeRequest returns success, no more Subscribe Requests can be sent on this SubscribeInitiator
+     *  until the corresponding InteractionModelDelegate::ReportProcessed or InteractionModelDelegate::ReportError
+     *  call happens with guarantee.
+     *
+     *  @retval #others fail to send read request
+     *  @retval #CHIP_NO_ERROR On success.
+     */
+    CHIP_ERROR SendSubscribeRequest(SubscribePrepareParams && aSubscribePrepareParams);
 
 private:
     friend class TestReadInteraction;
@@ -91,8 +104,12 @@ private:
     {
         Uninitialized = 0, ///< The client has not been initialized
         Initialized,       ///< The client has been initialized and is ready for a SendReadRequest
-        AwaitingResponse,  ///< The client has sent out the read request message
+        AwaitingReport,  ///< The client has sent out the read request message
+        AwaitingSubscribeResponse,
+        SubscriptionIdle,
     };
+
+    bool IsValidSubscription(uint64_t & aSubscriptionId) { return aSubscriptionId == mSubscriptionId; }
 
     /**
      *  Initialize the client object. Within the lifetime
@@ -119,12 +136,15 @@ private:
      *  Check if current read client is being used
      *
      */
-    bool IsFree() const { return mState == ClientState::Uninitialized; };
+    bool IsFree() const { return mState == ClientState::Uninitialized; }
+    bool IsSubscriptionIdle() const { return mState == ClientState::SubscriptionIdle; }
+    bool IsAwaitingReport() const { return mState == ClientState::AwaitingReport; }
+    bool IsAwaitingSubscribeResponse() const { return mState == ClientState::AwaitingSubscribeResponse; }
 
-    CHIP_ERROR GenerateEventPathList(ReadRequest::Builder & aRequest, EventPathParams * apEventPathParamsList,
-                                     size_t aEventPathParamsListSize, EventNumber & aEventNumber);
-    CHIP_ERROR GenerateAttributePathList(ReadRequest::Builder & aRequest, AttributePathParams * apAttributePathParamsList,
-                                         size_t aAttributePathParamsListSize);
+    CHIP_ERROR GenerateEventPathList(EventPathList::Builder & aEventPathListBuilder, EventPathParams * apEventPathParamsList,
+                                     size_t aEventPathParamsListSize);
+    CHIP_ERROR GenerateAttributePathList(AttributePathList::Builder & aAttributeathListBuilder,
+                                         AttributePathParams * apAttributePathParamsList, size_t aAttributePathParamsListSize);
     CHIP_ERROR ProcessAttributeDataList(TLV::TLVReader & aAttributeDataListReader);
 
     void MoveToState(const ClientState aTargetState);
@@ -138,11 +158,28 @@ private:
      */
     void ShutdownInternal();
 
+    void SetExchangeContext(Messaging::ExchangeContext * apExchangeContext) { mpExchangeCtx = apExchangeContext; }
+    void ClearExchangeContext() { mpExchangeCtx = nullptr; }
+    void ClearInitialReport() { mInitialReport = false; }
+    bool IsInitialReport() { return mInitialReport; }
+
     Messaging::ExchangeManager * mpExchangeMgr = nullptr;
     Messaging::ExchangeContext * mpExchangeCtx = nullptr;
     InteractionModelDelegate * mpDelegate      = nullptr;
     ClientState mState                         = ClientState::Uninitialized;
     uint64_t mAppIdentifier                    = 0;
+    bool mSubscription                         = false;
+    void CancelLivenessCheckTimer();
+    static void OnLivenessTimeoutCallback(System::Layer * apSystemLayer, void * apAppState);
+    CHIP_ERROR SendSubscribeRequestInternal();
+
+    CHIP_ERROR ProcessSubscribeResponse(System::PacketBufferHandle && aPayload);
+
+    CHIP_ERROR RefreshLivenessCheckTimer();
+    uint16_t mFinalSyncIntervalSeconds = 0;
+    uint64_t mSubscriptionId           = 0;
+    bool mInitialReport = true;
+    SubscribePrepareParams mSubscribePrepareParams;
 };
 
 }; // namespace app
