@@ -96,8 +96,6 @@ static_library("app") {
     "ReadHandler.cpp",
     "WriteClient.cpp",
     "WriteHandler.cpp",
-    "SubscribeInitiator.cpp",
-    "SubscribeResponder.cpp",
     "decoder.cpp",
     "encoder-common.cpp",
     "reporting/Engine.cpp",

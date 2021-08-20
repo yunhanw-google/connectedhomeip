@@ -34,7 +34,6 @@
 
 namespace chip {
 namespace app {
-class SubscribeInitiator;
 class ReadClient;
 class WriteClient;
 class CommandSender;
@@ -196,7 +195,7 @@ public:
     /**
      * Notification that a Subscribe Response has been processed and application can do further work .
      */
-    virtual CHIP_ERROR SubscribeResponseProcessed(const SubscribeInitiator * apSubscribeInitiator) { return CHIP_ERROR_NOT_IMPLEMENTED; }
+    virtual CHIP_ERROR SubscribeResponseProcessed(const ReadClient * apReadClient) { return CHIP_ERROR_NOT_IMPLEMENTED; }
 
     /**
      * Notification that a subscribe attempt encountered an asynchronous failure.
@@ -206,7 +205,7 @@ public:
      *                            fail to process subscribe response.
      * @retval # CHIP_ERROR_NOT_IMPLEMENTED if not implemented
      */
-    virtual CHIP_ERROR SubscribeError(const SubscribeInitiator * apSubscribeInitiator, CHIP_ERROR aError) { return CHIP_ERROR_NOT_IMPLEMENTED; }
+    virtual CHIP_ERROR SubscribeError(const ReadClient * apReadClient, CHIP_ERROR aError) { return CHIP_ERROR_NOT_IMPLEMENTED; }
 
     /**
      * Application can provide the customized GetSubscribeFinalSyncInterval to set final sync interval, at default, we use minIntervalSeconds

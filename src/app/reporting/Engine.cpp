@@ -359,11 +359,9 @@ void Engine::Run()
     ScopedLock lock(*this);
 #endif // !CHIP_SYSTEM_CONFIG_NO_LOCKING
     uint32_t numReadHandled = 0;
-    uint32_t numSubscribeHandled = 0;
 
     InteractionModelEngine * imEngine = InteractionModelEngine::GetInstance();
     ReadHandler * readHandler         = imEngine->mReadHandlers + mCurReadHandlerIdx;
-    SubscribeResponder * subscribeResponder         = imEngine->mSubscribeResponders + mCurSubscribeResponderIdx;
 
     while ((mNumReportsInFlight < CHIP_IM_MAX_REPORTS_IN_FLIGHT) && (numReadHandled < CHIP_IM_MAX_NUM_READ_HANDLER))
     {
@@ -375,18 +373,6 @@ void Engine::Run()
         numReadHandled++;
         mCurReadHandlerIdx = (mCurReadHandlerIdx + 1) % CHIP_IM_MAX_NUM_READ_HANDLER;
         readHandler        = imEngine->mReadHandlers + mCurReadHandlerIdx;
-    }
-
-    while ((mNumReportsInFlight < CHIP_IM_MAX_REPORTS_IN_FLIGHT) && (numSubscribeHandled < CHIP_IM_MAX_NUM_SUBSCRIBE_RESPONDER))
-    {
-        if (subscribeResponder->IsReportable())
-        {
-            CHIP_ERROR err = BuildAndSendSingleReportData(subscribeResponder);
-            SuccessOrExit(err);
-        }
-        numSubscribeHandled++;
-        mCurSubscribeResponderIdx = (mCurSubscribeResponderIdx + 1) % CHIP_IM_MAX_NUM_SUBSCRIBE_RESPONDER;
-        subscribeResponder        = imEngine->mSubscribeResponders + mCurSubscribeResponderIdx;
     }
 
     for (auto &dirtyPath : mDirtyPathList)
@@ -403,13 +389,13 @@ void Engine::SetDirty(ClusterInfo & aClusterInfo) {
     ScopedLock lock(*this);
 #endif // !CHIP_SYSTEM_CONFIG_NO_LOCKING
 
-    for (int i = 0; i < CHIP_IM_MAX_NUM_SUBSCRIBE_RESPONDER; ++i)
+    for (int i = 0; i < CHIP_IM_MAX_NUM_READ_HANDLER; ++i)
     {
-        SubscribeResponder *subscribeResponder = &imEngine->mSubscribeResponders[i];
+        ReadHandler *readHandler = &imEngine->mReadHandlers[i];
 
-        if (subscribeResponder->IsReportable())
+        if (readHandler->IsSubscription() && readHandler->IsReportable())
         {
-            ClusterInfo *clusterInstance = subscribeResponder->GetAttributeClusterInfolist();
+            ClusterInfo *clusterInstance = readHandler->GetAttributeClusterInfolist();
 
             while (clusterInstance != nullptr)
             {

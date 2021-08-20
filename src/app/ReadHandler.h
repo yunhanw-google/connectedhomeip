@@ -63,14 +63,14 @@ public:
      *  @retval #CHIP_NO_ERROR On success.
      *
      */
-    CHIP_ERROR Init(InteractionModelDelegate * apDelegate, Messaging::ExchangeContext * apExchangeContext);
+    CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate, Messaging::ExchangeContext * apExchangeContext, bool aSubscription);
 
     /**
      *  Shut down the ReadHandler. This terminates this instance
      *  of the object and releases all held resources.
      *
      */
-    virtual void Shutdown();
+    void Shutdown();
     /**
      *  Process a read request.  Parts of the processing may end up being asynchronous, but the ReadHandler
      *  guarantees that it will call Shutdown on itself when processing is done (including if OnReadRequest
@@ -95,7 +95,7 @@ public:
      *  @retval #CHIP_NO_ERROR On success.
      *
      */
-    virtual CHIP_ERROR SendReportData(System::PacketBufferHandle && aPayload);
+    CHIP_ERROR SendReportData(System::PacketBufferHandle && aPayload);
 
     bool IsFree() const { return mState == HandlerState::Uninitialized; }
     bool IsReportable() const { return mState == HandlerState::Reportable; }
@@ -116,12 +116,17 @@ public:
     // is larger than current self vended event number
     void MoveToNextScheduledDirtyPriority();
 
-    virtual bool IsSubscription() { return false; }
-    virtual CHIP_ERROR GetSubscriptionId(uint64_t & aSubscriptionId) { return CHIP_ERROR_INCORRECT_STATE;}
+    bool IsSubscription() { return mSubscription; }
     bool IsInitialReport() { return mInitialReport; }
     void ClearInitialReport() {  mInitialReport = false; }
+    CHIP_ERROR OnSubscribeRequest(Messaging::ExchangeContext * apExchangeContext, System::PacketBufferHandle && aPayload);
+    CHIP_ERROR GetSubscriptionId(uint64_t & aSubscriptionId)
+    {
+        aSubscriptionId = mSubscriptionId;
+        return CHIP_NO_ERROR;
+    }
 
-protected:
+private:
     enum class HandlerState
     {
         Uninitialized = 0, ///< The handler has not been initialized
@@ -140,10 +145,10 @@ protected:
     CHIP_ERROR ProcessAttributePathList(AttributePathList::Parser & aAttributePathListParser);
     CHIP_ERROR ProcessEventPathList(EventPathList::Parser & aEventPathListParser);
 
-private:
+
     CHIP_ERROR OnMessageReceived(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
-                                 const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
-    void OnResponseTimeout(Messaging::ExchangeContext * apExchangeContext);
+                                 const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload) override;
+    void OnResponseTimeout(Messaging::ExchangeContext * apExchangeContext) override;
 
     CHIP_ERROR OnStatusReport(Messaging::ExchangeContext * apExchangeContext, System::PacketBufferHandle && aPayload);
     CHIP_ERROR ProcessReadRequest(System::PacketBufferHandle && aPayload);
@@ -168,6 +173,16 @@ private:
     EventNumber mLastScheduledEventNumber[kNumPriorityLevel];
 
     bool mInitialReport = false;
+    bool mSubscription = false;
+
+    CHIP_ERROR SendSubscribeResponse();
+    CHIP_ERROR ProcessSubscribeRequest(System::PacketBufferHandle && aPayload);
+    static void OnSubscribeTimerCallback(System::Layer * apSystemLayer, void * apAppState);
+    CHIP_ERROR RefreshSubscribeSyncTimer(void);
+    Messaging::ExchangeManager * mpExchangeMgr = nullptr;
+    uint64_t mSubscriptionId = 0;
+    uint16_t mFinalSyncIntervalSeconds = 0;
+    SecureSessionHandle mSecureSession;
 };
 } // namespace app
 } // namespace chip

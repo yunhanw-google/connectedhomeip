@@ -79,10 +79,23 @@ public:
 
     uint64_t GetAppIdentifier() const { return mAppIdentifier; }
     Messaging::ExchangeContext * GetExchangeContext() const { return mpExchangeCtx; }
-    virtual bool IsSubscription() const { return false; };
-    virtual CHIP_ERROR SendStatusReport(CHIP_ERROR aError, bool aExpectResponse);
+    bool IsSubscription() const { return mSubscription; };
+    CHIP_ERROR SendStatusReport(CHIP_ERROR aError, bool aExpectResponse);
 
-protected:
+    /**
+     *  Send a Subscribe Request.  There can be one Subscribe Request outstanding on a given SubscribeInitiator.
+     *  If SendSubscribeRequest returns success, no more Subscribe Requests can be sent on this SubscribeInitiator
+     *  until the corresponding InteractionModelDelegate::ReportProcessed or InteractionModelDelegate::ReportError
+     *  call happens with guarantee.
+     *
+     *  @retval #others fail to send read request
+     *  @retval #CHIP_NO_ERROR On success.
+     */
+    CHIP_ERROR SendSubscribeRequest(SubscribePrepareParams & aSubscribePrepareParams);
+
+    void ResetResubscribe();
+
+private:
     friend class TestReadInteraction;
     friend class InteractionModelEngine;
 
@@ -94,6 +107,10 @@ protected:
         Subscribing,
         SubscriptionIdle,
     };
+
+    bool IsValidSubscription(uint64_t & aSubscriptionId) {
+        return aSubscriptionId == mSubscriptionId;
+    }
 
     /**
      *  Initialize the client object. Within the lifetime
@@ -108,7 +125,7 @@ protected:
      *  @retval #CHIP_NO_ERROR On success.
      *
      */
-    virtual CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate, uint64_t aAppIdentifier);
+    CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate, uint64_t aAppIdentifier);
 
     virtual ~ReadClient() = default;
 
@@ -135,10 +152,6 @@ protected:
     CHIP_ERROR AbortExistingExchangeContext();
     const char * GetStateStr() const;
 
-    virtual bool IsValidSubscription(uint64_t & aSubscriptionId) {
-        return false;
-    }
-
     /**
      * Internal shutdown method that we use when we know what's going on with
      * our exchange and don't need to manually close it.
@@ -152,6 +165,25 @@ protected:
     InteractionModelDelegate * mpDelegate      = nullptr;
     ClientState mState                         = ClientState::Uninitialized;
     uint64_t mAppIdentifier                    = 0;
+    bool mSubscription = false;
+
+
+    CHIP_ERROR SendSubscribeRequestInternal();
+
+    CHIP_ERROR ProcessSubscribeResponse(System::PacketBufferHandle && aPayload);
+
+    CHIP_ERROR RefreshLivenessCheckTimer();
+    void CancelLivenessCheckTimer();
+    static void OnRetryCallback(System::Layer * apSystemLayer, void * apAppState);
+    static void OnReSubscribeTimerCallback(System::Layer * apSystemLayer, void * apAppState);
+
+    void CancelResubscribe();
+
+    bool mEnableResubscribe = false;
+    uint32_t mRetryCounter = 0;
+    uint16_t mFinalSyncIntervalSeconds = 0;
+    uint64_t mSubscriptionId = 0;
+    SubscribePrepareParams mSubscribePrepareParams;
 };
 
 }; // namespace app

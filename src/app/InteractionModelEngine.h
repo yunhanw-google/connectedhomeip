@@ -46,8 +46,6 @@
 #include <app/ReadHandler.h>
 #include <app/WriteClient.h>
 #include <app/WriteHandler.h>
-#include <app/SubscribeInitiator.h>
-#include <app/SubscribeResponder.h>
 #include <app/reporting/Engine.h>
 #include <app/util/basic-types.h>
 
@@ -165,8 +163,8 @@ private:
      * Called when Interaction Model receives a Read Request message.  Errors processing
      * the Read Request are handled entirely within this function.
      */
-    CHIP_ERROR OnReadRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
-                             const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
+    CHIP_ERROR OnReadOrSubscribeRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                             const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload, bool aSubscription);
 
     /**
      * Called when Interaction Model receives a Write Request message.  Errors processing
@@ -175,8 +173,6 @@ private:
     CHIP_ERROR OnWriteRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
                               const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
 
-    CHIP_ERROR OnSubscribeRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
-                                                          const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
     CHIP_ERROR OnReportData(Messaging::ExchangeContext * apExchangeContext,
                                                     const PacketHeader & aPacketHeader, const PayloadHeader & aPayloadHeader,
                                                     System::PacketBufferHandle && aPayload);
@@ -191,8 +187,6 @@ private:
      */
     CHIP_ERROR NewReadClient(ReadClient ** const apReadClient, uint64_t aAppIdentifier);
 
-    CHIP_ERROR NewSubscribeInitiator(SubscribeInitiator ** const apSubscribeInitiator, uint64_t aAppIdentifier);
-
     Messaging::ExchangeManager * mpExchangeMgr = nullptr;
     InteractionModelDelegate * mpDelegate      = nullptr;
 
@@ -204,10 +198,8 @@ private:
     ReadHandler mReadHandlers[CHIP_IM_MAX_NUM_READ_HANDLER];
     WriteClient mWriteClients[CHIP_IM_MAX_NUM_WRITE_CLIENT];
     WriteHandler mWriteHandlers[CHIP_IM_MAX_NUM_WRITE_HANDLER];
-    SubscribeInitiator mSubscribeInitiators[CHIP_IM_MAX_NUM_SUBSCRIBE_INITIATOR];
-    SubscribeResponder mSubscribeResponders[CHIP_IM_MAX_NUM_SUBSCRIBE_RESPONDER];
 
-    //BitMapObjectPool<InvokeResponder, CHIP_IM_MAX_NUM_SUBSCRIBE_RESPONDER> mInvokeResponders;
+    //BitMapObjectPool<InvokeResponder, CHIP_IM_MAX_NUM_READ_HANDLER> mInvokeResponders;
 
     reporting::Engine mReportingEngine;
     ClusterInfo mClusterInfoPool[CHIP_IM_SERVER_MAX_NUM_PATH_GROUPS];
