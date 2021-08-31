@@ -77,6 +77,19 @@ public:
      */
     CHIP_ERROR ScheduleRun();
 
+    void SetDirty(ClusterInfo & aClusterInfo);
+
+#if !CHIP_SYSTEM_CONFIG_NO_LOCKING
+        class ScopedLock
+        {
+        public:
+            ScopedLock(Engine & aEngine) : mEngine(aEngine) { mEngine.mAccessLock.Lock(); }
+            ~ScopedLock() { mEngine.mAccessLock.Unlock(); }
+
+        private:
+            Engine & mEngine;
+        };
+#endif // !CHIP_SYSTEM_CONFIG_NO_LOCKING
 private:
     friend class TestReportingEngine;
     /**
@@ -119,6 +132,12 @@ private:
      *
      */
     uint32_t mCurReadHandlerIdx = 0;
+
+    ClusterInfo mDirtyPathList[CHIP_IM_MAX_NUM_SERVER_DIRTY_PATHS];
+
+#if !CHIP_SYSTEM_CONFIG_NO_LOCKING
+    System::Mutex mAccessLock;
+#endif // !CHIP_SYSTEM_CONFIG_NO_LOCKING
 };
 
 }; // namespace reporting

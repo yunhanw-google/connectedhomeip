@@ -40,6 +40,7 @@ static constexpr uint32_t kImMessageTimeoutMsec = 12000;
 class ReadClient;
 class WriteClient;
 class CommandSender;
+class ReadHandler;
 
 /**
  * @brief
@@ -194,6 +195,16 @@ public:
     {
         return CHIP_ERROR_NOT_IMPLEMENTED;
     }
+
+    /**
+     * Notification that a Subscribe Response has been processed and application can do further work .
+     */
+    virtual CHIP_ERROR SubscribeResponseProcessed(const ReadClient * apReadClient) { return CHIP_ERROR_NOT_IMPLEMENTED; }
+
+    /**
+     * SubscriptionEstablished
+     */
+    virtual CHIP_ERROR SubscriptionEstablished(const ReadHandler * apReadHandler) { return CHIP_NO_ERROR; }
 
     /**
      * Notification that a read client has completed the read interaction.

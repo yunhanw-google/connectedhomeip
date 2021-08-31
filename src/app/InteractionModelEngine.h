@@ -111,7 +111,7 @@ public:
      *  @retval #CHIP_NO_ERROR On success.
      */
     CHIP_ERROR SendReadRequest(ReadPrepareParams & aReadPrepareParams, uint64_t aAppIdentifier = 0);
-
+    CHIP_ERROR SendSubscribeRequest(ReadPrepareParams & aReadPrepareParams, uint64_t aAppIdentifier = 0);
     /**
      *  Retrieve a WriteClient that the SDK consumer can use to send a write.  If the call succeeds,
      *  see WriteClient documentation for lifetime handling.
@@ -158,8 +158,9 @@ private:
      * Called when Interaction Model receives a Read Request message.  Errors processing
      * the Read Request are handled entirely within this function.
      */
-    CHIP_ERROR OnReadRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
-                             const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
+    CHIP_ERROR OnReadInitialRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                                        const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload,
+                                        ReadHandler::RoleId aRoleId);
 
     /**
      * Called when Interaction Model receives a Write Request message.  Errors processing
@@ -168,16 +169,16 @@ private:
     CHIP_ERROR OnWriteRequest(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
                               const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
 
+    CHIP_ERROR OnReportData(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
+                            const PayloadHeader & aPayloadHeader, System::PacketBufferHandle && aPayload);
     /**
      *  Retrieve a ReadClient that the SDK consumer can use to send do a read.  If the call succeeds, the consumer
      *  is responsible for calling Shutdown() on the ReadClient once it's done using it.
      *
-     *  @param[out]    apReadClient    A pointer to the ReadClient object.
-     *
      *  @retval #CHIP_ERROR_INCORRECT_STATE If there is no ReadClient available
      *  @retval #CHIP_NO_ERROR On success.
      */
-    CHIP_ERROR NewReadClient(ReadClient ** const apReadClient, uint64_t aAppIdentifier);
+    CHIP_ERROR NewReadClient(ReadClient ** const apReadClient, ReadClient::RoleId aRoleId, uint64_t aAppIdentifier);
 
     Messaging::ExchangeManager * mpExchangeMgr = nullptr;
     InteractionModelDelegate * mpDelegate      = nullptr;

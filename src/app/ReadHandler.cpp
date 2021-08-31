@@ -25,6 +25,8 @@
 #include <app/AppBuildConfig.h>
 #include <app/InteractionModelEngine.h>
 #include <app/MessageDef/EventPath.h>
+#include <app/MessageDef/SubscribeRequest.h>
+#include <app/MessageDef/SubscribeResponse.h>
 #include <app/ReadHandler.h>
 #include <app/reporting/Engine.h>
 #include <protocols/secure_channel/StatusReport.h>
@@ -32,7 +34,7 @@
 namespace chip {
 namespace app {
 CHIP_ERROR ReadHandler::Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate,
-                             Messaging::ExchangeContext * apExchangeContext)
+                             Messaging::ExchangeContext * apExchangeContext, RoleId aRoleId)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
     // Error if already initialized.
@@ -46,6 +48,8 @@ CHIP_ERROR ReadHandler::Init(Messaging::ExchangeManager * apExchangeMgr, Interac
     mInitialReport             = true;
     MoveToState(HandlerState::Initialized);
     mpDelegate = apDelegate;
+    mSubscriptionId = 0;
+    mRoleId              = aRoleId;
     if (apExchangeContext != nullptr)
     {
         apExchangeContext->SetDelegate(this);
@@ -56,6 +60,15 @@ CHIP_ERROR ReadHandler::Init(Messaging::ExchangeManager * apExchangeMgr, Interac
 
 void ReadHandler::Shutdown(ShutdownOptions aOptions)
 {
+    if (IsSubscription())
+    {
+        mSubscriptionId           = 0;
+        mMinIntervalSeconds         = 0;
+        mMaxIntervalSeconds         = 0;
+        InteractionModelEngine::GetInstance()->GetExchangeManager()->GetSessionMgr()->SystemLayer()->CancelTimer(
+                OnRefreshSubscribeTimerSyncCallback, this);
+        mRoleId = RoleId::Invalid;
+    }
     if (aOptions == ShutdownOptions::AbortCurrentExchange)
     {
         if (mpExchangeCtx != nullptr)
@@ -69,6 +82,7 @@ void ReadHandler::Shutdown(ShutdownOptions aOptions)
     {
         InteractionModelEngine::GetInstance()->GetReportingEngine().OnReportConfirm();
     }
+
     InteractionModelEngine::GetInstance()->ReleaseClusterInfoList(mpAttributeClusterInfoList);
     InteractionModelEngine::GetInstance()->ReleaseClusterInfoList(mpEventClusterInfoList);
     mpExchangeCtx = nullptr;
@@ -80,12 +94,19 @@ void ReadHandler::Shutdown(ShutdownOptions aOptions)
     mpDelegate                 = nullptr;
 }
 
-CHIP_ERROR ReadHandler::OnReadRequest(System::PacketBufferHandle && aPayload)
+CHIP_ERROR ReadHandler::OnInitialRequest(System::PacketBufferHandle && aPayload)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
     System::PacketBufferHandle response;
+    if (IsSubscription())
+    {
+        err = ProcessSubscribeRequest(std::move(aPayload));
+    }
+    else
+    {
+        err = ProcessReadRequest(std::move(aPayload));
+    }
 
-    err = ProcessReadRequest(std::move(aPayload));
     if (err != CHIP_NO_ERROR)
     {
         ChipLogFunctError(err);
@@ -106,20 +127,79 @@ CHIP_ERROR ReadHandler::OnStatusReport(Messaging::ExchangeContext * apExchangeCo
     VerifyOrExit((statusReport.GetProtocolId() == Protocols::InteractionModel::Id.ToFullyQualifiedSpecForm()) &&
                      (statusReport.GetProtocolCode() == to_underlying(Protocols::InteractionModel::ProtocolCode::Success)),
                  err = CHIP_ERROR_INVALID_ARGUMENT);
-    VerifyOrExit(IsReporting(), err = CHIP_ERROR_INCORRECT_STATE);
-
+    switch (mState)
+    {
+        case HandlerState::SubscribingResponding:
+            ClearInitialReport();
+            RefreshSubscribeSyncTimer();
+            MoveToState(HandlerState::Reportable);
+            if (mpDelegate != nullptr)
+            {
+                mpDelegate->SubscriptionEstablished(this);
+            }
+            break;
+        case HandlerState::Reportable:
+            break;
+        case HandlerState::Reporting:
+            if (IsSubscription())
+            {
+                InteractionModelEngine::GetInstance()->GetReportingEngine().OnReportConfirm();
+                if (IsInitialReport())
+                {
+                    err = SendSubscribeResponse();
+                    SuccessOrExit(err);
+                }
+                else
+                {
+                    MoveToState(HandlerState::Reportable);
+                }
+            }
+            else
+            {
+                Shutdown();
+            }
+            break;
+        case HandlerState::Initialized:
+        case HandlerState::Uninitialized:
+        default:
+            err = CHIP_ERROR_INCORRECT_STATE;
+            break;
+    }
 exit:
-    Shutdown();
+    if (err != CHIP_NO_ERROR)
+    {
+        Shutdown();
+    }
     return err;
 }
 
 CHIP_ERROR ReadHandler::SendReportData(System::PacketBufferHandle && aPayload)
 {
+    CHIP_ERROR err = CHIP_NO_ERROR;
     VerifyOrReturnLogError(IsReportable(), CHIP_ERROR_INCORRECT_STATE);
+    if (IsInitialReport())
+    {
+        VerifyOrReturnLogError(mpExchangeCtx != nullptr, CHIP_ERROR_INCORRECT_STATE);
+        mSecureHandle = mpExchangeCtx->GetSecureSession();
+    }
+    else
+    {
+        mpExchangeCtx = mpExchangeMgr->NewContext(mSecureHandle, this);
+        mpExchangeCtx->SetResponseTimeout(kImMessageTimeoutMsec);
+    }
     VerifyOrReturnLogError(mpExchangeCtx != nullptr, CHIP_ERROR_INCORRECT_STATE);
     MoveToState(HandlerState::Reporting);
-    return mpExchangeCtx->SendMessage(Protocols::InteractionModel::MsgType::ReportData, std::move(aPayload),
-                                      Messaging::SendFlags(Messaging::SendMessageFlags::kExpectResponse));
+    err = mpExchangeCtx->SendMessage(Protocols::InteractionModel::MsgType::ReportData, std::move(aPayload),
+            Messaging::SendFlags(Messaging::SendMessageFlags::kExpectResponse));
+    if (err == CHIP_NO_ERROR)
+    {
+        if (IsSubscription() && !IsInitialReport())
+        {
+            RefreshSubscribeSyncTimer();
+        }
+    }
+    ChipLogFunctError(err);
+    return err;
 }
 
 CHIP_ERROR ReadHandler::OnMessageReceived(Messaging::ExchangeContext * apExchangeContext, const PacketHeader & aPacketHeader,
@@ -150,10 +230,6 @@ void ReadHandler::OnResponseTimeout(Messaging::ExchangeContext * apExchangeConte
 {
     ChipLogProgress(DataManagement, "Time out! failed to receive status response from Exchange: %d",
                     apExchangeContext->GetExchangeId());
-    if (IsReporting())
-    {
-        InteractionModelEngine::GetInstance()->GetReportingEngine().OnReportConfirm();
-    }
     Shutdown();
 }
 
@@ -375,6 +451,9 @@ const char * ReadHandler::GetStateStr() const
 
     case HandlerState::Reporting:
         return "Reporting";
+
+    case HandlerState::SubscribingResponding:
+        return "SubscribingResponding";
     }
 #endif // CHIP_DETAIL_LOGGING
     return "N/A";
@@ -427,6 +506,101 @@ void ReadHandler::MoveToNextScheduledDirtyPriority()
     }
 
     mCurrentPriority = PriorityLevel::Invalid;
+}
+
+CHIP_ERROR ReadHandler::SendSubscribeResponse()
+{
+    SubscribeResponse::Builder response;
+    System::PacketBufferTLVWriter writer;
+    System::PacketBufferHandle packet = System::PacketBufferHandle::New(chip::app::kMaxSecureSduLengthBytes);
+    VerifyOrReturnLogError(!packet.IsNull(), CHIP_ERROR_NO_MEMORY);
+
+    writer.Init(std::move(packet));
+    ReturnLogErrorOnFailure(response.Init(&writer));
+    response.SubscriptionId(mSubscriptionId).FinalSyncIntervalSeconds(mMaxIntervalSeconds).EndOfSubscribeResponse();
+    ReturnLogErrorOnFailure(response.GetError());
+
+    ReturnLogErrorOnFailure(writer.Finalize(&packet));
+    VerifyOrReturnLogError(mpExchangeCtx != nullptr, CHIP_ERROR_INCORRECT_STATE);
+
+    MoveToState(HandlerState::SubscribingResponding);
+    ReturnLogErrorOnFailure(mpExchangeCtx->SendMessage(Protocols::InteractionModel::MsgType::SubscribeResponse, std::move(packet),
+                                                       Messaging::SendFlags(Messaging::SendMessageFlags::kExpectResponse)));
+
+    return CHIP_NO_ERROR;
+}
+
+CHIP_ERROR ReadHandler::ProcessSubscribeRequest(System::PacketBufferHandle && aPayload)
+{
+    CHIP_ERROR err = CHIP_NO_ERROR;
+    System::PacketBufferTLVReader reader;
+    SubscribeRequest::Parser subscribeRequestParser;
+    EventPathList::Parser eventPathListParser;
+    AttributePathList::Parser attributePathListParser;
+
+    reader.Init(std::move(aPayload));
+
+    ReturnLogErrorOnFailure(reader.Next());
+    ReturnLogErrorOnFailure(subscribeRequestParser.Init(reader));
+#if CHIP_CONFIG_IM_ENABLE_SCHEMA_CHECK
+    ReturnLogErrorOnFailure(subscribeRequestParser.CheckSchemaValidity());
+#endif
+
+    err = subscribeRequestParser.GetAttributePathList(&attributePathListParser);
+    if (err == CHIP_END_OF_TLV)
+    {
+        err = CHIP_NO_ERROR;
+    }
+    else if (err == CHIP_NO_ERROR)
+    {
+        ReturnLogErrorOnFailure(ProcessAttributePathList(attributePathListParser));
+    }
+    ReturnLogErrorOnFailure(err);
+
+    err = subscribeRequestParser.GetEventPathList(&eventPathListParser);
+    if (err == CHIP_END_OF_TLV)
+    {
+        err = CHIP_NO_ERROR;
+    }
+    else if (err == CHIP_NO_ERROR)
+    {
+        ReturnLogErrorOnFailure(ProcessEventPathList(eventPathListParser));
+    }
+    ReturnLogErrorOnFailure(err);
+
+    ReturnLogErrorOnFailure(subscribeRequestParser.GetMinIntervalSeconds(&mMinIntervalSeconds));
+    ReturnLogErrorOnFailure(subscribeRequestParser.GetMaxIntervalSeconds(&mMaxIntervalSeconds));
+
+    // TODO: Use GetSecureRandomData to generate subscription id
+    // err = Platform::Security::GetSecureRandomData((uint8_t *) &mSubscriptionId, sizeof(mSubscriptionId));
+    // SuccessOrExit(err);
+    mSubscriptionId = (uint64_t) rand();
+
+    MoveToState(HandlerState::Reportable);
+
+    InteractionModelEngine::GetInstance()->GetReportingEngine().ScheduleRun();
+    // mpExchangeCtx can be null here due to
+    // https://github.com/project-chip/connectedhomeip/issues/8031
+    if (mpExchangeCtx)
+    {
+        mpExchangeCtx->WillSendMessage();
+    }
+    return CHIP_NO_ERROR;
+}
+
+void ReadHandler::OnRefreshSubscribeTimerSyncCallback(System::Layer * apSystemLayer, void * apAppState)
+{
+    InteractionModelEngine::GetInstance()->GetReportingEngine().ScheduleRun();
+}
+
+CHIP_ERROR ReadHandler::RefreshSubscribeSyncTimer(void)
+{
+    ChipLogProgress(DataManagement, "ReadHandler::RefreshSubscribeSyncTimer run with %d seconds", mMinIntervalSeconds);
+    InteractionModelEngine::GetInstance()->GetExchangeManager()->GetSessionMgr()->SystemLayer()->CancelTimer(
+        OnRefreshSubscribeTimerSyncCallback, this);
+
+    return InteractionModelEngine::GetInstance()->GetExchangeManager()->GetSessionMgr()->SystemLayer()->StartTimer(
+            mMinIntervalSeconds * 1000, OnRefreshSubscribeTimerSyncCallback, this);
 }
 } // namespace app
 } // namespace chip

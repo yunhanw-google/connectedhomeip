@@ -56,6 +56,13 @@ public:
         AbortCurrentExchange,
     };
 
+    enum class RoleId : uint8_t
+    {
+        Invalid = 0,
+        Read,
+        Subscribe,
+    };
+
     /**
      *  Initialize the ReadHandler. Within the lifetime
      *  of this instance, this method is invoked once after object
@@ -68,7 +75,7 @@ public:
      *
      */
     CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate,
-                    Messaging::ExchangeContext * apExchangeContext);
+                    Messaging::ExchangeContext * apExchangeContext, RoleId aRoleId);
 
     /**
      *  Shut down the ReadHandler. This terminates this instance
@@ -77,15 +84,15 @@ public:
      */
     void Shutdown(ShutdownOptions aOptions = ShutdownOptions::KeepCurrentExchange);
     /**
-     *  Process a read request.  Parts of the processing may end up being asynchronous, but the ReadHandler
-     *  guarantees that it will call Shutdown on itself when processing is done (including if OnReadRequest
+     *  Process a read/subscribe request.  Parts of the processing may end up being asynchronous, but the ReadHandler
+     *  guarantees that it will call Shutdown on itself when processing is done (including if OnInitialRequest
      *  returns an error).
      *
      *  @retval #Others If fails to process read request
      *  @retval #CHIP_NO_ERROR On success.
      *
      */
-    CHIP_ERROR OnReadRequest(System::PacketBufferHandle && aPayload);
+    CHIP_ERROR OnInitialRequest(System::PacketBufferHandle && aPayload);
 
     /**
      *  Send ReportData to initiator
@@ -117,8 +124,11 @@ public:
     // is larger than current self vended event number
     void MoveToNextScheduledDirtyPriority();
 
+    bool IsSubscription() { return mRoleId == RoleId::Subscribe; }
     bool IsInitialReport() { return mInitialReport; }
     void ClearInitialReport() { mInitialReport = false; }
+    CHIP_ERROR OnSubscribeRequest(Messaging::ExchangeContext * apExchangeContext, System::PacketBufferHandle && aPayload);
+    void GetSubscriptionId(uint64_t & aSubscriptionId){ aSubscriptionId = mSubscriptionId; }
 
 private:
     enum class HandlerState
@@ -127,8 +137,13 @@ private:
         Initialized,       ///< The handler has been initialized and is ready
         Reportable,        ///< The handler has received read request and is waiting for the data to send to be available
         Reporting,         ///< The handler is reporting
+        SubscribingResponding, ///<The handler is wait for status report for subscribe response
     };
 
+    static void OnRefreshSubscribeTimerSyncCallback(System::Layer * apSystemLayer, void * apAppState);
+    CHIP_ERROR RefreshSubscribeSyncTimer(void);
+    CHIP_ERROR SendSubscribeResponse();
+    CHIP_ERROR ProcessSubscribeRequest(System::PacketBufferHandle && aPayload);
     CHIP_ERROR ProcessReadRequest(System::PacketBufferHandle && aPayload);
     CHIP_ERROR ProcessAttributePathList(AttributePathList::Parser & aAttributePathListParser);
     CHIP_ERROR ProcessEventPathList(EventPathList::Parser & aEventPathListParser);
@@ -164,6 +179,11 @@ private:
     Messaging::ExchangeManager * mpExchangeMgr = nullptr;
     InteractionModelDelegate * mpDelegate      = nullptr;
     bool mInitialReport                        = false;
+    RoleId mRoleId  = RoleId::Invalid;
+    uint64_t mSubscriptionId                   = 0;
+    uint16_t mMinIntervalSeconds         = 0;
+    uint16_t mMaxIntervalSeconds         = 0;
+    SessionHandle mSecureHandle;
 };
 } // namespace app
 } // namespace chip

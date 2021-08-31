@@ -52,6 +52,12 @@ namespace app {
 class ReadClient : public Messaging::ExchangeDelegate
 {
 public:
+    enum class RoleId : uint8_t
+    {
+        Invalid = 0,
+        Read,
+        Subscribe,
+    };
     /**
      *  Shut down the Client. This terminates this instance of the object and releases
      *  all held resources.  The object must not be used after Shutdown() is called.
@@ -78,8 +84,10 @@ public:
      */
     CHIP_ERROR SendReadRequest(ReadPrepareParams & aReadPrepareParams);
 
+    CHIP_ERROR SendSubscribeRequest(ReadPrepareParams & aSubscribePrepareParams);
     uint64_t GetAppIdentifier() const { return mAppIdentifier; }
     Messaging::ExchangeContext * GetExchangeContext() const { return mpExchangeCtx; }
+    bool IsSubscription() const { return mRoleId == RoleId::Subscribe; };
     CHIP_ERROR SendStatusReport(CHIP_ERROR aError, bool aExpectResponse);
 
 private:
@@ -91,8 +99,11 @@ private:
         Uninitialized = 0, ///< The client has not been initialized
         Initialized,       ///< The client has been initialized and is ready for a SendReadRequest
         AwaitingReport,    ///< The client is waiting for report
+        AwaitingSubscribeResponse, ///<The client is waiting for subscribe response
+        SubscriptionIdle, ///< The client is maintaining subscription
     };
 
+    bool IsValidSubscription(uint64_t & aSubscriptionId) { return aSubscriptionId == mSubscriptionId; }
     /**
      *  Initialize the client object. Within the lifetime
      *  of this instance, this method is invoked once after object
@@ -106,7 +117,7 @@ private:
      *  @retval #CHIP_NO_ERROR On success.
      *
      */
-    CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate, uint64_t aAppIdentifier);
+    CHIP_ERROR Init(Messaging::ExchangeManager * apExchangeMgr, InteractionModelDelegate * apDelegate, RoleId aRoleId, uint64_t aAppIdentifier);
 
     virtual ~ReadClient() = default;
 
@@ -119,7 +130,10 @@ private:
      *
      */
     bool IsFree() const { return mState == ClientState::Uninitialized; }
+    bool IsSubscriptionIdle() const { return mState == ClientState::SubscriptionIdle; }
     bool IsAwaitingReport() const { return mState == ClientState::AwaitingReport; }
+    bool IsAwaitingSubscribeResponse() const { return mState == ClientState::AwaitingSubscribeResponse; }
+
     CHIP_ERROR GenerateEventPathList(EventPathList::Builder & aEventPathListBuilder, EventPathParams * apEventPathParamsList,
                                      size_t aEventPathParamsListSize);
     CHIP_ERROR GenerateAttributePathList(AttributePathList::Builder & aAttributeathListBuilder,
@@ -128,7 +142,10 @@ private:
 
     void SetExchangeContext(Messaging::ExchangeContext * apExchangeContext) { mpExchangeCtx = apExchangeContext; }
     void ClearExchangeContext() { mpExchangeCtx = nullptr; }
-
+    static void OnLivenessTimeoutCallback(System::Layer * apSystemLayer, void * apAppState);
+    CHIP_ERROR ProcessSubscribeResponse(System::PacketBufferHandle && aPayload);
+    CHIP_ERROR RefreshLivenessCheckTimer();
+    void CancelLivenessCheckTimer();
     void MoveToState(const ClientState aTargetState);
     CHIP_ERROR ProcessReportData(System::PacketBufferHandle && aPayload);
     CHIP_ERROR AbortExistingExchangeContext();
@@ -147,6 +164,9 @@ private:
     ClientState mState                         = ClientState::Uninitialized;
     uint64_t mAppIdentifier                    = 0;
     bool mInitialReport                        = true;
+    uint16_t mFinalSyncIntervalSeconds = 0;
+    uint64_t mSubscriptionId           = 0;
+    RoleId mRoleId = RoleId::Invalid;
 };
 
 }; // namespace app
