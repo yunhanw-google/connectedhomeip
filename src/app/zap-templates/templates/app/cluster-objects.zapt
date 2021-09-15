@@ -1,0 +1,99 @@
+{{> header}}
+
+#include "cluster-objects.h"
+
+#pragma GCC diagnostic ignored "-Wstack-usage="
+
+namespace chip {
+namespace app {
+namespace clusters {
+{{#all_user_clusters}}
+{{#if (user_cluster_has_enabled_command name side)}}
+namespace {{asCamelCased name false}}Cluster {
+{{#zcl_structs}}
+namespace {{asType label}} {
+CHIP_ERROR Type::Encode(TLV::TLVWriter &writer, uint64_t tag) {
+    TLV::TLVType outer;
+    ReturnErrorOnFailure(writer.StartContainer(tag, TLV::kTLVType_Structure, outer));
+    {{#zcl_struct_items}}
+    ReturnErrorOnFailure(ClusterObjectUtils::Encode(writer, TLV::ContextTag(k{{asType label}}FieldId, {{asType label}})));
+    {{/zcl_struct_items}}
+    ReturnErrorOnFailure(writer.EndContainer(outer));
+    return CHIP_NO_ERROR;
+}
+
+CHIP_ERROR Type::Decode(TLV::TLVReader &reader) {
+    CHIP_ERROR err;
+    TLV::TLVType outer;
+    err = reader.EnterContainer(outer);
+    ReturnErrorOnFailure(err);
+    while ((err = reader.Next()) == CHIP_NO_ERROR) {
+        uint64_t tag = reader.GetTag();
+        switch (chip::TLV::TagNumFromTag(reader.GetTag()))
+        {
+            {{#zcl_struct_items}}
+            case k{{asType label}}FieldId:
+                {{#if (isEnum type) }}
+                uint8_t v;
+                ReturnErrorOnFailure(ClusterObjectUtils::Decode(reader, v));
+                //zap issue 231 to return right enum type
+                {{asType label}} = static_cast<{{asUnderlyingZclType type}}>(v);
+                break;
+                {{else if isArray}}
+                return CHIP_ERROR_NOT_IMPLEMENTED;
+                {{else}}
+                ReturnErrorOnFailure(ClusterObjectUtils::Decode(reader, {{asType label}}));
+                break;
+                {{/if}}
+            {{/zcl_struct_items}}
+            default:
+                ReturnLogErrorOnFailure(CHIP_ERROR_INVALID_TLV_TAG);
+        }
+    }
+    ReturnErrorOnFailure(reader.ExitContainer(outer));
+    return CHIP_NO_ERROR;
+}
+{{#if struct_contains_array}}
+CHIP_ERROR DecodableType::Encode(TLV::TLVWriter &writer, uint64_t tag) {
+    return CHIP_ERROR_BAD_REQUEST;
+}
+
+CHIP_ERROR DecodableType::Decode(TLV::TLVReader &reader) {
+    CHIP_ERROR err;
+    TLV::TLVType outer;
+    err = reader.EnterContainer(outer);
+    ReturnErrorOnFailure(err);
+
+    while ((err = reader.Next()) == CHIP_NO_ERROR) {
+        uint64_t tag = reader.GetTag();
+        switch (chip::TLV::TagNumFromTag(reader.GetTag()))
+        {
+            {{#zcl_struct_items}}
+            case k{{asType label}}FieldId:
+                {{#if (isEnum type) }}
+                uint8_t v;
+                ReturnErrorOnFailure(ClusterObjectUtils::Decode(reader, v));
+                {{asType label}} = static_cast<{{type}}>(v);
+                {{else}}
+                ReturnErrorOnFailure(ClusterObjectUtils::Decode(reader, {{asType label}}));
+                {{/if}}
+                break;
+            {{/zcl_struct_items}}
+            default:
+                ReturnLogErrorOnFailure(CHIP_ERROR_INVALID_TLV_TAG);
+        }
+    }
+    ReturnErrorOnFailure(reader.ExitContainer(outer));
+    return CHIP_NO_ERROR;
+}
+{{/if}}
+}
+{{/zcl_structs}}
+}
+
+{{/if}}
+{{/all_user_clusters}}
+
+} // namespace clusters
+} // namespace app
+} // namespace chip

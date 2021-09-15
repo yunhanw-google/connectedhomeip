@@ -16,11 +16,55 @@ limitations under the License.
 -->
 <configurator>
   <domain name="CHIP"/>
+    <struct name="TestListStructOctet">
+        <cluster code="0x050F"/>
+        <item name="fabricIndex" type="INT64U"/>
+        <item name="operationalCert" type="OCTET_STRING" length="32"/>
+    </struct>
 
-   <struct name="TestListStructOctet">
-     <item name="fabricIndex" type="INT64U"/>
-     <item name="operationalCert" type="OCTET_STRING" length="32"/>
-   </struct>
+    <enum name="SimpleEnum" type="ENUM8">
+        <cluster code="0x050F"/>
+        <item name="Unspecified" value="0x00"/>
+        <item name="ValueA" value="0x01"/>
+        <item name="ValueB" value="0x02"/>
+        <item name="ValueC" value="0x03"/>
+    </enum>
+
+    <struct name="SimpleStruct">
+        <cluster code="0x050F"/>
+        <item name="a" type="INT8U" optional="false"/>
+        <item name="b" type="BOOLEAN" optional="false"/>
+        <item name="c" define="SimpleEnum" type="ENUM8" optional="false"/>
+        <item name="d" type="OCTET_STRING" optional="false"/>
+        <item name="e" type="CHAR_STRING" optional="false"/>
+    </struct>
+
+    <struct name="NestedStruct">
+        <cluster code="0x050F"/>
+        <item name="a" type="INT8U" optional="false"/>
+        <item name="b" type="BOOLEAN" optional="false"/>
+        <!--
+        <item name="c" type="SimpleStruct" optional="false"/>
+        -->
+    </struct>
+
+    <struct name="NestedStructList">
+        <cluster code="0x050F"/>
+        <item name="a" type="INT8U" optional="false"/>
+        <item name="b" type="BOOLEAN" optional="false"/>
+        <!--
+       <item name="c" type="SimpleStruct" optional="false"/>
+        -->
+        <item name="d" type="SimpleStruct" array="true" optional="false"/>
+        <item name="e" type="INT32U" array="true" optional="false"/>
+        <item name="f" type="OCTET_STRING" array="true" optional="false"/>
+        <item name="g" type="INT8U" array="true" optional="false"/>
+    </struct>
+
+    <struct name="DoubleNestedStructList">
+        <cluster code="0x050F"/>
+        <item name="a" type="NestedStructList" array="true" optional="false"/>
+    </struct>
 
   <cluster>
     <domain>CHIP</domain>

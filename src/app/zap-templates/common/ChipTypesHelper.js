@@ -15,6 +15,12 @@
  *    limitations under the License.
  */
 
+const zapPath = '../../../../third_party/zap/repo/dist/src-electron/'
+const ListHelper = require('./ListHelper.js')
+const StringHelper = require('./StringHelper.js')
+const StructHelper = require('./StructHelper.js')
+const zclHelper = require(zapPath + 'generator/helper-zcl.js')
+
 function asBasicType(type) {
     switch (type) {
         case 'chip::ActionId':
@@ -43,7 +49,61 @@ function asBasicType(type) {
     }
 }
 
+function asNotSupportedBasicType(type) {
+    return asChipZapType(type) == 'Unsupported';
+}
+
+function asChipZapType(type) {
+    if (StringHelper.isOctetString(type)) {
+        return 'chip::ByteSpan'
+    }
+
+    if (StringHelper.isCharString(type)) {
+        return 'Span<const char>'
+    }
+
+    // Need to return actual enum type
+    if (isEnum(type)) {
+        return type
+    }
+
+    switch (type) {
+        case 'BOOLEAN':
+            return 'bool'
+        case 'INT8S':
+            return  'int8_t'
+        case 'INT16S':
+            return  'int16_t'
+        case 'INT24S':
+            return  'int24_t'
+        case 'INT32S':
+            return  'int32_t'
+        case 'INT64S':
+            return  'int64_t'
+        case 'INT8U':
+            return  'uint8_t'
+        case 'INT16U':
+            return  'uint16_t'
+        case 'INT24U':
+            return  'uint24_t'
+        case 'INT32U':
+            return  'uint32_t'
+        case 'INT64U':
+            return  'uint64_t'
+        default:
+            return 'Unsupported'
+    }
+}
+
+function isEnum(type)
+{
+    return type.toUpperCase() == 'ENUM8' || type.toUpperCase() == 'ENUM16'
+}
+
 //
 // Module exports
 //
 exports.asBasicType = asBasicType
+exports.asNotSupportedBasicType = asNotSupportedBasicType
+exports.asChipZapType = asChipZapType
+exports.isEnum = isEnum;

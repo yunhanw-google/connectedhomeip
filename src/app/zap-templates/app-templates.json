@@ -79,6 +79,16 @@
             "path": "templates/app/CHIPClusters-src.zapt",
             "name": "C++ ZCL API",
             "output": "CHIPClusters.cpp"
+        },
+        {
+            "path": "templates/app/cluster-objects-header.zapt",
+            "name": "Cluster objects header for Interaction Model",
+            "output": "cluster-objects.h"
+        },
+        {
+            "path": "templates/app/cluster-objects.zapt",
+            "name": "Cluster objects header for Interaction Model",
+            "output": "cluster-objects.cpp"
         }
     ]
 }

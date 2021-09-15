@@ -1,0 +1,55 @@
+{{> header}}
+
+#pragma once
+
+#include <app/data-model/DecodableList.h>
+#include <app/data-model/Decode.h>
+#include <app/data-model/Encode.h>
+#include <app/data-model/List.h>
+#include <app/util/basic-types.h>
+
+namespace chip {
+namespace app {
+namespace clusters {
+
+{{#all_user_clusters}}
+{{#if (user_cluster_has_enabled_command name side)}}
+namespace {{asCamelCased name false}}Cluster {
+constexpr ClusterId kClusterId = {{asHex code 4}};
+{{#zcl_enums}}
+{{#unless (isStrEqual label "Status")}}
+{{#unless (isStrEqual label "ReportingDirection")}}
+
+// Enum for {{label}}
+enum class {{asType label}} : {{asUnderlyingZclType type}} {
+{{#zcl_enum_items}}
+{{ident}}{{asDelimitedMacro parent.label}}_{{asDelimitedMacro label}} = {{value}},
+{{/zcl_enum_items}}
+};
+{{/unless}}
+{{/unless}}
+{{/zcl_enums}}
+
+{{#zcl_structs}}
+namespace {{name}} {
+    enum FieldId {
+    {{#zcl_struct_items}}
+    k{{asType label}}FieldId = {{index}};
+    {{/zcl_struct_items}}
+    };
+    struct Type {
+        {{#zcl_struct_items}}
+        {{#if isArray}}DataModel::List<{{#if (asNotSupportedBasicType type)}}{{type}}::Type{{else if isEnum}}{{define}}{{else}}{{asChipZapType type}}{{/if}}>{{else}}{{#if (asNotSupportedBasicType type)}}{{type}}::Type{{else if isEnum}}{{define}}{{else}}{{asChipZapType type}}{{/if}}{{/if}} {{asType label}};
+        {{/zcl_struct_items}}
+        CHIP_ERROR Encode(TLV::TLVWriter &writer, uint64_t tag);
+        CHIP_ERROR Decode(TLV::TLVReader &reader);
+    };
+}
+{{/zcl_structs}}
+}
+{{/if}}
+{{/all_user_clusters}}
+}
+} // namespace clusters
+} // namespace app
+} // namespace chip
