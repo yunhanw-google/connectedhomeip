@@ -25,6 +25,33 @@
 #include <stdint.h>
 #include <support/Span.h>
 
+// Struct for SimpleStruct
+typedef struct _SimpleStruct
+{
+    uint8_t a;
+    bool b;
+    uint8_t c;
+    chip::ByteSpan d;
+    uint8_t * e;
+} EmberAfSimpleStruct;
+
+// Struct for NestedStructList
+typedef struct _NestedStructList
+{
+    uint8_t a;
+    bool b;
+    /* TYPE WARNING: array array defaults to */ uint8_t * d;
+    /* TYPE WARNING: array array defaults to */ uint8_t * e;
+    /* TYPE WARNING: array array defaults to */ uint8_t * f;
+    /* TYPE WARNING: array array defaults to */ uint8_t * g;
+} EmberAfNestedStructList;
+
+// Struct for DoubleNestedStructList
+typedef struct _DoubleNestedStructList
+{
+    /* TYPE WARNING: array array defaults to */ uint8_t * a;
+} EmberAfDoubleNestedStructList;
+
 // Struct for ApplicationLauncherApp
 typedef struct _ApplicationLauncherApp
 {
@@ -213,6 +240,13 @@ typedef struct _NeighborTable
     bool IsChild;
 } EmberAfNeighborTable;
 
+// Struct for NestedStruct
+typedef struct _NestedStruct
+{
+    uint8_t a;
+    bool b;
+} EmberAfNestedStruct;
+
 // Struct for NetworkInterfaceType
 typedef struct _NetworkInterfaceType
 {
@@ -291,7 +325,7 @@ typedef struct _ReadStructuredAttributeRecord
 {
     chip::AttributeId attributeId;
     uint8_t indicator;
-    uint16_t indicies;
+    /* TYPE WARNING: array array defaults to */ uint8_t * indicies;
 } EmberAfReadStructuredAttributeRecord;
 
 // Struct for ReportAttributeRecord
@@ -429,7 +463,7 @@ typedef struct _WriteStructuredAttributeRecord
 {
     chip::AttributeId attributeId;
     uint8_t indicator;
-    uint16_t indicies;
+    /* TYPE WARNING: array array defaults to */ uint8_t * indicies;
     uint8_t attributeType;
     uint8_t * attributeLocation;
 } EmberAfWriteStructuredAttributeRecord;
@@ -440,5 +474,5 @@ typedef struct _WriteStructuredAttributeStatusRecord
     uint8_t status;
     chip::AttributeId attributeId;
     uint8_t indicator;
-    uint16_t indicies;
+    /* TYPE WARNING: array array defaults to */ uint8_t * indicies;
 } EmberAfWriteStructuredAttributeStatusRecord;
