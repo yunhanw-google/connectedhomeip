@@ -141,6 +141,25 @@ limitations under the License.
       <arg name="arg2" type="INT8U"/>
     </command>
 
+    <command source="client" code="0x05" name="TestSimpleArgumentRequest" optional="false">
+      <description>
+        Command that takes an argument which is bool
+      </description>
+      <arg name="arg1" type="BOOLEAN"/>
+    </command>
+
+    <command source="client" code="0x06" name="TestStructArrayArgumentRequest" optional="false">
+      <description>
+        Command that takes various arguments that are arrays, including an array of structs which have a list member.
+      </description>
+      <arg name="arg1" type="NestedStructList" array="true"/>
+      <arg name="arg1" type="SimpleStruct" array="true"/>
+      <arg name="arg2" type="SimpleEnum" array="true"/>
+      <arg name="arg3" type="BOOLEAN" array="true"/>
+      <arg name="arg4" type="SimpleEnum"/>
+      <arg name="arg5" type="BOOLEAN"/>
+    </command>
+
     <command source="server" code="0x00" name="TestSpecificResponse" optional="false" disableDefaultResponse="true">
       <description>
           Simple response for TestWithResponse with a simple return value
@@ -151,6 +170,25 @@ limitations under the License.
     <command source="server" code="0x01" name="TestAddArgumentsResponse" optional="false" disableDefaultResponse="true">
       <description>
           Response for TestAddArguments that returns the sum.
+      </description>
+      <arg name="returnValue" type="INT8U"/>
+    </command>
+
+    <command source="server" code="0x02" name="TestStructArrayArgumentResponse" optional="false" disableDefaultResponse="true">
+      <description>
+        Simple response for TestSimpleArgumentRequest with a complicated return arguments
+      </description>
+      <arg name="arg1" type="NestedStructList" array="true"/>
+      <arg name="arg1" type="SimpleStruct" array="true"/>
+      <arg name="arg2" type="SimpleEnum" array="true"/>
+      <arg name="arg3" type="BOOLEAN" array="true"/>
+      <arg name="arg4" type="SimpleEnum"/>
+      <arg name="arg5" type="BOOLEAN"/>
+    </command>
+
+    <command source="server" code="0x03" name="TestSimpleArgumentResponse" optional="false" disableDefaultResponse="true">
+      <description>
+        Response for TestStructArrayArgumentRequest with a simple  return value
       </description>
       <arg name="returnValue" type="INT8U"/>
     </command>
