@@ -15508,7 +15508,8 @@ bool emberAfAlarmsClusterResetAllAlarmsCallback(chip::app::CommandHandler * comm
  * @brief Alarms Cluster GetAlarmResponse Command callback (from server)
  */
 bool emberAfAlarmsClusterGetAlarmResponseCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj, uint8_t status,
-                                                  uint8_t alarmCode, chip::ClusterId clusterId, uint32_t timeStamp);
+                                                  uint8_t alarmCode, chip::ClusterId clusterId,
+                                                  /* TYPE WARNING: unknown defaults to */ uint8_t * timeStamp);
 /**
  * @brief Alarms Cluster GetAlarm Command callback (from client)
  */
@@ -15662,7 +15663,7 @@ bool emberAfApplianceControlClusterExecutionOfACommandCallback(
  */
 bool emberAfApplianceControlClusterSignalStateResponseCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
                                                                uint8_t applianceStatus, uint8_t remoteEnableFlagsAndDeviceStatus2,
-                                                               uint32_t applianceStatus2);
+                                                               uint8_t applianceStatus2);
 /**
  * @brief Appliance Control Cluster SignalState Command callback (from client)
  */
@@ -15675,7 +15676,7 @@ bool emberAfApplianceControlClusterSignalStateCallback(
 bool emberAfApplianceControlClusterSignalStateNotificationCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
                                                                    uint8_t applianceStatus,
                                                                    uint8_t remoteEnableFlagsAndDeviceStatus2,
-                                                                   uint32_t applianceStatus2);
+                                                                   uint8_t applianceStatus2);
 /**
  * @brief Appliance Control Cluster WriteFunctions Command callback (from client)
  */
@@ -15953,7 +15954,7 @@ bool emberAfDiagnosticLogsClusterRetrieveLogsRequestCallback(
  */
 bool emberAfDiagnosticLogsClusterRetrieveLogsResponseCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
                                                               uint8_t status, chip::ByteSpan content,
-                                                              /* TYPE WARNING: utc defaults to */ uint8_t * timeStamp,
+                                                              /* TYPE WARNING: unknown defaults to */ uint8_t * timeStamp,
                                                               uint32_t timeSinceBoot);
 /**
  * @brief Software Diagnostics Cluster ResetWatermarks Command callback (from client)
@@ -16407,13 +16408,15 @@ bool emberAfDoorLockClusterClearAllRfidsResponseCallback(chip::EndpointId endpoi
  */
 bool emberAfDoorLockClusterOperationEventNotificationCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
                                                               uint8_t source, uint8_t eventCode, uint16_t userId, uint8_t * pin,
-                                                              uint32_t timeStamp, uint8_t * data);
+                                                              /* TYPE WARNING: unknown defaults to */ uint8_t * timeStamp,
+                                                              uint8_t * data);
 /**
  * @brief Door Lock Cluster ProgrammingEventNotification Command callback (from server)
  */
 bool emberAfDoorLockClusterProgrammingEventNotificationCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
                                                                 uint8_t source, uint8_t eventCode, uint16_t userId, uint8_t * pin,
-                                                                uint8_t userType, uint8_t userStatus, uint32_t timeStamp,
+                                                                uint8_t userType, uint8_t userStatus,
+                                                                /* TYPE WARNING: unknown defaults to */ uint8_t * timeStamp,
                                                                 uint8_t * data);
 /**
  * @brief Window Covering Cluster UpOrOpen Command callback (from client)
@@ -17145,7 +17148,7 @@ bool emberAfTestClusterClusterTestAddArgumentsCallback(
  */
 bool emberAfMessagingClusterDisplayMessageCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
                                                    uint32_t messageId, uint8_t messageControl,
-                                                   /* TYPE WARNING: utc defaults to */ uint8_t * startTime,
+                                                   /* TYPE WARNING: unknown defaults to */ uint8_t * startTime,
                                                    uint16_t durationInMinutes, uint8_t * message,
                                                    uint8_t optionalExtendedMessageControl);
 /**
@@ -17164,14 +17167,14 @@ bool emberAfMessagingClusterCancelMessageCallback(chip::EndpointId endpoint, chi
  */
 bool emberAfMessagingClusterMessageConfirmationCallback(
     chip::app::CommandHandler * commandObj, const chip::app::ConcreteCommandPath & commandPath, chip::EndpointId endpoint,
-    uint32_t messageId, /* TYPE WARNING: utc defaults to */ uint8_t * confirmationTime, uint8_t messageConfirmationControl,
+    uint32_t messageId, /* TYPE WARNING: unknown defaults to */ uint8_t * confirmationTime, uint8_t messageConfirmationControl,
     chip::ByteSpan messageResponse, chip::app::Clusters::Messaging::Commands::MessageConfirmation::DecodableType & fields);
 /**
  * @brief Messaging Cluster DisplayProtectedMessage Command callback (from server)
  */
 bool emberAfMessagingClusterDisplayProtectedMessageCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
                                                             uint32_t messageId, uint8_t messageControl,
-                                                            /* TYPE WARNING: utc defaults to */ uint8_t * startTime,
+                                                            /* TYPE WARNING: unknown defaults to */ uint8_t * startTime,
                                                             uint16_t durationInMinutes, uint8_t * message,
                                                             uint8_t optionalExtendedMessageControl);
 /**
@@ -17179,13 +17182,13 @@ bool emberAfMessagingClusterDisplayProtectedMessageCallback(chip::EndpointId end
  */
 bool emberAfMessagingClusterGetMessageCancellationCallback(
     chip::app::CommandHandler * commandObj, const chip::app::ConcreteCommandPath & commandPath, chip::EndpointId endpoint,
-    /* TYPE WARNING: utc defaults to */ uint8_t * earliestImplementationTime,
+    /* TYPE WARNING: unknown defaults to */ uint8_t * earliestImplementationTime,
     chip::app::Clusters::Messaging::Commands::GetMessageCancellation::DecodableType & fields);
 /**
  * @brief Messaging Cluster CancelAllMessages Command callback (from server)
  */
 bool emberAfMessagingClusterCancelAllMessagesCallback(chip::EndpointId endpoint, chip::app::CommandSender * commandObj,
-                                                      /* TYPE WARNING: utc defaults to */ uint8_t * implementationDateTime);
+                                                      /* TYPE WARNING: unknown defaults to */ uint8_t * implementationDateTime);
 /**
  * @brief Appliance Events and Alert Cluster GetAlerts Command callback (from client)
  */
@@ -17195,15 +17198,13 @@ bool emberAfApplianceEventsAndAlertClusterGetAlertsCallback(
 /**
  * @brief Appliance Events and Alert Cluster GetAlertsResponse Command callback (from server)
  */
-bool emberAfApplianceEventsAndAlertClusterGetAlertsResponseCallback(
-    chip::EndpointId endpoint, chip::app::CommandSender * commandObj, uint8_t alertsCount,
-    /* TYPE WARNING: array array defaults to */ uint8_t * alertStructures);
+bool emberAfApplianceEventsAndAlertClusterGetAlertsResponseCallback(chip::EndpointId endpoint,
+                                                                    chip::app::CommandSender * commandObj, uint8_t alertsCount);
 /**
  * @brief Appliance Events and Alert Cluster AlertsNotification Command callback (from server)
  */
-bool emberAfApplianceEventsAndAlertClusterAlertsNotificationCallback(
-    chip::EndpointId endpoint, chip::app::CommandSender * commandObj, uint8_t alertsCount,
-    /* TYPE WARNING: array array defaults to */ uint8_t * alertStructures);
+bool emberAfApplianceEventsAndAlertClusterAlertsNotificationCallback(chip::EndpointId endpoint,
+                                                                     chip::app::CommandSender * commandObj, uint8_t alertsCount);
 /**
  * @brief Appliance Events and Alert Cluster EventsNotification Command callback (from server)
  */

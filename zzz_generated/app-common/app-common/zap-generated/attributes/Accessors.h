@@ -539,8 +539,8 @@ namespace Time {
 namespace Attributes {
 
 namespace Time {
-EmberAfStatus Get(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t ** time); // utc
-EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t * time);
+EmberAfStatus Get(chip::EndpointId endpoint, /* TYPE WARNING: unknown defaults to */ uint8_t ** time); // epoch-s
+EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: unknown defaults to */ uint8_t * time);
 } // namespace Time
 
 namespace TimeStatus {
@@ -579,13 +579,13 @@ EmberAfStatus Set(chip::EndpointId endpoint, uint32_t localTime);
 } // namespace LocalTime
 
 namespace LastSetTime {
-EmberAfStatus Get(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t ** lastSetTime); // utc
-EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t * lastSetTime);
+EmberAfStatus Get(chip::EndpointId endpoint, /* TYPE WARNING: unknown defaults to */ uint8_t ** lastSetTime); // epoch-s
+EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: unknown defaults to */ uint8_t * lastSetTime);
 } // namespace LastSetTime
 
 namespace ValidUntilTime {
-EmberAfStatus Get(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t ** validUntilTime); // utc
-EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t * validUntilTime);
+EmberAfStatus Get(chip::EndpointId endpoint, /* TYPE WARNING: unknown defaults to */ uint8_t ** validUntilTime); // epoch-s
+EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: unknown defaults to */ uint8_t * validUntilTime);
 } // namespace ValidUntilTime
 
 } // namespace Attributes
@@ -2153,8 +2153,9 @@ EmberAfStatus Set(chip::EndpointId endpoint, int16_t setpointChangeAmount);
 } // namespace SetpointChangeAmount
 
 namespace SetpointChangeSourceTimestamp {
-EmberAfStatus Get(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t ** setpointChangeSourceTimestamp); // utc
-EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: utc defaults to */ uint8_t * setpointChangeSourceTimestamp);
+EmberAfStatus Get(chip::EndpointId endpoint,
+                  /* TYPE WARNING: unknown defaults to */ uint8_t ** setpointChangeSourceTimestamp); // epoch-s
+EmberAfStatus Set(chip::EndpointId endpoint, /* TYPE WARNING: unknown defaults to */ uint8_t * setpointChangeSourceTimestamp);
 } // namespace SetpointChangeSourceTimestamp
 
 namespace AcType {
