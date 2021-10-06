@@ -103,7 +103,7 @@ limitations under the License.
     <attribute side="server" code="0x001E" define="CHAR_STRING" type="CHAR_STRING" length="10" writable="true" optional="false">char_string</attribute>
     <attribute side="server" code="0x001F" define="LONG_CHAR_STRING" type="LONG_CHAR_STRING" length="1000" writable="true" optional="false">long_char_string</attribute>
     <attribute side="server" code="0x0020" define="EPOCH_US" type="EPOCH_US" writable="true" optional="false">epoch_us</attribute>
-    <attribute side="server" code="0x0021" define="EPOCH_S" type="EPOCH_S" writable="true" optional="false">epoch_s</attribute>
+    <attribute side="server" code="0x0021" define="EPOCH_S" type="it " writable="true" optional="false">epoch_s</attribute>
 
     <!-- This attribute should not be enabled on the server side -->
     <attribute side="server" code="0x00FF" define="UNSUPPORTED" type="BOOLEAN" writable="true" optional="false">unsupported</attribute>
@@ -141,6 +141,25 @@ limitations under the License.
       <arg name="arg2" type="INT8U"/>
     </command>
 
+    <command source="client" code="0x05" name="TestSimpleArgumentRequest" optional="false">
+      <description>
+        Command that takes an argument which is bool
+      </description>
+      <arg name="arg1" type="BOOLEAN"/>
+    </command>
+
+    <command source="client" code="0x06" name="TestStructArrayArgumentRequest" optional="false">
+      <description>
+        Command that takes various arguments that are arrays, including an array of structs which have a list member.
+      </description>
+      <arg name="arg1" type="NestedStructList" array="true"/>
+      <arg name="arg2" type="SimpleStruct" array="true"/>
+      <arg name="arg3" type="SimpleEnum" array="true"/>
+      <arg name="arg4" type="BOOLEAN" array="true"/>
+      <arg name="arg5" type="SimpleEnum"/>
+      <arg name="arg6" type="BOOLEAN"/>
+    </command>
+
     <command source="server" code="0x00" name="TestSpecificResponse" optional="false" disableDefaultResponse="true">
       <description>
           Simple response for TestWithResponse with a simple return value
@@ -150,7 +169,26 @@ limitations under the License.
 
     <command source="server" code="0x01" name="TestAddArgumentsResponse" optional="false" disableDefaultResponse="true">
       <description>
-          Response for TestAddArguments that returns the sum.
+clio
+      </description>
+      <arg name="returnValue" type="INT8U"/>
+    </command>
+
+    <command source="server" code="0x02" name="TestStructArrayArgumentResponse" optional="false" disableDefaultResponse="true">
+      <description>
+        Simple response for TestSimpleArgumentRequest with a complicated return arguments
+      </description>
+      <arg name="arg1" type="NestedStructList" array="true"/>
+      <arg name="arg2" type="SimpleStruct" array="true"/>
+      <arg name="arg3" type="SimpleEnum" array="true"/>
+      <arg name="arg4" type="BOOLEAN" array="true"/>
+      <arg name="arg5" type="SimpleEnum"/>
+      <arg name="arg6" type="BOOLEAN"/>
+    </command>
+
+    <command source="server" code="0x03" name="TestSimpleArgumentResponse" optional="false" disableDefaultResponse="true">
+      <description>
+        Response for TestStructArrayArgumentRequest with a simple  return value
       </description>
       <arg name="returnValue" type="INT8U"/>
     </command>
