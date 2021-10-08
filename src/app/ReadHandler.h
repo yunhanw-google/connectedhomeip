@@ -132,6 +132,7 @@ public:
     void SetDirty() { mDirty = true; }
     void ClearDirty() { mDirty = false; }
     bool IsDirty() { return mDirty; }
+    NodeId GetPeerNodeId() const { return mPeerNodeId; }
 
 private:
     friend class TestReadInteraction;
@@ -186,8 +187,9 @@ private:
     uint16_t mMinIntervalFloorSeconds          = 0;
     uint16_t mMaxIntervalCeilingSeconds        = 0;
     Optional<SessionHandle> mSessionHandle;
-    bool mHoldReport = false;
-    bool mDirty      = false;
+    bool mHoldReport   = false;
+    bool mDirty        = false;
+    NodeId mPeerNodeId = kUndefinedNodeId;
 };
 } // namespace app
 } // namespace chip

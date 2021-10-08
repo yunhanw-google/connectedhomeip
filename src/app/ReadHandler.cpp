@@ -53,6 +53,7 @@ CHIP_ERROR ReadHandler::Init(Messaging::ExchangeManager * apExchangeMgr, Interac
     mHoldReport      = false;
     mDirty           = false;
     mInteractionType = aInteractionType;
+    mPeerNodeId      = apExchangeContext->GetSecureSession().GetPeerNodeId();
     if (apExchangeContext != nullptr)
     {
         apExchangeContext->SetDelegate(this);
@@ -96,6 +97,7 @@ void ReadHandler::Shutdown(ShutdownOptions aOptions)
     mpDelegate                 = nullptr;
     mHoldReport                = false;
     mDirty                     = false;
+    mPeerNodeId                = kUndefinedNodeId;
 }
 
 CHIP_ERROR ReadHandler::OnReadInitialRequest(System::PacketBufferHandle && aPayload)
@@ -543,7 +545,6 @@ CHIP_ERROR ReadHandler::ProcessSubscribeRequest(System::PacketBufferHandle && aP
 
     ReturnLogErrorOnFailure(subscribeRequestParser.GetMinIntervalSeconds(&mMinIntervalFloorSeconds));
     ReturnLogErrorOnFailure(subscribeRequestParser.GetMaxIntervalSeconds(&mMaxIntervalCeilingSeconds));
-
     ReturnLogErrorOnFailure(Crypto::DRBG_get_bytes(reinterpret_cast<uint8_t *>(&mSubscriptionId), sizeof(mSubscriptionId)));
 
     MoveToState(HandlerState::GeneratingReports);

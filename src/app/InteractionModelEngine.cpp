@@ -239,6 +239,26 @@ CHIP_ERROR InteractionModelEngine::OnReadInitialRequest(Messaging::ExchangeConte
 
     for (auto & readHandler : mReadHandlers)
     {
+        if (!readHandler.IsFree() && readHandler.IsSubscriptionType() &&
+            readHandler.GetPeerNodeId() == apExchangeContext->GetSecureSession().GetPeerNodeId())
+        {
+            bool keepSubscriptions = true;
+            System::PacketBufferTLVReader reader;
+            reader.Init(aPayload.Retain());
+            SuccessOrExit(err = reader.Next());
+            SubscribeRequest::Parser subscribeRequestParser;
+            SuccessOrExit(err = subscribeRequestParser.Init(reader));
+            err = subscribeRequestParser.GetKeepSubscriptions(&keepSubscriptions);
+            if (err == CHIP_NO_ERROR && !keepSubscriptions)
+            {
+                readHandler.Shutdown(ReadHandler::ShutdownOptions::AbortCurrentExchange);
+            }
+            break;
+        }
+    }
+
+    for (auto & readHandler : mReadHandlers)
+    {
         if (readHandler.IsFree())
         {
             err = readHandler.Init(mpExchangeMgr, mpDelegate, apExchangeContext, aInteractionType);
