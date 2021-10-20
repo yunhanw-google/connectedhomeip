@@ -8,9 +8,9 @@
     },
     "device1": {
         "type": "ANDROID-EMULATOR",
-        "base_image": "android-emulator",
+        "base_image": "connectedhomeip/android-emulator",
         "capability": ["Interactive", "LanAccess", "Mount", "Xvnc"],
-        "mount_pairs": [["/dev/kvm", "/dev/kvm"]],
+        "mount_pairs": [["/dev/kvm", "/dev/kvm"], ["{chip_repo}", "{chip_repo}"]],
         "xvnc_localhost": 0
     }
 }

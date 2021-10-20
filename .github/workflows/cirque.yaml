@@ -83,6 +83,20 @@ jobs:
                     --volume /tmp:/tmp \
                     -- scripts/build/gn_bootstrap.sh
 
+            - name: Pull android-emulator docker image
+              timeout-minutes: 5
+              run: |
+                  integrations/docker/ci-only-images/android-emulator/pull.sh
+                  image_id=$(docker images | grep connectedhomeip/android-emulator | awk {'print $3'})
+                  docker tag $image_id connectedhomeip/android-emulator:latest
+
+            - name: Build Android CHIPTool (x86 only)
+              timeout-minutes: 15
+              run: |
+                  integrations/docker/images/chip-build-android/run.sh \
+                    ./scripts/run_in_build_env.sh \
+                      "./scripts/build/build_examples.py --no-log-timestamps --target android-x86-chip-tool build"
+
             - name: Cirque Bootstrap
               timeout-minutes: 15
               run: |
