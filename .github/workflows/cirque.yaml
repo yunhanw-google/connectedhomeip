@@ -77,6 +77,13 @@ jobs:
                     --volume /tmp:/tmp \
                     -- scripts/build/gn_bootstrap.sh
 
+            - name: Build Android CHIPTool (x86 only)
+              timeout-minutes: 15
+              run: |
+                  integrations/docker/images/chip-build-android/run.sh \
+                    ./scripts/run_in_build_env.sh \
+                      "./scripts/build/build_examples.py --no-log-timestamps --target android-x86-chip-tool build"
+
             - name: Cirque Bootstrap
               timeout-minutes: 15
               run: |
