@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Copyright (c) 2020 Project CHIP Authors
+Copyright (c) 2020-2021 Project CHIP Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import sys
 
 from helper.CHIPTestBase import CHIPVirtualHome
 
-logger = logging.getLogger('CHIPOnOffTest')
+logger = logging.getLogger('GeneralClientServerTest')
 logger.setLevel(logging.INFO)
 
 sh = logging.StreamHandler()
@@ -37,27 +37,36 @@ CHIP_PORT = 5540
 CHIP_REPO = os.path.join(os.path.abspath(
     os.path.dirname(__file__)), "..", "..", "..")
 
-CIRQUE_URL = "http://localhost:5000"
-
 DEVICE_CONFIG = {
     'device0': {
-        'type': 'CHIP-Server',
+        'type': 'CHIP-Client-Initiator',
         'base_image': 'connectedhomeip/chip-cirque-device-base',
-        'capability': ['Thread', 'Interactive', 'Mount'],
+        'capability': ['Thread', 'Interactive', 'TrafficControl', 'Mount'],
         'rcp_mode': True,
+        'docker_network': 'Ipv6',
+        'traffic_control': {'latencyMs': 100},
         "mount_pairs": [[CHIP_REPO, CHIP_REPO]],
     },
     'device1': {
-        'type': 'CHIP-Tool',
+        'type': 'CHIP-Server-Responder',
         'base_image': 'connectedhomeip/chip-cirque-device-base',
-        'capability': ['Thread', 'Interactive', 'Mount'],
+        'capability': ['Thread', 'Interactive', 'TrafficControl', 'Mount'],
         'rcp_mode': True,
+        'docker_network': 'Ipv6',
+        'traffic_control': {'latencyMs': 100},
         "mount_pairs": [[CHIP_REPO, CHIP_REPO]],
     }
 }
 
+CHIP_PORT = 5540
 
-class TestOnOffCluster(CHIPVirtualHome):
+CIRQUE_URL = "http://localhost:5000"
+
+TestClient1 = "./out/debug/standalone/chip-tool pairing qrcode 0x12344321 MT:YNJV7VSC00CMVH7SR00"
+TestClient2 = "./out/debug/standalone/chip-tool tests TestBasicInformation 0x12344321"
+TestServer = "./out/debug/standalone/chip-all-clusters-app"
+
+class GeneralClientServerTest(CHIPVirtualHome):
     def __init__(self, device_config):
         super().__init__(CIRQUE_URL, device_config)
         self.logger = logger
@@ -74,9 +83,9 @@ class TestOnOffCluster(CHIPVirtualHome):
         tool_device_id = ''
 
         server_ids = [device['id'] for device in self.non_ap_devices
-                      if device['type'] == 'CHIP-Server']
+                      if device['type'] == 'CHIP-Server-Responder']
         tool_ids = [device['id'] for device in self.non_ap_devices
-                    if device['type'] == 'CHIP-Tool']
+                    if device['type'] == 'CHIP-Client-Initiator']
 
         tool_device_id = tool_ids[0]
 
@@ -120,4 +129,4 @@ class TestOnOffCluster(CHIPVirtualHome):
 
 
 if __name__ == "__main__":
-    sys.exit(TestOnOffCluster(DEVICE_CONFIG).run_test())
+    sys.exit(GeneralClientServerTest(DEVICE_CONFIG).run_test())
