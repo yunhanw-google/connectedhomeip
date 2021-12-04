@@ -37,11 +37,10 @@ TargetNavigatorResponse targetNavigatorClusterNavigateTarget(uint8_t target, std
 void sendResponse(app::CommandHandler * command, TargetNavigatorResponse response)
 {
     CHIP_ERROR err                   = CHIP_NO_ERROR;
-    app::CommandPathParams cmdParams = { emberAfCurrentEndpoint(), /* group id */ 0, TargetNavigator::Id,
-                                         TargetNavigator::Commands::NavigateTargetResponse::Id,
-                                         (app::CommandPathFlags::kEndpointIdValid) };
+    app::ConcreteCommandPath path = { emberAfCurrentEndpoint(), TargetNavigator::Id,
+                                         TargetNavigator::Commands::NavigateTargetResponse::Id };
     TLV::TLVWriter * writer          = nullptr;
-    SuccessOrExit(err = command->PrepareCommand(cmdParams));
+    SuccessOrExit(err = command->PrepareCommand(path));
     VerifyOrExit((writer = command->GetCommandDataIBTLVWriter()) != nullptr, err = CHIP_ERROR_INCORRECT_STATE);
     SuccessOrExit(err = writer->Put(TLV::ContextTag(0), response.status));
     SuccessOrExit(err = writer->PutString(TLV::ContextTag(1), reinterpret_cast<const char *>(response.data)));

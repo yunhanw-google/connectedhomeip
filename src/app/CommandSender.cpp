@@ -308,8 +308,9 @@ CHIP_ERROR CommandSender::PrepareCommand(const CommandPathParams & aCommandPathP
 
     commandData = mInvokeRequestBuilder.GetInvokeRequests().CreateCommandData();
     ReturnLogErrorOnFailure(commandData.GetError());
-
-    ReturnLogErrorOnFailure(ConstructCommandPath(aCommandPathParams, commandData.CreatePath()));
+    CommandPathIB::Builder path = commandData.CreatePath();
+    ReturnLogErrorOnFailure(commandData.GetError());
+    ReturnLogErrorOnFailure(path.Encode(aCommandPathParams));
 
     if (aStartDataStruct)
     {

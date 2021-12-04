@@ -93,10 +93,7 @@ void DispatchSingleClusterCommand(const ConcreteCommandPath & aCommandPath, chip
         }
         else
         {
-            CommandPathParams responseParams = { aCommandPath.mEndpointId, /* groupId */ 0, aCommandPath.mClusterId,
-                                                 aCommandPath.mCommandId, (chip::app::CommandPathFlags::kEndpointIdValid) };
-
-            apCommandObj->PrepareCommand(responseParams);
+            apCommandObj->PrepareCommand(aCommandPath);
             chip::TLV::TLVWriter * writer = apCommandObj->GetCommandDataIBTLVWriter();
             writer->PutBoolean(chip::TLV::ContextTag(1), true);
             apCommandObj->FinishCommand();
@@ -354,7 +351,6 @@ void TestCommandInteraction::AddInvokeResponseData(nlTestSuite * apSuite, void *
                                                    bool aNeedStatusCode, CommandId aCommandId)
 {
     CHIP_ERROR err         = CHIP_NO_ERROR;
-    auto commandPathParams = MakeTestCommandPath(aCommandId);
 
     if (aNeedStatusCode)
     {
@@ -366,7 +362,8 @@ void TestCommandInteraction::AddInvokeResponseData(nlTestSuite * apSuite, void *
     }
     else
     {
-        err = apCommandHandler->PrepareCommand(commandPathParams);
+        ConcreteCommandPath path = { kTestEndpointId, kTestClusterId, aCommandId };
+        err = apCommandHandler->PrepareCommand(path);
         NL_TEST_ASSERT(apSuite, err == CHIP_NO_ERROR);
 
         chip::TLV::TLVWriter * writer = apCommandHandler->GetCommandDataIBTLVWriter();
@@ -395,11 +392,11 @@ void TestCommandInteraction::TestCommandHandlerWithWrongState(nlTestSuite * apSu
 {
     TestContext & ctx      = *static_cast<TestContext *>(apContext);
     CHIP_ERROR err         = CHIP_NO_ERROR;
-    auto commandPathParams = MakeTestCommandPath();
+    ConcreteCommandPath path = { kTestEndpointId, kTestClusterId, kTestCommandId };
 
     app::CommandHandler commandHandler(&mockCommandHandlerDelegate);
 
-    err = commandHandler.PrepareCommand(commandPathParams);
+    err = commandHandler.PrepareCommand(path);
     NL_TEST_ASSERT(apSuite, err == CHIP_NO_ERROR);
 
     TestExchangeDelegate delegate;
@@ -431,14 +428,15 @@ void TestCommandInteraction::TestCommandHandlerWithSendEmptyCommand(nlTestSuite 
 {
     TestContext & ctx      = *static_cast<TestContext *>(apContext);
     CHIP_ERROR err         = CHIP_NO_ERROR;
-    auto commandPathParams = MakeTestCommandPath();
+    ConcreteCommandPath path = { kTestEndpointId, kTestClusterId, kTestCommandId };
 
     app::CommandHandler commandHandler(&mockCommandHandlerDelegate);
     System::PacketBufferHandle commandDatabuf = System::PacketBufferHandle::New(System::PacketBuffer::kMaxSize);
 
     TestExchangeDelegate delegate;
     commandHandler.mpExchangeCtx = ctx.NewExchangeToAlice(&delegate);
-    err                          = commandHandler.PrepareCommand(commandPathParams);
+
+    err                          = commandHandler.PrepareCommand(path);
     NL_TEST_ASSERT(apSuite, err == CHIP_NO_ERROR);
     err = commandHandler.FinishCommand();
     NL_TEST_ASSERT(apSuite, err == CHIP_NO_ERROR);

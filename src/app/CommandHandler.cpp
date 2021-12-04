@@ -277,13 +277,7 @@ CHIP_ERROR CommandHandler::AddStatusInternal(const ConcreteCommandPath & aComman
 {
     StatusIB::Builder statusIBBuilder;
     StatusIB statusIB;
-
-    CommandPathParams commandPathParams = { aCommandPath.mEndpointId,
-                                            0, // GroupId
-                                            aCommandPath.mClusterId, aCommandPath.mCommandId,
-                                            chip::app::CommandPathFlags::kEndpointIdValid };
-
-    ReturnLogErrorOnFailure(PrepareStatus(commandPathParams));
+    ReturnLogErrorOnFailure(PrepareStatus(aCommandPath));
     statusIBBuilder = mInvokeResponseBuilder.GetInvokeResponses().GetInvokeResponse().GetStatus().CreateErrorStatus();
 
     //
@@ -316,24 +310,25 @@ CHIP_ERROR CommandHandler::AddClusterSpecificFailure(const ConcreteCommandPath &
     return AddStatusInternal(aCommandPath, Protocols::InteractionModel::Status::Failure, clusterStatus);
 }
 
-CHIP_ERROR CommandHandler::PrepareResponse(const ConcreteCommandPath & aRequestCommandPath, CommandId aResponseCommand)
+CHIP_ERROR CommandHandler::PrepareResponse(const ConcreteCommandPath & aRequestCommandPath)
 {
-    CommandPathParams params = { aRequestCommandPath.mEndpointId,
-                                 0, // GroupId
-                                 aRequestCommandPath.mClusterId, aResponseCommand, (CommandPathFlags::kEndpointIdValid) };
-    return PrepareCommand(params, false /* aStartDataStruct */);
+    return PrepareCommand(aRequestCommandPath, false /* aStartDataStruct */);
 }
 
-CHIP_ERROR CommandHandler::PrepareCommand(const CommandPathParams & aCommandPathParams, bool aStartDataStruct)
+CHIP_ERROR CommandHandler::PrepareCommand(const ConcreteCommandPath & aCommandPath, bool aStartDataStruct)
 {
     ReturnErrorOnFailure(AllocateBuffer());
     //
     // We must not be in the middle of preparing a command, or having prepared or sent one.
     //
     VerifyOrReturnError(mState == CommandState::Idle, CHIP_ERROR_INCORRECT_STATE);
-    CommandDataIB::Builder commandData = mInvokeResponseBuilder.GetInvokeResponses().CreateInvokeResponse().CreateCommand();
+    InvokeResponseIB::Builder invokeResponse = mInvokeResponseBuilder.GetInvokeResponses().CreateInvokeResponse();
+    ReturnErrorOnFailure(invokeResponse.GetError());
+    CommandDataIB::Builder commandData = invokeResponse.CreateCommand();
     ReturnErrorOnFailure(commandData.GetError());
-    ReturnErrorOnFailure(ConstructCommandPath(aCommandPathParams, commandData.CreatePath()));
+    CommandPathIB::Builder path = commandData.CreatePath();
+    ReturnErrorOnFailure(path.GetError());
+    ReturnErrorOnFailure(path.Encode(aCommandPath));
     if (aStartDataStruct)
     {
         ReturnErrorOnFailure(commandData.GetWriter()->StartContainer(TLV::ContextTag(to_underlying(CommandDataIB::Tag::kData)),
@@ -359,16 +354,20 @@ CHIP_ERROR CommandHandler::FinishCommand(bool aStartDataStruct)
     return CHIP_NO_ERROR;
 }
 
-CHIP_ERROR CommandHandler::PrepareStatus(const CommandPathParams & aCommandPathParams)
+CHIP_ERROR CommandHandler::PrepareStatus(const ConcreteCommandPath & aCommandPath)
 {
     ReturnErrorOnFailure(AllocateBuffer());
     //
     // We must not be in the middle of preparing a command, or having prepared or sent one.
     //
     VerifyOrReturnError(mState == CommandState::Idle, CHIP_ERROR_INCORRECT_STATE);
-    CommandStatusIB::Builder commandStatus = mInvokeResponseBuilder.GetInvokeResponses().CreateInvokeResponse().CreateStatus();
+    InvokeResponseIB::Builder invokeResponse = mInvokeResponseBuilder.GetInvokeResponses().CreateInvokeResponse();
+    ReturnErrorOnFailure(invokeResponse.GetError());
+    CommandStatusIB::Builder commandStatus = invokeResponse.CreateStatus();
     ReturnErrorOnFailure(commandStatus.GetError());
-    ReturnErrorOnFailure(ConstructCommandPath(aCommandPathParams, commandStatus.CreatePath()));
+    CommandPathIB::Builder path = commandStatus.CreatePath();
+    ReturnErrorOnFailure(path.GetError());
+    ReturnErrorOnFailure(path.Encode(aCommandPath));
     MoveToState(CommandState::AddingCommand);
     return CHIP_NO_ERROR;
 }

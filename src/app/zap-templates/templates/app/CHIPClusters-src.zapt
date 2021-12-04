@@ -41,7 +41,7 @@ CHIP_ERROR {{asUpperCamelCase clusterName}}Cluster::{{asUpperCamelCase name}}(Ca
 
     VerifyOrReturnError(sender != nullptr, CHIP_ERROR_NO_MEMORY);
 
-    SuccessOrExit(err = sender->PrepareCommand(cmdParams));
+    SuccessOrExit(err = sender->PrepareCommand(path));
 
 {{#chip_cluster_command_arguments_with_structs_expanded}}
 {{#if_is_struct type}}
