@@ -2332,6 +2332,14 @@ using CHIP_ERROR = ::chip::ChipError;
  *   the required elements
  */
 #define CHIP_ERROR_IM_MALFORMED_DATA_VERSION_FILTER_IB             CHIP_CORE_ERROR(0xd7)
+
+/**
+ * @def CHIP_ERROR_IM_SUBSCRIBE_LIVENESS_TIMEOUT
+ *
+ * @brief
+ *   The Client fails to receive the report within the expected period during post-subscription
+ */
+#define CHIP_ERROR_IM_SUBSCRIBE_LIVENESS_TIMEOUT             CHIP_CORE_ERROR(0xd8)
 /**
  *  @}
  */

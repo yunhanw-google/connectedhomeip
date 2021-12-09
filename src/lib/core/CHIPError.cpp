@@ -692,6 +692,9 @@ bool FormatCHIPError(char * buf, uint16_t bufSize, CHIP_ERROR err)
     case CHIP_ERROR_IM_MALFORMED_DATA_VERSION_FILTER_IB.AsInteger():
         desc = "Malformed Interaction Model Data Version Filter IB";
         break;
+    case CHIP_ERROR_IM_SUBSCRIBE_LIVENESS_TIMEOUT.AsInteger():
+        desc = "Fail to receive report within expected period during post-subscription";
+        break;
     }
 #endif // !CHIP_CONFIG_SHORT_ERROR_STR
 

@@ -592,7 +592,7 @@ void ReadClient::OnLivenessTimeoutCallback(System::Layer * apSystemLayer, void *
     client->mpExchangeCtx = nullptr;
     // TODO: add a more specific error here for liveness timeout failure to distinguish between other classes of timeouts (i.e
     // response timeouts).
-    client->ShutdownInternal(CHIP_ERROR_TIMEOUT);
+    client->ShutdownInternal(CHIP_ERROR_IM_SUBSCRIBE_LIVENESS_TIMEOUT);
 }
 
 CHIP_ERROR ReadClient::ProcessSubscribeResponse(System::PacketBufferHandle && aPayload)
