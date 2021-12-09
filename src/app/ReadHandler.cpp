@@ -496,6 +496,11 @@ void ReadHandler::MoveToState(const HandlerState aTargetState)
 
 bool ReadHandler::CheckEventClean(EventManagement & aEventManager)
 {
+    if (IsReadType())
+    {
+        return false;
+    }
+
     if (mCurrentPriority == PriorityLevel::Invalid)
     {
         // Upload is not in middle, previous mLastScheduledEventNumber is not valid, Check for new events from Critical high
