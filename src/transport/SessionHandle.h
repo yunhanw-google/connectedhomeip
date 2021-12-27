@@ -33,6 +33,7 @@ class SessionHandle
 public:
     using SubjectDescriptor = Access::SubjectDescriptor;
 
+    SessionHandle() {}
     SessionHandle(NodeId peerNodeId, FabricIndex fabric) : mPeerNodeId(peerNodeId), mFabric(fabric) {}
 
     SessionHandle(Transport::UnauthenticatedSessionHandle session) :

@@ -349,7 +349,10 @@ private:
     {
         return mCallback.OnEventData(apReadClient, aEventHeader, apData, apStatus);
     }
-
+    void OnDeallocatePaths(chip::app::ReadPrepareParams && aReadPrepareParams) override
+    {
+        return mCallback.OnDeallocatePaths(std::move(aReadPrepareParams));
+    }
     void OnDone(ReadClient * apReadClient) override { return mCallback.OnDone(apReadClient); }
     void OnSubscriptionEstablished(const ReadClient * apReadClient) override { mCallback.OnSubscriptionEstablished(apReadClient); }
 

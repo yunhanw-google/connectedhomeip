@@ -157,6 +157,19 @@ public:
         gOnReadErrorCallback(mAppContext, aError.AsInteger());
     }
 
+    void OnDeallocatePaths(chip::app::ReadPrepareParams && aReadPrepareParams) override
+    {
+        if (aReadPrepareParams.mpAttributePathParamsList != nullptr)
+        {
+            delete[] aReadPrepareParams.mpAttributePathParamsList;
+        }
+
+        if (aReadPrepareParams.mpEventPathParamsList != nullptr)
+        {
+            delete[] aReadPrepareParams.mpEventPathParamsList;
+        }
+    }
+
     void OnReportBegin(const ReadClient * apReadClient) override { gOnReportBeginCallback(mAppContext); }
 
     void OnReportEnd(const ReadClient * apReadClient) override { gOnReportEndCallback(mAppContext); }
@@ -349,15 +362,20 @@ chip::ChipError::StorageType pychip_ReadClient_ReadAttributes(void * appContext,
         {
             params.mMinIntervalFloorSeconds   = minInterval;
             params.mMaxIntervalCeilingSeconds = maxInterval;
+            params.mShouldResubscribe         = true;
+            params.mKeepSubscriptions         = false;
+            err                               = readClient->SendSubscribeRequest(std::move(params));
         }
-
-        err = readClient->SendRequest(params);
-        SuccessOrExit(err);
+        else
+        {
+            err = readClient->SendRequest(params);
+        }
     }
 
     *pReadClient = readClient.get();
     *pCallback   = callback.get();
 
+    readPaths.release();
     callback.release();
     readClient.release();
 
@@ -407,12 +425,17 @@ chip::ChipError::StorageType pychip_ReadClient_ReadEvents(void * appContext, Dev
         {
             params.mMinIntervalFloorSeconds   = minInterval;
             params.mMaxIntervalCeilingSeconds = maxInterval;
+            params.mShouldResubscribe         = true;
+            params.mKeepSubscriptions         = false;
+            err                               = readClient->SendSubscribeRequest(std::move(params));
         }
-
-        err = readClient->SendRequest(params);
-        SuccessOrExit(err);
+        else
+        {
+            err = readClient->SendRequest(params);
+        }
     }
 
+    readPaths.release();
     callback.release();
     readClient.release();
 
