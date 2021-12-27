@@ -55,6 +55,7 @@ ReadClient::~ReadClient()
     if (IsSubscriptionType())
     {
         CancelLivenessCheckTimer();
+        CancelResubscribeTimer();
 
         //
         // Only remove ourselves from the engine's tracker list if we still continue to have a valid pointer to it.
@@ -87,7 +88,20 @@ void ReadClient::Close(CHIP_ERROR aError)
         mpCallback.OnError(this, aError);
     }
 
-    mpCallback.OnDone(this);
+    if (mReadPrepareParams.mShouldResubscribe)
+    {
+        CHIP_ERROR err = Resubscribe();
+        if (err != CHIP_NO_ERROR)
+        {
+            mpCallback.OnDeallocatePaths(std::move(mReadPrepareParams));
+            mpCallback.OnDone(this);
+        }
+    }
+    else
+    {
+        mpCallback.OnDeallocatePaths(std::move(mReadPrepareParams));
+        mpCallback.OnDone(this);
+    }
 }
 
 const char * ReadClient::GetStateStr() const
@@ -597,6 +611,12 @@ void ReadClient::CancelLivenessCheckTimer()
         OnLivenessTimeoutCallback, this);
 }
 
+void ReadClient::CancelResubscribeTimer()
+{
+    InteractionModelEngine::GetInstance()->GetExchangeManager()->GetSessionManager()->SystemLayer()->CancelTimer(
+            OnResubscribeTimerCallback, this);
+}
+
 void ReadClient::OnLivenessTimeoutCallback(System::Layer * apSystemLayer, void * apAppState)
 {
     ReadClient * const client = reinterpret_cast<ReadClient *>(apAppState);
@@ -720,5 +740,43 @@ CHIP_ERROR ReadClient::SendSubscribeRequest(ReadPrepareParams & aReadPreparePara
     return CHIP_NO_ERROR;
 }
 
-}; // namespace app
-}; // namespace chip
+void ReadClient::OnResubscribeTimerCallback(System::Layer * apSystemLayer, void * apAppState)
+{
+    ReadClient * const client = reinterpret_cast<ReadClient *>(apAppState);
+    if (client != nullptr)
+    {
+        client->SendSubscribeRequest(client->mReadPrepareParams);
+        client->mNumRetries++;
+    }
+    else
+    {
+        ChipLogError(DataManagement, "Client is null");
+    }
+}
+
+CHIP_ERROR ReadClient::Resubscribe()
+{
+    if (mReadPrepareParams.mpResubscribeDelegate == nullptr)
+    {
+        ChipLogError(DataManagement, "mpResubscribeDelegate should not be nullptr");
+        mReadPrepareParams.mShouldResubscribe = false;
+        return CHIP_ERROR_INCORRECT_STATE;
+    }
+    mReadPrepareParams.mpResubscribeDelegate->Run(mNumRetries, mIntervalMsec, mReadPrepareParams.mShouldResubscribe);
+    CHIP_ERROR err = InteractionModelEngine::GetInstance()->GetExchangeManager()->GetSessionManager()->SystemLayer()->StartTimer(
+            System::Clock::Milliseconds32(mIntervalMsec), OnResubscribeTimerCallback, this);
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogProgress(DataManagement, "Fail to resubscribe with error %s", ErrorStr(err));
+        mReadPrepareParams.mShouldResubscribe = false;
+    }
+    else
+    {
+        ChipLogProgress(DataManagement, "Would Resubscribe at retry index %" PRIu32 "after %" PRIu32 "ms", mNumRetries,
+                mIntervalMsec);
+    }
+    return err;
+}
+
+} // namespace app
+} // namespace chip

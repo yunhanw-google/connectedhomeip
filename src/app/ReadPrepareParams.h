@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <app/ResubscribePolicyDelegate.h>
 #include <app/AttributePathParams.h>
 #include <app/EventPathParams.h>
 #include <app/util/basic-types.h>
@@ -39,7 +40,11 @@ struct ReadPrepareParams
     uint16_t mMinIntervalFloorSeconds               = 0;
     uint16_t mMaxIntervalCeilingSeconds             = 0;
     bool mKeepSubscriptions                         = true;
+    DefaultResubscribePolicyImpl mDefaultResubscribeImpl;
+    ResubscribePolicyDelegate * mpResubscribeDelegate = &mDefaultResubscribeImpl;
+    bool mShouldResubscribe = false;
 
+    ReadPrepareParams() {}
     ReadPrepareParams(const SessionHandle & sessionHandle) : mSessionHandle(sessionHandle) {}
     ReadPrepareParams(ReadPrepareParams && other) : mSessionHandle(other.mSessionHandle)
     {
@@ -56,6 +61,8 @@ struct ReadPrepareParams
         other.mEventPathParamsListSize     = 0;
         other.mpAttributePathParamsList    = nullptr;
         other.mAttributePathParamsListSize = 0;
+        mpResubscribeDelegate = other.mpResubscribeDelegate;
+        mShouldResubscribe = other.mShouldResubscribe;
     }
 
     ReadPrepareParams & operator=(ReadPrepareParams && other)
@@ -77,7 +84,8 @@ struct ReadPrepareParams
         other.mEventPathParamsListSize     = 0;
         other.mpAttributePathParamsList    = nullptr;
         other.mAttributePathParamsListSize = 0;
-
+        mpResubscribeDelegate = other.mpResubscribeDelegate;
+        mShouldResubscribe = other.mShouldResubscribe;
         return *this;
     }
 };

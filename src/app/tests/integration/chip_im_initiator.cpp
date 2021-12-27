@@ -205,6 +205,19 @@ public:
         printf("WriteClient::OnError happens with %" CHIP_ERROR_FORMAT, aError.Format());
     }
     void OnDone(chip::app::WriteClient * apWriteClient) override {}
+
+    void OnDeallocatePaths(chip::app::ReadPrepareParams && aReadPrepareParams) override
+    {
+        if (aReadPrepareParams.mpAttributePathParamsList != nullptr)
+        {
+            delete[] aReadPrepareParams.mpAttributePathParamsList;
+        }
+
+        if (aReadPrepareParams.mpEventPathParamsList != nullptr)
+        {
+            delete[] aReadPrepareParams.mpEventPathParamsList;
+        }
+    }
 };
 
 MockInteractionModelApp gMockDelegate;
