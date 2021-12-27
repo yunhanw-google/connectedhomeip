@@ -163,6 +163,8 @@ private:
         mOnError(nullptr, Protocols::InteractionModel::Status::Failure, aError);
     }
 
+    void OnDeallocatePaths(chip::app::ReadPrepareParams && aReadPrepareParams) override {}
+
     void OnDone(app::ReadClient * apReadClient) override { mOnDone(apReadClient, this); }
 
     void OnSubscriptionEstablished(const app::ReadClient * apReadClient) override

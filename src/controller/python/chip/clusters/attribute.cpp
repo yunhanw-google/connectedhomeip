@@ -157,6 +157,19 @@ public:
         gOnReadErrorCallback(mAppContext, aError.AsInteger());
     }
 
+    void OnDeallocatePaths(chip::app::ReadPrepareParams && aReadPrepareParams) override
+    {
+        if (aReadPrepareParams.mpAttributePathParamsList != nullptr)
+        {
+            delete[] aReadPrepareParams.mpAttributePathParamsList;
+        }
+
+        if (aReadPrepareParams.mpEventPathParamsList != nullptr)
+        {
+            delete[] aReadPrepareParams.mpEventPathParamsList;
+        }
+    }
+
     void OnReportBegin(const ReadClient * apReadClient) override { gOnReportBeginCallback(mAppContext); }
 
     void OnReportEnd(const ReadClient * apReadClient) override { gOnReportEndCallback(mAppContext); }
@@ -318,7 +331,7 @@ chip::ChipError::StorageType pychip_ReadClient_ReadAttributes(void * appContext,
     va_list args;
     va_start(args, n);
 
-    std::unique_ptr<AttributePathParams[]> readPaths(new AttributePathParams[n]);
+    AttributePathParams * readPaths = new AttributePathParams[n];
     std::unique_ptr<ReadClient> readClient;
 
     {
@@ -342,17 +355,25 @@ chip::ChipError::StorageType pychip_ReadClient_ReadAttributes(void * appContext,
 
     {
         ReadPrepareParams params(session.Value());
-        params.mpAttributePathParamsList    = readPaths.get();
+        params.mpAttributePathParamsList    = readPaths;
         params.mAttributePathParamsListSize = n;
-
+        readPaths                           = nullptr;
         if (isSubscription)
         {
             params.mMinIntervalFloorSeconds   = minInterval;
             params.mMaxIntervalCeilingSeconds = maxInterval;
+            params.mShouldResubscribe         = true;
+            params.mKeepSubscriptions         = false;
+            readClient->SendSubscribeRequest(std::move(params));
         }
-
-        err = readClient->SendRequest(params);
-        SuccessOrExit(err);
+        else
+        {
+            err = readClient->SendRequest(params);
+            if (params.mpAttributePathParamsList != nullptr)
+            {
+                delete[] params.mpAttributePathParamsList;
+            }
+        }
     }
 
     *pReadClient = readClient.get();
@@ -376,7 +397,7 @@ chip::ChipError::StorageType pychip_ReadClient_ReadEvents(void * appContext, Dev
     va_list args;
     va_start(args, n);
 
-    std::unique_ptr<EventPathParams[]> readPaths(new EventPathParams[n]);
+    EventPathParams * readPaths = new EventPathParams[n];
     std::unique_ptr<ReadClient> readClient;
 
     {
@@ -400,17 +421,26 @@ chip::ChipError::StorageType pychip_ReadClient_ReadEvents(void * appContext, Dev
 
     {
         ReadPrepareParams params(session.Value());
-        params.mpEventPathParamsList    = readPaths.get();
+        params.mpEventPathParamsList    = readPaths;
         params.mEventPathParamsListSize = n;
+        readPaths                       = nullptr;
 
         if (isSubscription)
         {
             params.mMinIntervalFloorSeconds   = minInterval;
             params.mMaxIntervalCeilingSeconds = maxInterval;
+            params.mShouldResubscribe         = true;
+            params.mKeepSubscriptions         = false;
+            readClient->SendSubscribeRequest(std::move(params));
         }
-
-        err = readClient->SendRequest(params);
-        SuccessOrExit(err);
+        else
+        {
+            err = readClient->SendRequest(params);
+            if (params.mpEventPathParamsList != nullptr)
+            {
+                delete[] readPaths;
+            }
+        }
     }
 
     callback.release();

@@ -20,6 +20,7 @@
 
 #include <app/AttributePathParams.h>
 #include <app/EventPathParams.h>
+#include <app/ResubscribePolicyDelegate.h>
 #include <app/util/basic-types.h>
 #include <lib/core/CHIPCore.h>
 #include <lib/core/CHIPTLV.h>
@@ -30,16 +31,19 @@ namespace app {
 struct ReadPrepareParams
 {
     SessionHandle mSessionHandle;
-    EventPathParams * mpEventPathParamsList         = nullptr;
-    size_t mEventPathParamsListSize                 = 0;
-    AttributePathParams * mpAttributePathParamsList = nullptr;
-    size_t mAttributePathParamsListSize             = 0;
-    EventNumber mEventNumber                        = 0;
-    System::Clock::Timeout mTimeout                 = kImMessageTimeout;
-    uint16_t mMinIntervalFloorSeconds               = 0;
-    uint16_t mMaxIntervalCeilingSeconds             = 0;
-    bool mKeepSubscriptions                         = true;
+    EventPathParams * mpEventPathParamsList           = nullptr;
+    size_t mEventPathParamsListSize                   = 0;
+    AttributePathParams * mpAttributePathParamsList   = nullptr;
+    size_t mAttributePathParamsListSize               = 0;
+    EventNumber mEventNumber                          = 0;
+    System::Clock::Timeout mTimeout                   = kImMessageTimeout;
+    uint16_t mMinIntervalFloorSeconds                 = 0;
+    uint16_t mMaxIntervalCeilingSeconds               = 0;
+    bool mKeepSubscriptions                           = true;
+    ResubscribePolicyDelegate * mpResubscribeDelegate = nullptr;
+    bool mShouldResubscribe                           = false;
 
+    ReadPrepareParams() {}
     ReadPrepareParams(const SessionHandle & sessionHandle) : mSessionHandle(sessionHandle) {}
     ReadPrepareParams(ReadPrepareParams && other) : mSessionHandle(other.mSessionHandle)
     {
@@ -56,6 +60,8 @@ struct ReadPrepareParams
         other.mEventPathParamsListSize     = 0;
         other.mpAttributePathParamsList    = nullptr;
         other.mAttributePathParamsListSize = 0;
+        mpResubscribeDelegate              = other.mpResubscribeDelegate;
+        mShouldResubscribe                 = other.mShouldResubscribe;
     }
 
     ReadPrepareParams & operator=(ReadPrepareParams && other)
@@ -77,7 +83,8 @@ struct ReadPrepareParams
         other.mEventPathParamsListSize     = 0;
         other.mpAttributePathParamsList    = nullptr;
         other.mAttributePathParamsListSize = 0;
-
+        mpResubscribeDelegate              = other.mpResubscribeDelegate;
+        mShouldResubscribe                 = other.mShouldResubscribe;
         return *this;
     }
 };
