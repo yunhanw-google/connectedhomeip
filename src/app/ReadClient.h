@@ -243,6 +243,8 @@ public:
     ReadClient * GetNextClient() { return mpNext; }
     void SetNextClient(ReadClient * apClient) { mpNext = apClient; }
 
+    CHIP_ERROR SendSubscribeRequest(ReadPrepareParams && aReadPrepareParams);
+
 private:
     friend class TestReadInteraction;
     friend class InteractionModelEngine;

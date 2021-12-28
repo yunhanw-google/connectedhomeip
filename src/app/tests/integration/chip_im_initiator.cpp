@@ -414,13 +414,15 @@ CHIP_ERROR SendSubscribeRequest()
 
     readPrepareParams.mMinIntervalFloorSeconds   = 5;
     readPrepareParams.mMaxIntervalCeilingSeconds = 5;
+
+    readPrepareParams.mShouldResubscribe = true;
     printf("\nSend subscribe request message to Node: %" PRIu64 "\n", chip::kTestDeviceNodeId);
 
     auto readClient =
         chip::Platform::MakeUnique<chip::app::ReadClient>(chip::app::InteractionModelEngine::GetInstance(), &gExchangeManager,
                                                           gMockDelegate, chip::app::ReadClient::InteractionType::Subscribe);
 
-    SuccessOrExit(readClient->SendRequest(readPrepareParams));
+    SuccessOrExit(readClient->SendSubscribeRequest(std::move(readPrepareParams)));
 
     readClient.release();
 
@@ -609,7 +611,7 @@ void SubscribeRequestTimerHandler(chip::System::Layer * systemLayer, void * appS
         err = SendSubscribeRequest();
         VerifyOrExit(err == CHIP_NO_ERROR, printf("Failed to send write request with error: %s\n", chip::ErrorStr(err)));
 
-        err = chip::DeviceLayer::SystemLayer().StartTimer(chip::System::Clock::Seconds16(20), SubscribeRequestTimerHandler, NULL);
+        err = chip::DeviceLayer::SystemLayer().StartTimer(chip::System::Clock::Seconds16(1000), SubscribeRequestTimerHandler, NULL);
         VerifyOrExit(err == CHIP_NO_ERROR, printf("Failed to schedule timer with error: %s\n", chip::ErrorStr(err)));
     }
     else

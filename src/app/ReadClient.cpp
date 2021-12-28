@@ -71,6 +71,19 @@ ReadClient::~ReadClient()
 
 void ReadClient::Close(CHIP_ERROR aError)
 {
+    if (aError != CHIP_NO_ERROR)
+    {
+        mpCallback.OnError(this, aError);
+        if (mReadPrepareParams.mShouldResubscribe)
+        {
+            CHIP_ERROR err = Resubscribe();
+            if (mReadPrepareParams.mShouldResubscribe && err == CHIP_NO_ERROR)
+            {
+                return;
+            }
+        }
+    }
+
     // OnDone below can destroy us before we unwind all the way back into the
     // exchange code and it tries to close itself.  Make sure that it doesn't
     // try to notify us that it's closing, since we will be dead.
@@ -82,26 +95,8 @@ void ReadClient::Close(CHIP_ERROR aError)
     }
 
     mpExchangeCtx = nullptr;
-
-    if (aError != CHIP_NO_ERROR)
-    {
-        mpCallback.OnError(this, aError);
-    }
-
-    if (mReadPrepareParams.mShouldResubscribe)
-    {
-        CHIP_ERROR err = Resubscribe();
-        if (err != CHIP_NO_ERROR)
-        {
-            mpCallback.OnDeallocatePaths(std::move(mReadPrepareParams));
-            mpCallback.OnDone(this);
-        }
-    }
-    else
-    {
-        mpCallback.OnDeallocatePaths(std::move(mReadPrepareParams));
-        mpCallback.OnDone(this);
-    }
+    mpCallback.OnDeallocatePaths(std::move(mReadPrepareParams));
+    mpCallback.OnDone(this);
 }
 
 const char * ReadClient::GetStateStr() const
@@ -628,7 +623,7 @@ void ReadClient::OnLivenessTimeoutCallback(System::Layer * apSystemLayer, void *
     //
     VerifyOrDie(client->mpImEngine->InActiveReadClientList(client));
 
-    ChipLogError(DataManagement, "Subscription Liveness timeout with peer node 0x%" PRIx64 ", shutting down ", client->mPeerNodeId);
+    ChipLogError(DataManagement, "Subscription Liveness timeout with peer node 0x%" PRIx64, client->mPeerNodeId);
 
     // TODO: add a more specific error here for liveness timeout failure to distinguish between other classes of timeouts (i.e
     // response timeouts).
@@ -659,6 +654,12 @@ CHIP_ERROR ReadClient::ProcessSubscribeResponse(System::PacketBufferHandle && aP
     MoveToState(ClientState::SubscriptionActive);
 
     return CHIP_NO_ERROR;
+}
+
+CHIP_ERROR ReadClient::SendSubscribeRequest(ReadPrepareParams && aReadPrepareParams)
+{
+    mReadPrepareParams = std::move(aReadPrepareParams);
+    return SendSubscribeRequest(mReadPrepareParams);
 }
 
 CHIP_ERROR ReadClient::SendSubscribeRequest(ReadPrepareParams & aReadPrepareParams)
@@ -763,6 +764,11 @@ CHIP_ERROR ReadClient::Resubscribe()
         return CHIP_ERROR_INCORRECT_STATE;
     }
     mReadPrepareParams.mpResubscribeDelegate->Run(mNumRetries, mIntervalMsec, mReadPrepareParams.mShouldResubscribe);
+    if (!mReadPrepareParams.mShouldResubscribe)
+    {
+        ChipLogProgress(DataManagement, "Resubscribe has been stopped");
+        return CHIP_NO_ERROR;
+    }
     CHIP_ERROR err = InteractionModelEngine::GetInstance()->GetExchangeManager()->GetSessionManager()->SystemLayer()->StartTimer(
             System::Clock::Milliseconds32(mIntervalMsec), OnResubscribeTimerCallback, this);
     if (err != CHIP_NO_ERROR)
