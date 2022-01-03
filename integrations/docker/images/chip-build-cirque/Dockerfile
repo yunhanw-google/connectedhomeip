@@ -34,7 +34,8 @@ RUN set -x \
     && DEBIAN_FRONTEND=noninteractive apt-get install -fy \
        sudo socat psmisc tigervnc-standalone-server xorg xauth \
        python3-pip python3-venv python3-setuptools libdbus-glib-1-dev \
-       uuid-runtime libgirepository1.0-dev \
+       uuid-runtime libgirepository1.0-dev udev \
+       libical-dev libreadline-dev libudev-dev libusb-dev python3-dev bluez \
     && : # aids diffs
 
 COPY requirements_nogrpc.txt /requirements.txt

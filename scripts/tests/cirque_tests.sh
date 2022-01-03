@@ -29,16 +29,23 @@ GITHUB_ACTION_RUN=${GITHUB_ACTION_RUN:-"0"}
 OPENTHREAD=$REPO_DIR/third_party/openthread/repo
 OPENTHREAD_CHECKOUT=$(cd "$REPO_DIR" && git rev-parse :third_party/openthread/repo)
 
+BLUEZ=$REPO_DIR/third_party/bluez/repo
+BLUEZ_CHECKOUT=$(cd "$REPO_DIR" && git rev-parse :third_party/bluez/repo)
+
 CIRQUE_CACHE_PATH=${GITHUB_CACHE_PATH:-"/tmp/cirque-cache/"}
 OT_SIMULATION_CACHE="$CIRQUE_CACHE_PATH/ot-simulation-cmake.tgz"
 OT_SIMULATION_CACHE_STAMP_FILE="$CIRQUE_CACHE_PATH/ot-simulation.commit"
+BLUEZ_CACHE="$CIRQUE_CACHE_PATH/bluez.tgz"
+BLUEZ_CACHE_STAMP_FILE="$CIRQUE_CACHE_PATH/bluez.commit"
+
 
 # Append test name here to add more tests for run_all_tests
 CIRQUE_TESTS=(
     "EchoTest"
     "EchoOverTcpTest"
-    "MobileDeviceTest"
     "CommissioningTest"
+    "MobileDeviceEthernetTest"
+    "MobileDeviceBLETest"
     "InteractionModelTest"
 )
 
@@ -67,6 +74,29 @@ function __cirquetest_clean_flask() {
     rm "$LOG_DIR/$CURRENT_TEST"/flask.log.old
 }
 
+function __cirquetest_build_bluez() {
+    echo -e "[$BOLD_YELLOW_TEXT""INFO""$RESET_COLOR] Cache miss, build bluez."
+    ./bootstrap
+    ./configure --prefix=/usr --mandir=/usr/share/man --sysconfdir=/etc --localstatedir=/var --enable-experimental --with-systemdsystemunitdir=/lib/systemd/system --with-systemduserunitdir=/usr/lib/systemd --enable-deprecated --enable-testing --enable-tools --disable-manpages
+    make -j
+    tar czf "$BLUEZ_CACHE" .
+    echo "$BLUEZ_CHECKOUT" >"$BLUEZ_CACHE_STAMP_FILE"
+}
+
+function __cirquetest_build_bluez_lazy() {
+    pushd .
+    cd "$REPO_DIR"/third_party/bluez/repo
+    ([[ -f "$BLUEZ_CACHE_STAMP_FILE" ]] &&
+        [[ "$(cat "$BLUEZ_CACHE_STAMP_FILE")" = "$BLUEZ_CHECKOUT" ]] &&
+        [[ -f "$BLUEZ_CACHE" ]] &&
+        tar --skip-old-files zxf "$BLUEZ_CACHE") ||
+        __cirquetest_build_bluez
+    make install
+    popd
+    rm -rf "$REPO_DIR/third_party/cirque/repo/bluez"
+    ln -s "$REPO_DIR/third_party/bluez/repo" "$REPO_DIR/third_party/cirque/repo/bluez"
+}
+
 function __cirquetest_build_ot() {
     echo -e "[$BOLD_YELLOW_TEXT""INFO""$RESET_COLOR] Cache miss, build openthread simulation."
     script/cmake-build simulation -DOT_THREAD_VERSION=1.2 -DOT_MTD=OFF -DOT_FTD=OFF
@@ -90,7 +120,7 @@ function __cirquetest_self_hash() {
 }
 
 function cirquetest_cachekey() {
-    echo "$("$REPO_DIR"/integrations/docker/ci-only-images/chip-cirque-device-base/cachekey.sh).openthread.$OPENTHREAD_CHECKOUT.cirque_test.$(__cirquetest_self_hash)"
+    echo "$("$REPO_DIR"/integrations/docker/ci-only-images/chip-cirque-device-base/cachekey.sh).openthread.$OPENTHREAD_CHECKOUT.bluez.$BLUEZ_CHECKOUT.cirque_test.$(__cirquetest_self_hash)"
 }
 
 function cirquetest_cachekeyhash() {
@@ -100,13 +130,15 @@ function cirquetest_cachekeyhash() {
 function cirquetest_bootstrap() {
     set -ex
 
-    cd "$REPO_DIR"/third_party/cirque/repo
+    cd "$REPO_DIR/third_party/cirque/repo"
     pip3 install pycodestyle==2.5.0 wheel
     make NO_GRPC=1 install -j
 
     "$REPO_DIR"/integrations/docker/ci-only-images/chip-cirque-device-base/build.sh
 
     __cirquetest_build_ot_lazy
+    __cirquetest_build_bluez_lazy
+
     pip3 install -r requirements_nogrpc.txt
 }
 
@@ -116,6 +148,7 @@ function cirquetest_run_test() {
     export DEVICE_LOG_DIR="$LOG_DIR/$CURRENT_TEST"/device_logs
     shift
     mkdir -p "$DEVICE_LOG_DIR"
+    __cirquetest_build_bluez_lazy
     __cirquetest_start_flask
     sleep 5
     "$TEST_DIR/$CURRENT_TEST.py" "$@"

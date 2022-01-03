@@ -67,7 +67,7 @@ RUN set -x \
 # Cmake (Mbed OS requires >=3.19.0-rc3 version which is not available in Ubuntu 20.04 repository)
 RUN set -x \
     && (cd /tmp \
-    && wget --progress=dot:giga https://github.com/Kitware/CMake/releases/download/v3.19.3/cmake-3.19.3-Linux-x86_64.sh \
+    && curl -L https://github.com/Kitware/CMake/releases/download/v3.19.3/cmake-3.19.3-Linux-x86_64.sh -o cmake-3.19.3-Linux-x86_64.sh \
     && sh cmake-3.19.3-Linux-x86_64.sh --exclude-subdir --prefix=/usr/local \
     && rm -rf cmake-3.19.3-Linux-x86_64.sh) \
     && exec bash \
@@ -79,7 +79,7 @@ RUN set -x \
     && DEBIAN_FRONTEND=noninteractive  apt-get install -y libgirepository1.0-dev \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common \
     && add-apt-repository universe \
-    && curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
+    && curl -L https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
     && python3.9 get-pip.py \
     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1 \
     && rm -rf /var/lib/apt/lists/ \
@@ -117,7 +117,7 @@ RUN set -x \
 RUN set -x \
     && mkdir node_js \
     && cd node_js \
-    && wget https://nodejs.org/dist/v12.19.0/node-v12.19.0-linux-x64.tar.xz \
+    && curl -L https://nodejs.org/dist/v12.19.0/node-v12.19.0-linux-x64.tar.xz -o node-v12.19.0-linux-x64.tar.xz \
     && tar xfvJ node-v12.19.0-linux-x64.tar.xz \
     && mv node-v12.19.0-linux-x64 /opt/ \
     && ln -s /opt/node-v12.19.0-linux-x64 /opt/node \

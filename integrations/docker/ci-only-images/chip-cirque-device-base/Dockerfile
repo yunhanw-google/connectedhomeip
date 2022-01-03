@@ -12,7 +12,7 @@ RUN mkdir /app
 WORKDIR /app
 
 # TODO: Use multi stage build for smaller image size.
-
+# Note: The bluez below is only used for dbus metadata, not its binaries.
 RUN apt-get update \
   && apt-get install --no-install-recommends -y \
   avahi-daemon=0.7-4ubuntu7.1 \
@@ -36,6 +36,7 @@ RUN apt-get update \
   sudo=1.8.31-1ubuntu1.2 \
   wireless-tools=30~pre9-13ubuntu1 \
   wpasupplicant=2:2.9-1ubuntu4.3 \
+  bluez \
   && ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
   && git clone https://github.com/openthread/ot-br-posix . \
   && git checkout $OT_BR_POSIX_CHECKOUT \
