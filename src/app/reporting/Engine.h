@@ -96,6 +96,8 @@ public:
      */
     CHIP_ERROR ScheduleEventDelivery(ConcreteEventPath & aPath, EventOptions::Type aUrgent, uint32_t aBytesWritten);
 
+    CHIP_ERROR UpdateClusterDataVersion(ClusterInfo & aClusterInfo);
+
 private:
     friend class TestReportingEngine;
     /**

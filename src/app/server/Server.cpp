@@ -92,7 +92,7 @@ Server::Server() :
         .dnsCache          = nullptr,
         .devicePool        = &mDevicePool,
         .dnsResolver       = nullptr,
-    }), mCommissioningWindowManager(this), mGroupsProvider(mGroupsStorage)
+    }), mCommissioningWindowManager(this), mGroupsProvider(mGroupsStorage), mClusterDataVersionProvider(mServerStorage)
 {}
 
 CHIP_ERROR Server::Init(AppDelegate * delegate, uint16_t secureServicePort, uint16_t unsecureServicePort)
@@ -106,6 +106,11 @@ CHIP_ERROR Server::Init(AppDelegate * delegate, uint16_t secureServicePort, uint
 
     mCommissioningWindowManager.SetAppDelegate(delegate);
     mCommissioningWindowManager.SetSessionIDAllocator(&mSessionIDAllocator);
+
+    // Set up attribute persistence before we try to bring up the data model
+    // handler.
+    SetClusterDataVersionPersistenceProvider(&mClusterDataVersionProvider);
+
     InitDataModelHandler(&mExchangeMgr);
 
 #if CHIP_DEVICE_LAYER_TARGET_DARWIN

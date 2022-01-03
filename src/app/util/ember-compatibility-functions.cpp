@@ -23,7 +23,9 @@
 
 #include <access/AccessControl.h>
 #include <app/ClusterInfo.h>
+#include <app/ConcreteClusterPath.h>
 #include <app/ConcreteAttributePath.h>
+#include <app/DefaultClusterDataVersionPersistenceProvider.h>
 #include <app/InteractionModelEngine.h>
 #include <app/reporting/Engine.h>
 #include <app/reporting/reporting.h>
@@ -58,7 +60,6 @@ namespace chip {
 namespace app {
 namespace Compatibility {
 namespace {
-constexpr uint32_t kTemporaryDataVersion = 0;
 // On some apps, ATTRIBUTE_LARGEST can as small as 3, making compiler unhappy since data[kAttributeReadBufferSize] cannot hold
 // uint64_t. Make kAttributeReadBufferSize at least 8 so it can fit all basic types.
 constexpr size_t kAttributeReadBufferSize = (ATTRIBUTE_LARGEST >= 8 ? ATTRIBUTE_LARGEST : 8);
@@ -340,7 +341,9 @@ CHIP_ERROR ReadViaAccessInterface(FabricIndex aAccessingFabricIndex, const Concr
     // into status responses, unless our caller already does that.
     AttributeValueEncoder::AttributeEncodeState state =
         (aEncoderState == nullptr ? AttributeValueEncoder::AttributeEncodeState() : *aEncoderState);
-    AttributeValueEncoder valueEncoder(aAttributeReports, aAccessingFabricIndex, aPath, kTemporaryDataVersion, state);
+    DataVersion version = 0;
+    chip::app::GetClusterDataVersionPersistenceProvider()->ReadValue(ConcreteClusterPath(aPath.mEndpointId, aPath.mClusterId), version);
+    AttributeValueEncoder valueEncoder(aAttributeReports, aAccessingFabricIndex, aPath, version, state);
     CHIP_ERROR err = aAccessInterface->Read(aPath, valueEncoder);
 
     if (err != CHIP_NO_ERROR)
@@ -443,7 +446,9 @@ CHIP_ERROR ReadSingleClusterData(const SubjectDescriptor & aSubjectDescriptor, c
     AttributeDataIB::Builder & attributeDataIBBuilder = attributeReport.CreateAttributeData();
     ReturnErrorOnFailure(attributeDataIBBuilder.GetError());
 
-    attributeDataIBBuilder.DataVersion(kTemporaryDataVersion);
+    DataVersion version = 0;
+    chip::app::GetClusterDataVersionPersistenceProvider()->ReadValue(ConcreteClusterPath(aPath.mEndpointId, aPath.mClusterId), version);
+    attributeDataIBBuilder.DataVersion(version);
     ReturnErrorOnFailure(attributeDataIBBuilder.GetError());
 
     AttributePathIB::Builder & attributePathIBBuilder = attributeDataIBBuilder.CreatePath();

@@ -24,6 +24,8 @@
  */
 
 #include <app/AppBuildConfig.h>
+#include <app/ConcreteClusterPath.h>
+#include <app/DefaultClusterDataVersionPersistenceProvider.h>
 #include <app/InteractionModelEngine.h>
 #include <app/reporting/Engine.h>
 #include <app/util/MatterCallbacks.h>
@@ -493,8 +495,20 @@ void Engine::Run()
     }
 }
 
+CHIP_ERROR Engine::UpdateClusterDataVersion(ClusterInfo & aClusterInfo)
+{
+    auto * versionStorage = GetClusterDataVersionPersistenceProvider();
+    DataVersion version = 0;
+    ConcreteClusterPath path(aClusterInfo.mEndpointId, aClusterInfo.mClusterId);
+    ReturnErrorOnFailure(versionStorage->ReadValue(path, version));
+    version ++;
+    ReturnErrorOnFailure(versionStorage->WriteValue(path, version));
+    return CHIP_NO_ERROR;
+}
+
 CHIP_ERROR Engine::SetDirty(ClusterInfo & aClusterInfo)
 {
+    ReturnErrorOnFailure(UpdateClusterDataVersion(aClusterInfo));
     for (auto & handler : InteractionModelEngine::GetInstance()->mReadHandlers)
     {
         // We call SetDirty for both read interactions and subscribe interactions, since we may sent inconsistent attribute data

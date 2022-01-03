@@ -70,7 +70,7 @@ private:
     //
     void OnReportBegin(const ReadClient * apReadClient) override;
     void OnReportEnd(const ReadClient * apReadClient) override;
-    void OnAttributeData(const ReadClient * apReadClient, const ConcreteDataAttributePath & aPath, TLV::TLVReader * apData,
+    void OnAttributeData(const ReadClient * apReadClient, DataVersion *apVersion, const ConcreteDataAttributePath & aPath, TLV::TLVReader * apData,
                          const StatusIB & aStatus) override;
     void OnError(const ReadClient * apReadClient, CHIP_ERROR aError) override { return mCallback.OnError(apReadClient, aError); }
     void OnEventData(const ReadClient * apReadClient, const EventHeader & aEventHeader, TLV::TLVReader * apData,
@@ -98,6 +98,7 @@ private:
     CHIP_ERROR BufferListItem(TLV::TLVReader & reader);
 
     ConcreteDataAttributePath mBufferedPath;
+    DataVersion * mpDataVersion = nullptr;
     std::vector<System::PacketBufferHandle> mBufferedList;
     Callback & mCallback;
 };

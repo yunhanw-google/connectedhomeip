@@ -96,7 +96,7 @@ class TestReadCallback : public app::ReadClient::Callback
 {
 public:
     TestReadCallback() : mBufferedCallback(*this) {}
-    void OnAttributeData(const app::ReadClient * apReadClient, const app::ConcreteDataAttributePath & aPath,
+    void OnAttributeData(const app::ReadClient * apReadClient, DataVersion *apVersion, const app::ConcreteDataAttributePath & aPath,
                          TLV::TLVReader * apData, const app::StatusIB & aStatus) override;
 
     void OnDone(app::ReadClient * apReadClient) override;
@@ -108,7 +108,7 @@ public:
     app::BufferedReadCallback mBufferedCallback;
 };
 
-void TestReadCallback::OnAttributeData(const app::ReadClient * apReadClient, const app::ConcreteDataAttributePath & aPath,
+void TestReadCallback::OnAttributeData(const app::ReadClient * apReadClient, DataVersion *apVersion, const app::ConcreteDataAttributePath & aPath,
                                        TLV::TLVReader * apData, const app::StatusIB & aStatus)
 {
     if (aPath.mAttributeId != kTestListAttribute)

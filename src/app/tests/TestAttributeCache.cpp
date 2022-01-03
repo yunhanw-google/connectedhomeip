@@ -198,13 +198,13 @@ void DataSeriesGenerator::Generate()
             writer.Finalize(&handle);
             reader.Init(std::move(handle));
             NL_TEST_ASSERT(gSuite, reader.Next() == CHIP_NO_ERROR);
-            callback->OnAttributeData(nullptr, path, &reader, status);
+            callback->OnAttributeData(nullptr, nullptr, path, &reader, status);
         }
         else
         {
             ChipLogProgress(DataManagement, "\t -- Generating Status");
             status.mStatus = Protocols::InteractionModel::Status::Failure;
-            callback->OnAttributeData(nullptr, path, nullptr, status);
+            callback->OnAttributeData(nullptr, nullptr, path, nullptr, status);
         }
 
         index++;
