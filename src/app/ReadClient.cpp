@@ -699,6 +699,7 @@ CHIP_ERROR ReadClient::SendSubscribeRequest(ReadPrepareParams & aReadPreparePara
 
     if (aReadPrepareParams.mAttributePathParamsListSize != 0 && aReadPrepareParams.mpAttributePathParamsList != nullptr)
     {
+        ChipLogError(DataManagement, "mAttributePathParamsListSize is not null");
         AttributePathIBs::Builder & attributePathListBuilder = request.CreateAttributeRequests();
         ReturnErrorOnFailure(err = attributePathListBuilder.GetError());
         ReturnErrorOnFailure(GenerateAttributePathList(attributePathListBuilder, aReadPrepareParams.mpAttributePathParamsList,
@@ -707,6 +708,7 @@ CHIP_ERROR ReadClient::SendSubscribeRequest(ReadPrepareParams & aReadPreparePara
 
     if (aReadPrepareParams.mEventPathParamsListSize != 0 && aReadPrepareParams.mpEventPathParamsList != nullptr)
     {
+        ChipLogError(DataManagement, "mEventPathParamsListSize is not null");
         EventPathIBs::Builder & eventPathListBuilder = request.CreateEventRequests();
         ReturnErrorOnFailure(err = eventPathListBuilder.GetError());
         ReturnErrorOnFailure(GenerateEventPaths(eventPathListBuilder, aReadPrepareParams.mpEventPathParamsList,

@@ -92,19 +92,6 @@ public:
             return CHIP_ERROR_INCORRECT_STATE;
         }
 
-        if (counter <= mSynced.mMaxCounter)
-        {
-            uint32_t offset = mSynced.mMaxCounter - counter;
-            if (offset >= CHIP_CONFIG_MESSAGE_COUNTER_WINDOW_SIZE)
-            {
-                return CHIP_ERROR_MESSAGE_COUNTER_OUT_OF_WINDOW; // outside valid range
-            }
-            if (mSynced.mWindow.test(offset))
-            {
-                return CHIP_ERROR_DUPLICATE_MESSAGE_RECEIVED; // duplicated, in window
-            }
-        }
-
         return CHIP_NO_ERROR;
     }
 

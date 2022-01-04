@@ -51,6 +51,11 @@ public:
         uint32_t waitTimeInMsec    = 0;
         uint32_t minWaitTimeInMsec = 0;
 
+        if (aNumRetries == 2)
+        {
+            aShouldResubscribe = false;
+            return;
+        }
         if (aNumRetries <= CHIP_RESUBSCRIBE_MAX_FIBONACCI_STEP_INDEX)
         {
             fibonacciNum      = GetFibonacciForIndex(aNumRetries);
