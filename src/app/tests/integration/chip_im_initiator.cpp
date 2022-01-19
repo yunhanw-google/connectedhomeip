@@ -146,8 +146,9 @@ public:
             }
         }
     }
-    void OnAttributeData(const chip::app::ReadClient * apReadClient, const chip::app::ConcreteDataAttributePath & aPath,
-                         chip::TLV::TLVReader * aData, const chip::app::StatusIB & status) override
+    void OnAttributeData(const chip::app::ReadClient * apReadClient, chip::DataVersion * apVersion,
+                         const chip::app::ConcreteDataAttributePath & aPath, chip::TLV::TLVReader * aData,
+                         const chip::app::StatusIB & status) override
     {}
 
     void OnError(const chip::app::ReadClient * apReadClient, CHIP_ERROR aError) override

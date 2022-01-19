@@ -146,6 +146,8 @@ DECLARE_DYNAMIC_CLUSTER(ZCL_DESCRIPTOR_CLUSTER_ID, descriptorAttrs),
 
 // Declare Content App endpoint
 DECLARE_DYNAMIC_ENDPOINT(contentAppEndpoint, contentAppClusters);
+DECLARE_DYNAMIC_CLUSTER_VERSION(contentAppClustersVersion, contentAppClusters);
+CONFIG_DYNAMIC_CLUSTER_VERSION(contentAppClustersVersion, contentAppClusters);
 
 ContentAppImpl::ContentAppImpl(const char * szVendorName, uint16_t vendorId, const char * szApplicationName, uint16_t productId,
                                const char * szApplicationVersion)

@@ -96,8 +96,8 @@ private:
 
     void OnReportEnd(const ReadClient * apReadClient) override;
 
-    void OnAttributeData(const ReadClient * apReadClient, const ConcreteDataAttributePath & aPath, TLV::TLVReader * apData,
-        const StatusIB & aStatus) override;
+    void OnAttributeData(const ReadClient * apReadClient, DataVersion * apVersion, const ConcreteDataAttributePath & aPath,
+        TLV::TLVReader * apData, const StatusIB & aStatus) override;
 
     void OnError(const ReadClient * apReadClient, CHIP_ERROR aError) override;
 
@@ -215,8 +215,8 @@ void SubscriptionCallback::OnReportEnd(const ReadClient * apReadClient)
     // Else we have a pending error already.
 }
 
-void SubscriptionCallback::OnAttributeData(
-    const ReadClient * apReadClient, const ConcreteDataAttributePath & aPath, TLV::TLVReader * apData, const StatusIB & aStatus)
+void SubscriptionCallback::OnAttributeData(const ReadClient * apReadClient, DataVersion * apVersion,
+    const ConcreteDataAttributePath & aPath, TLV::TLVReader * apData, const StatusIB & aStatus)
 {
     if (aPath.IsListItemOperation()) {
         ReportError(CHIP_ERROR_INCORRECT_STATE);

@@ -499,6 +499,7 @@ CHIP_ERROR ReadClient::ProcessAttributeReportIBs(TLV::TLVReader & aAttributeRepo
         AttributePathIB::Parser path;
         ConcreteDataAttributePath attributePath;
         StatusIB statusIB;
+        DataVersion version = 0;
 
         TLV::TLVReader reader = aAttributeReportIBsReader;
         ReturnErrorOnFailure(report.Init(reader));
@@ -511,13 +512,14 @@ CHIP_ERROR ReadClient::ProcessAttributeReportIBs(TLV::TLVReader & aAttributeRepo
             ReturnErrorOnFailure(ProcessAttributePath(path, attributePath));
             ReturnErrorOnFailure(status.GetErrorStatus(&errorStatus));
             ReturnErrorOnFailure(errorStatus.DecodeStatusIB(statusIB));
-            mpCallback.OnAttributeData(this, attributePath, nullptr, statusIB);
+            mpCallback.OnAttributeData(this, nullptr, attributePath, nullptr, statusIB);
         }
         else if (CHIP_END_OF_TLV == err)
         {
             ReturnErrorOnFailure(report.GetAttributeData(&data));
             ReturnErrorOnFailure(data.GetPath(&path));
             ReturnErrorOnFailure(ProcessAttributePath(path, attributePath));
+            ReturnErrorOnFailure(data.GetDataVersion(&version));
             ReturnErrorOnFailure(data.GetData(&dataReader));
 
             // The element in an array may be another array -- so we should only set the list operation when we are handling the
@@ -527,7 +529,7 @@ CHIP_ERROR ReadClient::ProcessAttributeReportIBs(TLV::TLVReader & aAttributeRepo
                 attributePath.mListOp = ConcreteDataAttributePath::ListOperation::ReplaceAll;
             }
 
-            mpCallback.OnAttributeData(this, attributePath, &dataReader, statusIB);
+            mpCallback.OnAttributeData(this, &version, attributePath, &dataReader, statusIB);
         }
     }
 

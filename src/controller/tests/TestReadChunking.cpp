@@ -69,13 +69,15 @@ private:
 };
 
 //clang-format off
+chip::DataVersion testEndpointClustersVersion[1]  = { 0 };
+chip::DataVersion testEndpoint3ClustersVersion[1] = { 0 };
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(testClusterAttrs)
 DECLARE_DYNAMIC_ATTRIBUTE(0x00000001, INT8U, 1, 0), DECLARE_DYNAMIC_ATTRIBUTE(0x00000002, INT8U, 1, 0),
     DECLARE_DYNAMIC_ATTRIBUTE(0x00000003, INT8U, 1, 0), DECLARE_DYNAMIC_ATTRIBUTE(0x00000004, INT8U, 1, 0),
     DECLARE_DYNAMIC_ATTRIBUTE(0x00000005, INT8U, 1, 0), DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(testEndpointClusters)
-DECLARE_DYNAMIC_CLUSTER(TestCluster::Id, testClusterAttrs), DECLARE_DYNAMIC_CLUSTER_LIST_END;
+DECLARE_DYNAMIC_CLUSTER(TestCluster::Id, testClusterAttrs, &testEndpointClustersVersion[0]), DECLARE_DYNAMIC_CLUSTER_LIST_END;
 
 DECLARE_DYNAMIC_ENDPOINT(testEndpoint, testEndpointClusters);
 
@@ -84,7 +86,8 @@ DECLARE_DYNAMIC_ATTRIBUTE(kTestListAttribute, ARRAY, 1, 0), DECLARE_DYNAMIC_ATTR
     DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(testEndpoint3Clusters)
-DECLARE_DYNAMIC_CLUSTER(TestCluster::Id, testClusterAttrsOnEndpoint3), DECLARE_DYNAMIC_CLUSTER_LIST_END;
+DECLARE_DYNAMIC_CLUSTER(TestCluster::Id, testClusterAttrsOnEndpoint3, &testEndpoint3ClustersVersion[0]),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
 
 DECLARE_DYNAMIC_ENDPOINT(testEndpoint3, testEndpoint3Clusters);
 
@@ -96,8 +99,9 @@ class TestReadCallback : public app::ReadClient::Callback
 {
 public:
     TestReadCallback() : mBufferedCallback(*this) {}
-    void OnAttributeData(const app::ReadClient * apReadClient, const app::ConcreteDataAttributePath & aPath,
-                         TLV::TLVReader * apData, const app::StatusIB & aStatus) override;
+    void OnAttributeData(const app::ReadClient * apReadClient, DataVersion * apVersion,
+                         const app::ConcreteDataAttributePath & aPath, TLV::TLVReader * apData,
+                         const app::StatusIB & aStatus) override;
 
     void OnDone(app::ReadClient * apReadClient) override;
 
@@ -108,8 +112,9 @@ public:
     app::BufferedReadCallback mBufferedCallback;
 };
 
-void TestReadCallback::OnAttributeData(const app::ReadClient * apReadClient, const app::ConcreteDataAttributePath & aPath,
-                                       TLV::TLVReader * apData, const app::StatusIB & aStatus)
+void TestReadCallback::OnAttributeData(const app::ReadClient * apReadClient, DataVersion * apVersion,
+                                       const app::ConcreteDataAttributePath & aPath, TLV::TLVReader * apData,
+                                       const app::StatusIB & aStatus)
 {
     if (aPath.mAttributeId != kTestListAttribute)
     {
@@ -197,7 +202,6 @@ void TestCommandInteraction::TestChunking(nlTestSuite * apSuite, void * apContex
     auto sessionHandle                   = ctx.GetSessionBobToAlice();
     app::InteractionModelEngine * engine = app::InteractionModelEngine::GetInstance();
     TestAttrAccess testServer;
-
     // Initialize the ember side server logic
     InitDataModelHandler(&ctx.GetExchangeManager());
 
@@ -270,7 +274,6 @@ void TestCommandInteraction::TestListChunking(nlTestSuite * apSuite, void * apCo
     auto sessionHandle                   = ctx.GetSessionBobToAlice();
     app::InteractionModelEngine * engine = app::InteractionModelEngine::GetInstance();
     TestAttrAccess testServer;
-
     // Initialize the ember side server logic
     InitDataModelHandler(&ctx.GetExchangeManager());
 
@@ -344,7 +347,6 @@ void TestCommandInteraction::TestBadChunking(nlTestSuite * apSuite, void * apCon
     auto sessionHandle                   = ctx.GetSessionBobToAlice();
     app::InteractionModelEngine * engine = app::InteractionModelEngine::GetInstance();
     TestAttrAccess testServer;
-
     // Initialize the ember side server logic
     InitDataModelHandler(&ctx.GetExchangeManager());
 

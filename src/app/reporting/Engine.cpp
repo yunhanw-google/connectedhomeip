@@ -24,6 +24,7 @@
  */
 
 #include <app/AppBuildConfig.h>
+#include <app/ConcreteClusterPath.h>
 #include <app/InteractionModelEngine.h>
 #include <app/reporting/Engine.h>
 #include <app/util/MatterCallbacks.h>

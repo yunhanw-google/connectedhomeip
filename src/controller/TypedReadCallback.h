@@ -58,8 +58,9 @@ public:
     app::BufferedReadCallback & GetBufferedCallback() { return mBufferedReadAdapter; }
 
 private:
-    void OnAttributeData(const app::ReadClient * apReadClient, const app::ConcreteDataAttributePath & aPath,
-                         TLV::TLVReader * apData, const app::StatusIB & aStatus) override
+    void OnAttributeData(const app::ReadClient * apReadClient, DataVersion * apVersion,
+                         const app::ConcreteDataAttributePath & aPath, TLV::TLVReader * apData,
+                         const app::StatusIB & aStatus) override
     {
         CHIP_ERROR err = CHIP_NO_ERROR;
         DecodableAttributeType value;

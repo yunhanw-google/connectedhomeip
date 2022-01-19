@@ -158,8 +158,8 @@ void TestCommandInteraction::TestNoHandler(nlTestSuite * apSuite, void * apConte
     NL_TEST_ASSERT(apSuite, ctx.GetExchangeManager().GetNumActiveExchanges() == 0);
 }
 
-static const int kDescriptorAttributeArraySize = 254;
-
+static const int kDescriptorAttributeArraySize   = 254;
+chip::DataVersion testEndpointClustersVersion[2] = { 0 };
 // Declare Descriptor cluster attributes
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(descriptorAttrs)
 DECLARE_DYNAMIC_ATTRIBUTE(chip::app::Clusters::Descriptor::Attributes::DeviceList::Id, ARRAY, kDescriptorAttributeArraySize,
@@ -176,9 +176,9 @@ DECLARE_DYNAMIC_ATTRIBUTE_LIST_BEGIN(testClusterAttrs)
 DECLARE_DYNAMIC_ATTRIBUTE_LIST_END();
 
 DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(testEndpointClusters)
-DECLARE_DYNAMIC_CLUSTER(chip::app::Clusters::TestCluster::Id, testClusterAttrs),
-    DECLARE_DYNAMIC_CLUSTER(chip::app::Clusters::Descriptor::Id, descriptorAttrs), DECLARE_DYNAMIC_CLUSTER_LIST_END;
-
+DECLARE_DYNAMIC_CLUSTER(chip::app::Clusters::TestCluster::Id, testClusterAttrs, &testEndpointClustersVersion[0]),
+    DECLARE_DYNAMIC_CLUSTER(chip::app::Clusters::Descriptor::Id, descriptorAttrs, &testEndpointClustersVersion[1]),
+    DECLARE_DYNAMIC_CLUSTER_LIST_END;
 DECLARE_DYNAMIC_ENDPOINT(testEndpoint, testEndpointClusters);
 
 void TestCommandInteraction::TestDataResponse(nlTestSuite * apSuite, void * apContext)

@@ -46,6 +46,7 @@
 #include <app/util/af.h>
 #include <app/util/attribute-storage.h>
 #include <lib/support/CodeUtils.h>
+#include <lib/support/DLLUtil.h>
 #include <lib/support/logging/CHIPLogging.h>
 
 #include <app-common/zap-generated/attribute-type.h>
@@ -94,6 +95,7 @@ constexpr const EmberAfAttributeMinMaxValue minMaxDefaults[] = GENERATED_MIN_MAX
 GENERATED_FUNCTION_ARRAYS
 #endif
 
+uint32_t clusterVersions[GENERATED_CLUSTER_COUNT]                   = { 0 };
 constexpr const EmberAfAttributeMetadata generatedAttributes[]      = GENERATED_ATTRIBUTES;
 constexpr const EmberAfCluster generatedClusters[]                  = GENERATED_CLUSTERS;
 constexpr const EmberAfEndpointType generatedEmberAfEndpointTypes[] = GENERATED_ENDPOINT_TYPES;
@@ -130,6 +132,11 @@ void emberAfEndpointConfigure(void)
     uint8_t fixedEmberAfEndpointTypes[] = FIXED_ENDPOINT_TYPES;
     uint8_t fixedNetworks[]             = FIXED_NETWORKS;
 #endif
+
+    for (int cluster = 0; cluster < GENERATED_CLUSTER_COUNT; cluster++)
+    {
+        Crypto::DRBG_get_bytes(reinterpret_cast<uint8_t *>(clusterVersions[cluster]), 4);
+    }
 
     emberEndpointCount = FIXED_ENDPOINT_COUNT;
     for (ep = 0; ep < FIXED_ENDPOINT_COUNT; ep++)
@@ -197,6 +204,12 @@ EmberAfStatus emberAfSetDynamicEndpoint(uint16_t index, EndpointId id, EmberAfEn
     emAfEndpoints[index].networkIndex  = 0;
     // Start the endpoint off as disabled.
     emAfEndpoints[index].bitmask = EMBER_AF_ENDPOINT_DISABLED;
+
+    for (uint32_t j = 0; j < ep->clusterCount; j++)
+    {
+        EmberAfCluster * cluster = ep->cluster + j;
+        Crypto::DRBG_get_bytes(reinterpret_cast<uint8_t *>(cluster->version), 4);
+    }
 
     emberAfSetDynamicEndpointCount(MAX_ENDPOINT_COUNT - FIXED_ENDPOINT_COUNT);
 

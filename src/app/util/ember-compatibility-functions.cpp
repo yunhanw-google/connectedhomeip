@@ -24,6 +24,7 @@
 #include <access/AccessControl.h>
 #include <app/ClusterInfo.h>
 #include <app/ConcreteAttributePath.h>
+#include <app/ConcreteClusterPath.h>
 #include <app/InteractionModelEngine.h>
 #include <app/reporting/Engine.h>
 #include <app/reporting/reporting.h>
@@ -58,7 +59,6 @@ namespace chip {
 namespace app {
 namespace Compatibility {
 namespace {
-constexpr uint32_t kTemporaryDataVersion = 0;
 // On some apps, ATTRIBUTE_LARGEST can as small as 3, making compiler unhappy since data[kAttributeReadBufferSize] cannot hold
 // uint64_t. Make kAttributeReadBufferSize at least 8 so it can fit all basic types.
 constexpr size_t kAttributeReadBufferSize = (ATTRIBUTE_LARGEST >= 8 ? ATTRIBUTE_LARGEST : 8);
@@ -248,6 +248,34 @@ bool ServerClusterCommandExists(const ConcreteCommandPath & aCommandPath)
 
 namespace {
 
+CHIP_ERROR ReadClusterDataVersion(const EndpointId & aEndpointId, const ClusterId & aClusterId, DataVersion & aDataVersion)
+{
+    EmberAfCluster * cluster = emberAfFindCluster(aEndpointId, aClusterId, CLUSTER_MASK_SERVER);
+    if (cluster == nullptr)
+    {
+        return CHIP_ERROR_NOT_FOUND;
+    }
+    aDataVersion = *(cluster->version);
+    return CHIP_NO_ERROR;
+}
+
+void IncreaseClusterDataVersion(const EndpointId & aEndpointId, const ClusterId & aClusterId)
+{
+    EmberAfCluster * cluster = emberAfFindCluster(aEndpointId, aClusterId, CLUSTER_MASK_SERVER);
+    if (cluster == nullptr)
+    {
+        ChipLogError(DataManagement, "Path: Endpoint %" PRIx16 ", Cluster %" PRIx32 " not found in IncreaseClusterDataVersion!",
+                     aEndpointId, aClusterId);
+    }
+    else
+    {
+        (*(cluster->version))++;
+        ChipLogDetail(DataManagement, "Endpoint %" PRIx16 ", Cluster %" PRIx32 " update version to %" PRIx32, aEndpointId,
+                      aClusterId, *(cluster->version));
+    }
+    return;
+}
+
 CHIP_ERROR SendSuccessStatus(AttributeReportIB::Builder & aAttributeReport, AttributeDataIB::Builder & aAttributeDataIBBuilder)
 {
     ReturnErrorOnFailure(aAttributeDataIBBuilder.EndOfAttributeDataIB().GetError());
@@ -340,7 +368,9 @@ CHIP_ERROR ReadViaAccessInterface(FabricIndex aAccessingFabricIndex, const Concr
     // into status responses, unless our caller already does that.
     AttributeValueEncoder::AttributeEncodeState state =
         (aEncoderState == nullptr ? AttributeValueEncoder::AttributeEncodeState() : *aEncoderState);
-    AttributeValueEncoder valueEncoder(aAttributeReports, aAccessingFabricIndex, aPath, kTemporaryDataVersion, state);
+    DataVersion version = 0;
+    ReturnErrorOnFailure(ReadClusterDataVersion(aPath.mEndpointId, aPath.mClusterId, version));
+    AttributeValueEncoder valueEncoder(aAttributeReports, aAccessingFabricIndex, aPath, version, state);
     CHIP_ERROR err = aAccessInterface->Read(aPath, valueEncoder);
 
     if (err != CHIP_NO_ERROR)
@@ -445,7 +475,9 @@ CHIP_ERROR ReadSingleClusterData(const SubjectDescriptor & aSubjectDescriptor, c
     AttributeDataIB::Builder & attributeDataIBBuilder = attributeReport.CreateAttributeData();
     ReturnErrorOnFailure(attributeDataIBBuilder.GetError());
 
-    attributeDataIBBuilder.DataVersion(kTemporaryDataVersion);
+    DataVersion version = 0;
+    ReturnErrorOnFailure(ReadClusterDataVersion(aPath.mEndpointId, aPath.mClusterId, version));
+    attributeDataIBBuilder.DataVersion(version);
     ReturnErrorOnFailure(attributeDataIBBuilder.GetError());
 
     AttributePathIB::Builder & attributePathIBBuilder = attributeDataIBBuilder.CreatePath();
@@ -918,7 +950,7 @@ void MatterReportingAttributeChangeCallback(EndpointId endpoint, ClusterId clust
     info.mClusterId   = clusterId;
     info.mAttributeId = attributeId;
     info.mEndpointId  = endpoint;
-
+    IncreaseClusterDataVersion(endpoint, clusterId);
     InteractionModelEngine::GetInstance()->GetReportingEngine().SetDirty(info);
 
     // Schedule work to run asynchronously on the CHIP thread. The scheduled work won't execute until the current execution context

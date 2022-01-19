@@ -182,7 +182,7 @@ function chip_endpoint_generated_functions()
 function chip_endpoint_cluster_list()
 {
   let ret = '{ \\\n';
-  this.clusterList.forEach((c) => {
+  let i   = 0 this.clusterList.forEach((c) => {
     let mask          = '';
     let functionArray = c.functions;
     let clusterName   = c.clusterName;
@@ -220,7 +220,8 @@ function chip_endpoint_cluster_list()
       mask = c.mask.map((m) => `ZAP_CLUSTER_MASK(${m.toUpperCase()})`).join(' | ')
     }
     ret = ret.concat(`  { ${c.clusterId}, ZAP_ATTRIBUTE_INDEX(${c.attributeIndex}), ${c.attributeCount}, ${c.attributeSize}, ${
-        mask}, ${functionArray} }, /* ${c.comment} */ \\\n`)
+        mask}, ${functionArray}, ZAP_CLUSTER_VERSION_INDEX(${i}) }, /* ${c.comment} */ \\\n`)
+    i++
   })
   return ret.concat('}\n');
 }

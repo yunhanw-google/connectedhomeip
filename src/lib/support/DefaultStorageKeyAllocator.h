@@ -17,6 +17,7 @@
 #pragma once
 
 #include <app/ConcreteAttributePath.h>
+#include <app/ConcreteClusterPath.h>
 #include <app/util/basic-types.h>
 #include <lib/support/EnforceFormat.h>
 #include <lib/support/logging/Constants.h>
@@ -53,6 +54,11 @@ public:
         // Needs at most 24 chars: 4 for "a///", 4 for the endpoint id, 8 each
         // for the cluster and attribute ids.
         return Format("a/%" PRIx16 "/%" PRIx32 "/%" PRIx32, aPath.mEndpointId, aPath.mClusterId, aPath.mAttributeId);
+    }
+
+    const char * ClusterValue(const app::ConcreteClusterPath & aPath)
+    {
+        return Format("a/%" PRIx16 "/%" PRIx32, aPath.mEndpointId, aPath.mClusterId);
     }
 
 private:

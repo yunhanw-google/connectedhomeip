@@ -77,10 +77,10 @@
     EmberAfEndpointType endpointName = { clusterList, sizeof(clusterList) / sizeof(EmberAfCluster), 0 }
 
 #define DECLARE_DYNAMIC_CLUSTER_LIST_BEGIN(clusterListName) EmberAfCluster clusterListName[] = {
-
-#define DECLARE_DYNAMIC_CLUSTER(clusterId, clusterAttrs)                                                                           \
+#define DECLARE_DYNAMIC_CLUSTER(clusterId, clusterAttrs, versionAddr)                                                              \
     {                                                                                                                              \
-        clusterId, clusterAttrs, sizeof(clusterAttrs) / sizeof(EmberAfAttributeMetadata), 0, ZAP_CLUSTER_MASK(SERVER), NULL        \
+        clusterId, clusterAttrs, sizeof(clusterAttrs) / sizeof(EmberAfAttributeMetadata), 0, ZAP_CLUSTER_MASK(SERVER), NULL,       \
+            versionAddr                                                                                                            \
     }
 
 #define DECLARE_DYNAMIC_CLUSTER_LIST_END }

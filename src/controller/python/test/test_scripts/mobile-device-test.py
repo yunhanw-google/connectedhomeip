@@ -122,17 +122,23 @@ def main():
     FailIfNot(asyncio.run(ClusterObjectTests.RunTest(test.devCtrl)),
               "Failed when testing Python Cluster Object APIs")
 
-    logger.info("Testing attribute reading")
+    logger.info("Testing attribute reading basic")
     FailIfNot(test.TestReadBasicAttributes(nodeid=1,
                                            endpoint=ENDPOINT_ID,
                                            group=GROUP_ID),
               "Failed to test Read Basic Attributes")
 
-    logger.info("Testing attribute writing")
+    logger.info("Testing attribute writing basic")
     FailIfNot(test.TestWriteBasicAttributes(nodeid=1,
                                             endpoint=ENDPOINT_ID,
                                             group=GROUP_ID),
               "Failed to test Write Basic Attributes")
+
+    logger.info("Testing attribute reading basic again")
+    FailIfNot(test.TestReadBasicAttributes(nodeid=1,
+                                           endpoint=ENDPOINT_ID,
+                                           group=GROUP_ID),
+              "Failed to test Read Basic Attributes")
 
     logger.info("Testing subscription")
     FailIfNot(test.TestSubscription(nodeid=1, endpoint=LIGHTING_ENDPOINT_ID),
