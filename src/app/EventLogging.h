@@ -22,6 +22,8 @@
 #include <app/EventLoggingDelegate.h>
 #include <app/EventManagement.h>
 #include <app/data-model/Encode.h>
+#include <app/data-model/FabricScopedEvent.h>
+#include <app/data-model/Nullable.h>
 #include <app/data-model/List.h> // So we can encode lists
 
 namespace chip {
@@ -61,7 +63,47 @@ private:
  *
  * @return CHIP_ERROR  CHIP Error Code
  */
-template <typename T>
+template <typename T,
+        typename std::enable_if_t<
+                std::is_class<T>::value && DataModel::IsFabricScopedEvent<T>::value &&
+                std::is_same<decltype(std::declval<T>().GetFabricIndex()), FabricIndex>::value,
+                T> * = nullptr>
+CHIP_ERROR LogEvent(const T & aEventData, EndpointId aEndpoint, EventNumber & aEventNumber,
+                    EventOptions::Type aUrgent = EventOptions::Type::kNotUrgent)
+{
+    EventLogger<T> eventData(aEventData);
+    ConcreteEventPath path(aEndpoint, aEventData.GetClusterId(), aEventData.GetEventId());
+    EventManagement & logMgmt = chip::app::EventManagement::GetInstance();
+    EventOptions eventOptions;
+    eventOptions.mUrgent   = aUrgent;
+    eventOptions.mPath     = path;
+    eventOptions.mPriority = aEventData.GetPriorityLevel();
+    eventOptions.mFabricIndex.SetNonNull(aEventData.GetFabricIndex());
+    ChipLogError(EventLogging, "current fabric index is %u in LogEvent", aEventData.GetFabricIndex());;
+    return logMgmt.LogEvent(&eventData, eventOptions, aEventNumber);
+}
+
+template <typename T,
+        typename std::enable_if_t<
+                std::is_class<T>::value && DataModel::IsFabricScopedEvent<T>::value &&
+                std::is_same<decltype(std::declval<T>().GetFabricIndex()), DataModel::Nullable<chip::FabricIndex>>::value,
+                T> * = nullptr>
+CHIP_ERROR LogEvent(const T & aEventData, EndpointId aEndpoint, EventNumber & aEventNumber,
+                    EventOptions::Type aUrgent = EventOptions::Type::kNotUrgent)
+{
+    EventLogger<T> eventData(aEventData);
+    ConcreteEventPath path(aEndpoint, aEventData.GetClusterId(), aEventData.GetEventId());
+    EventManagement & logMgmt = chip::app::EventManagement::GetInstance();
+    EventOptions eventOptions;
+    eventOptions.mUrgent   = aUrgent;
+    eventOptions.mPath     = path;
+    eventOptions.mPriority = aEventData.GetPriorityLevel();
+    eventOptions.mFabricIndex = aEventData.GetNullableFabricIndex();
+    return logMgmt.LogEvent(&eventData, eventOptions, aEventNumber);
+}
+
+
+template <typename T, std::enable_if_t<!DataModel::IsFabricScopedEvent<T>::value, bool> = true>
 CHIP_ERROR LogEvent(const T & aEventData, EndpointId aEndpoint, EventNumber & aEventNumber,
                     EventOptions::Type aUrgent = EventOptions::Type::kNotUrgent)
 {

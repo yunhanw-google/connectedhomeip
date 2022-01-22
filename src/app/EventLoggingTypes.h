@@ -22,6 +22,7 @@
 #include <lib/core/CHIPCore.h>
 #include <lib/core/CHIPTLV.h>
 #include <system/SystemPacketBuffer.h>
+#include <app/data-model/Nullable.h>
 
 constexpr size_t kNumPriorityLevel = 3;
 namespace chip {
@@ -140,6 +141,7 @@ public:
     PriorityLevel mPriority = PriorityLevel::Invalid;
     Type mUrgent            = Type::kNotUrgent; /**< A flag denoting if the event is time sensitive.  When kUrgent is set, it causes
                                                        the event log to be flushed. */
+    DataModel::Nullable<chip::FabricIndex> mFabricIndex;
 };
 
 /**
@@ -149,7 +151,7 @@ public:
 struct EventLoadOutContext
 {
     EventLoadOutContext(TLV::TLVWriter & aWriter, PriorityLevel aPriority, EventNumber aStartingEventNumber) :
-        mWriter(aWriter), mPriority(aPriority), mStartingEventNumber(aStartingEventNumber), mCurrentEventNumber(0), mFirst(true)
+        mWriter(aWriter), mPriority(aPriority), mStartingEventNumber(aStartingEventNumber), mCurrentEventNumber(0), mFirst(true), mFabricIndex(0)
     {}
 
     TLV::TLVWriter & mWriter;
@@ -161,6 +163,7 @@ struct EventLoadOutContext
     size_t mEventCount                   = 0;
     ClusterInfo * mpInterestedEventPaths = nullptr;
     bool mFirst                          = true;
+    FabricIndex mFabricIndex = 0;
 };
 } // namespace app
 } // namespace chip
