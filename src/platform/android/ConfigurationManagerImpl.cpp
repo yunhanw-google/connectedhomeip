@@ -163,6 +163,24 @@ void ConfigurationManagerImpl::DoFactoryReset(intptr_t arg)
     return;
 }
 
+CHIP_ERROR ConfigurationManagerImpl::GetDataModelRevision(uint16_t & dataModelRev)
+{
+    CHIP_ERROR err;
+    uint16_t u16DataModelRev = 0;
+    err                     = ReadConfigValue(AndroidConfig::kConfigKey_DataModelRevision, u16DataModelRev);
+
+    if (err == CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND)
+    {
+        softwareVer = static_cast<uint16_t>(CHIP_DEVICE_CONFIG_DATA_MODEL_REVISION);
+    }
+    else
+    {
+        softwareVer = static_cast<uint16_t>(u16DataModelRev);
+    }
+
+    return CHIP_NO_ERROR;
+}
+
 CHIP_ERROR ConfigurationManagerImpl::GetProductId(uint16_t & productId)
 {
     CHIP_ERROR err;

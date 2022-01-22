@@ -55,6 +55,7 @@ public:
     static const char kConfigNamespace_ChipCounters[];
 
     // Key definitions for well-known keys.
+    static const Key kConfigKey_DataModelRevision;
     static const Key kConfigKey_SerialNum;
     static const Key kConfigKey_MfrDeviceId;
     static const Key kConfigKey_MfrDeviceCert;

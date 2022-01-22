@@ -41,6 +41,7 @@ enum class Tag : uint8_t
     kWriteRequests       = 2,
     kMoreChunkedMessages = 3,
     kIsFabricFiltered    = 4,
+    kDataModelRevision   = 5,
 };
 
 class Parser : public StructParser
@@ -108,6 +109,8 @@ public:
      *          #CHIP_END_OF_TLV if there is no such element
      */
     CHIP_ERROR GetIsFabricFiltered(bool * const apIsFabricFiltered) const;
+
+    CHIP_ERROR GetDataModelRevision(uint16_t * const apDataModelRevision) const;
 };
 
 class Builder : public StructBuilder
@@ -148,6 +151,8 @@ public:
      *  @return A reference to *this
      */
     WriteRequestMessage::Builder & IsFabricFiltered(const bool aIsFabricFiltered);
+
+    WriteRequestMessage::Builder & DataModelRevision(const uint16_t aDataModelRevision);
 
     /**
      *  @brief Mark the end of this WriteRequestMessage

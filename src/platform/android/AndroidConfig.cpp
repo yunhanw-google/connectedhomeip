@@ -57,6 +57,7 @@ const char AndroidConfig::kConfigNamespace_ChipConfig[]   = "chip-config";
 const char AndroidConfig::kConfigNamespace_ChipCounters[] = "chip-counters";
 
 // Keys stored in the Chip-factory namespace
+const AndroidConfig::Key AndroidConfig::kConfigKey_DataModelRevision       = { kConfigNamespace_ChipFactory, "data-model-revision" };
 const AndroidConfig::Key AndroidConfig::kConfigKey_SerialNum             = { kConfigNamespace_ChipFactory, "serial-num" };
 const AndroidConfig::Key AndroidConfig::kConfigKey_MfrDeviceId           = { kConfigNamespace_ChipFactory, "device-id" };
 const AndroidConfig::Key AndroidConfig::kConfigKey_MfrDeviceCert         = { kConfigNamespace_ChipFactory, "device-cert" };

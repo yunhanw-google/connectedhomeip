@@ -25,6 +25,7 @@ public interface ConfigurationManager {
   String kConfigNamespace_ChipCounters = "chip-counters";
 
   // Keys stored in the Chip-factory namespace
+  String kConfigKey_SoftwareVersion = "data-model-revision";
   String kConfigKey_SerialNum = "serial-num";
   String kConfigKey_MfrDeviceId = "device-id";
   String kConfigKey_MfrDeviceCert = "device-cert";

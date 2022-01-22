@@ -36,6 +36,7 @@ enum class Tag : uint8_t
     kSuppressResponse = 0,
     kTimedRequest     = 1,
     kInvokeRequests   = 2,
+    kDataModelRevision = 3,
 };
 
 class Parser : public StructParser
@@ -83,6 +84,8 @@ public:
      *          #CHIP_END_OF_TLV if there is no such element
      */
     CHIP_ERROR GetInvokeRequests(InvokeRequests::Parser * const apInvokeRequests) const;
+
+    CHIP_ERROR GetDataModelRevision(uint16_t * const apDataModelRevision) const;
 };
 
 class Builder : public StructBuilder
@@ -111,6 +114,8 @@ public:
      *  @return A reference to InvokeRequests::Builder
      */
     InvokeRequests::Builder & GetInvokeRequests() { return mInvokeRequests; }
+
+    InvokeRequests::Builder & DataModelRevision(const uint16_t aDataModelRevision);
 
     /**
      *  @brief Mark the end of this InvokeRequestMessage

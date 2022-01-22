@@ -255,6 +255,13 @@ void emberAfBasicClusterServerInitCallback(chip::EndpointId endpoint)
         VerifyOrdo(EMBER_ZCL_STATUS_SUCCESS == status, ChipLogError(Zcl, "Error setting Software Version: 0x%02x", status));
     }
 
+    uint16_t datamModelRevision;
+    if (ConfigurationMgr().GetDataModelRevision(dataModelRevision) == CHIP_NO_ERROR)
+    {
+        status = Attributes::DataModelRevision::Set(endpoint, dataModelRevision);
+        VerifyOrdo(EMBER_ZCL_STATUS_SUCCESS == status, ChipLogError(Zcl, "Error setting Data Model Revision: 0x%02x", status));
+    }
+
     char serialNumberString[DeviceLayer::ConfigurationManager::kMaxSerialNumberLength + 1];
     if (ConfigurationMgr().GetSerialNumber(serialNumberString, sizeof(serialNumberString)) == CHIP_NO_ERROR)
     {

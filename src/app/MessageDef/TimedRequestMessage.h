@@ -31,6 +31,7 @@ namespace TimedRequestMessage {
 enum class Tag : uint8_t
 {
     kTimeoutMs = 0,
+    kDataModelRevision = 1,
 };
 
 class Parser : public StructParser
@@ -60,6 +61,8 @@ public:
      *          #CHIP_END_OF_TLV if there is no such element
      */
     CHIP_ERROR GetTimeoutMs(uint16_t * const apTimeoutMs) const;
+
+    CHIP_ERROR GetDataModelRevision(uint16_t * const apDataModelRevision) const;
 };
 
 class Builder : public StructBuilder
@@ -70,6 +73,8 @@ public:
      *  the following action SHALL be received before the end of the Timeout interval.
      */
     TimedRequestMessage::Builder & TimeoutMs(const uint16_t aTimeoutMs);
+
+    TimedRequestMessage::Builder & DataModelRevision(const uint16_t aDataModelRevision);
 };
 } // namespace TimedRequestMessage
 } // namespace app

@@ -44,6 +44,7 @@ enum class Tag : uint8_t
     kEventFilters              = 6,
     kIsProxy                   = 7,
     kIsFabricFiltered          = 8,
+    kDataModelRevision         = 9,
 };
 
 class Parser : public StructParser
@@ -134,6 +135,8 @@ public:
      *          #CHIP_END_OF_TLV if there is no such element
      */
     CHIP_ERROR GetIsFabricFiltered(bool * const apIsFabricFiltered) const;
+
+    CHIP_ERROR GetDataModelRevision(uint16_t * const apDataModelRevision) const;
 };
 
 class Builder : public StructBuilder
@@ -163,6 +166,8 @@ public:
      *  @return A reference to *this
      */
     SubscribeRequestMessage::Builder & IsFabricFiltered(const bool aIsFabricFiltered);
+
+    SubscribeRequestMessage::Builder & DataModelRevision(const uint16_t aDataModelRevision);
 
     /**
      *  @brief Mark the end of this SubscribeRequestMessage

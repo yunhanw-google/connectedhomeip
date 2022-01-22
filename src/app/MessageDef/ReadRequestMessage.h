@@ -39,6 +39,7 @@ enum class Tag : uint8_t
     kEventRequests      = 2,
     kEventFilters       = 3,
     kIsFabricFiltered   = 4,
+    kDataModelRevision  = 5,
 };
 
 class Parser : public StructParser
@@ -106,6 +107,8 @@ public:
      *          #CHIP_END_OF_TLV if there is no such element
      */
     CHIP_ERROR GetIsFabricFiltered(bool * const apIsFabricFiltered) const;
+
+    CHIP_ERROR GetDataModelRevision(uint16_t * const apDataModelRevision) const;
 };
 
 class Builder : public StructBuilder
@@ -151,6 +154,8 @@ public:
      *  @return A reference to *this
      */
     ReadRequestMessage::Builder & EndOfReadRequestMessage();
+
+    ReadRequestMessage::Builder & DataModelRevision(const uint16_t aDataModelRevision);
 
 private:
     AttributePathIBs::Builder mAttributeRequests;
