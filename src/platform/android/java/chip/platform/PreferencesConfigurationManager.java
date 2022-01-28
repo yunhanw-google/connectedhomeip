@@ -54,6 +54,13 @@ public class PreferencesConfigurationManager implements ConfigurationManager {
 
     switch (key) {
         /**
+         * A monothonic number identifying the interaction model revision running on the device.
+         *
+         * <p>return a different value than src/include/platform/CHIPDeviceConfig.h for debug
+         */
+      case kConfigNamespace_ChipFactory + ":" + kConfigKey_SoftwareVersion:
+        return 1;
+        /**
          * The unique id assigned by the device vendor to identify the product or device type. This
          * number is scoped to the device vendor id. return a different value than
          * src/include/platform/CHIPDeviceConfig.h for debug

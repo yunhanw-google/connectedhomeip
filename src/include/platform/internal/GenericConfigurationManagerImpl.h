@@ -27,6 +27,7 @@
 
 #include <lib/support/BitFlags.h>
 #include <platform/ConfigurationManager.h>
+#include <lib/core/DataModelTypes.h>
 
 #if CHIP_ENABLE_ROTATING_DEVICE_ID
 #include <lib/support/LifetimePersistedCounter.h>
@@ -53,6 +54,7 @@ public:
     // ===== Methods that implement the ConfigurationManager abstract interface.
 
     CHIP_ERROR Init() override;
+    CHIP_ERROR GetInteractionModelRevision(InteractionModelRevision & interactionModelRevision) override;
     CHIP_ERROR GetVendorName(char * buf, size_t bufSize) override;
     CHIP_ERROR GetVendorId(uint16_t & vendorId) override;
     CHIP_ERROR GetProductName(char * buf, size_t bufSize) override;
@@ -141,6 +143,13 @@ protected:
     virtual CHIP_ERROR WriteConfigValueBin(Key key, const uint8_t * data, size_t dataLen)          = 0;
     virtual void RunConfigUnitTest(void)                                                           = 0;
 };
+
+template <class ConfigClass>
+inline CHIP_ERROR GenericConfigurationManagerImpl<ConfigClass>::GetInteractionModelRevision(InteractionModelRevision & interactionModelRevision)
+{
+    interactionModelRevision = static_cast<InteractionModelRevision>(CHIP_DEVICE_CONFIG_DEVICE_INTERACTION_MODEL_REVISION);
+    return CHIP_NO_ERROR;
+}
 
 template <class ConfigClass>
 inline CHIP_ERROR GenericConfigurationManagerImpl<ConfigClass>::GetVendorId(uint16_t & vendorId)

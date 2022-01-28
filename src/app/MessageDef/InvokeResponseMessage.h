@@ -35,6 +35,7 @@ enum class Tag : uint8_t
 {
     kSuppressResponse = 0,
     kInvokeResponses  = 1,
+    kInteractionModelRevision         = 2,
 };
 
 class Parser : public StructParser
@@ -74,6 +75,8 @@ public:
      *          #CHIP_END_OF_TLV if there is no such element
      */
     CHIP_ERROR GetInvokeResponses(InvokeResponseIBs::Parser * const apInvokeResponses) const;
+
+    CHIP_ERROR GetInteractionModelRevision(InteractionModelRevision * const apInteractionModelRevision) const;
 };
 
 class Builder : public StructBuilder

@@ -229,6 +229,15 @@
 #endif
 
 /**
+ * CHIP_DEVICE_CONFIG_DEVICE_INTERACTION_MODEL_REVISION
+ *
+ * A monothonic number identifying the interaction model revision running on the device.
+ */
+#ifndef CHIP_DEVICE_CONFIG_DEVICE_INTERACTION_MODEL_REVISION
+#define CHIP_DEVICE_CONFIG_DEVICE_INTERACTION_MODEL_REVISION 1
+#endif
+
+/**
  * CHIP_DEVICE_CONFIG_TEST_SERIAL_NUMBER
  *
  * Enables the use of a hard-coded default serial number if none

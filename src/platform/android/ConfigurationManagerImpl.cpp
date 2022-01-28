@@ -163,6 +163,24 @@ void ConfigurationManagerImpl::DoFactoryReset(intptr_t arg)
     return;
 }
 
+CHIP_ERROR ConfigurationManagerImpl::GetInteractionModelRevision(InteractionModelRevision & interactionModelRevision)
+{
+    CHIP_ERROR err;
+    uint8_t u8InteractionModelRev = 0;
+    err                     = ReadConfigValue(AndroidConfig::kConfigKey_InteractionModelRevision, u8InteractionModelRevision);
+
+    if (err == CHIP_DEVICE_ERROR_CONFIG_NOT_FOUND)
+    {
+        interactionModelRevision = static_cast<uint16_t>(CHIP_DEVICE_CONFIG_INTERACTION_MODEL_REVISION);
+    }
+    else
+    {
+        interactionModelRevision = static_cast<uint8_t>(u8InteractionModelRevision);
+    }
+
+    return CHIP_NO_ERROR;
+}
+
 CHIP_ERROR ConfigurationManagerImpl::GetProductId(uint16_t & productId)
 {
     CHIP_ERROR err;
