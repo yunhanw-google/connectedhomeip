@@ -233,6 +233,7 @@ class NetworkCommissioningTests:
         try:
             endpoints = await self._devCtrl.ReadAttribute(nodeid=self._nodeid, attributes=[(Clusters.NetworkCommissioning.Attributes.FeatureMap)], returnClusterObject=True)
             logger.info(endpoints)
+            thread_commission_done = False
             for endpoint, obj in endpoints.items():
                 clus = obj[Clusters.NetworkCommissioning]
                 if clus.featureMap == WIFI_NETWORK_FEATURE_MAP:
@@ -240,9 +241,15 @@ class NetworkCommissioningTests:
                         f"Endpoint {endpoint} is configured as WiFi network, run WiFi commissioning test.")
                     await self.test_wifi(endpoint)
                 elif clus.featureMap == THREAD_NETWORK_FEATURE_MAP:
-                    logger.info(
-                        f"Endpoint {endpoint} is configured as Thread network, run Thread commissioning test.")
-                    await self.test_thread(endpoint)
+                    if thread_commission_done:
+                        logger.info(
+                            f"Skip endpoint {endpoint} with featureMap {clus.featureMap}")
+                        continue
+                    else:
+                        logger.info(
+                            f"Endpoint {endpoint} is configured as Thread network, run Thread commissioning test.")
+                        await self.test_thread(endpoint)
+                        thread_commission_done = True
                 else:
                     logger.info(
                         f"Skip endpoint {endpoint} with featureMap {clus.featureMap}")
