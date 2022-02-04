@@ -91,11 +91,6 @@ ReadHandler::~ReadHandler()
             OnRefreshSubscribeTimerSyncCallback, this);
     }
 
-    if (IsAwaitingReportResponse())
-    {
-        InteractionModelEngine::GetInstance()->GetReportingEngine().OnReportConfirm();
-    }
-
     InteractionModelEngine::GetInstance()->ReleaseClusterInfoList(mpAttributeClusterInfoList);
     InteractionModelEngine::GetInstance()->ReleaseClusterInfoList(mpEventClusterInfoList);
 }
@@ -106,6 +101,11 @@ void ReadHandler::Close()
     {
         mpExchangeCtx->SetDelegate(nullptr);
         mpExchangeCtx = nullptr;
+    }
+
+    if (IsAwaitingReportResponse())
+    {
+        InteractionModelEngine::GetInstance()->GetReportingEngine().OnReportConfirm();
     }
 
     MoveToState(HandlerState::AwaitingDestruction);
@@ -202,6 +202,7 @@ CHIP_ERROR ReadHandler::SendReportData(System::PacketBufferHandle && aPayload, b
     if (IsPriming() || IsChunkedReport())
     {
         mSessionHandle.Grab(mpExchangeCtx->GetSessionHandle());
+        mpExchangeCtx->SetResponseTimeout(kImMessageTimeout);
     }
     else
     {
