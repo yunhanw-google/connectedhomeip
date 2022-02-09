@@ -103,17 +103,20 @@ SessionHandle MessagingContext::GetSessionBobToFriends()
 
 void MessagingContext::ExpireSessionBobToAlice()
 {
-    mSessionManager.ExpirePairing(mSessionBobToAlice.Get());
+    if (mSessionBobToAlice)
+        mSessionManager.ExpirePairing(mSessionBobToAlice.Get());
 }
 
 void MessagingContext::ExpireSessionAliceToBob()
 {
-    mSessionManager.ExpirePairing(mSessionAliceToBob.Get());
+    if (mSessionAliceToBob)
+        mSessionManager.ExpirePairing(mSessionAliceToBob.Get());
 }
 
 void MessagingContext::ExpireSessionBobToFriends()
 {
-    mSessionManager.RemoveGroupSession(mSessionBobToFriends.Get()->AsGroupSession());
+    if (mSessionBobToFriends)
+        mSessionManager.RemoveGroupSession(mSessionBobToFriends.Get()->AsGroupSession());
 }
 
 Messaging::ExchangeContext * MessagingContext::NewUnauthenticatedExchangeToAlice(Messaging::ExchangeDelegate * delegate)
