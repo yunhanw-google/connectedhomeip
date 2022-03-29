@@ -59,6 +59,11 @@ struct ConcreteAttributePath : public ConcreteClusterPath
             ((mEndpointId == path.mEndpointId) && (mClusterId == path.mClusterId) && (mAttributeId < path.mAttributeId));
     }
 
+    bool IsSameCluster(const ConcreteAttributePath & other) const
+    {
+        return (mEndpointId == other.mEndpointId) && (mClusterId == other.mClusterId);
+    }
+
     AttributeId mAttributeId = 0;
 };
 

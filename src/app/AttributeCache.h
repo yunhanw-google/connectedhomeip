@@ -360,10 +360,13 @@ private:
         return mCallback.OnDeallocatePaths(std::move(aReadPrepareParams));
     }
 
+    uint32_t OnUpdateDataVersionFilterList(DataVersionFilterIBs::Builder & aDataVersionFilterIBsBuilder,
+                                           DataVersionFilter * apDataVersionFilterList, size_t aDataVersionFilterListSize) override;
+
 private:
     Callback & mCallback;
     NodeState mCache;
-    std::set<ConcreteAttributePath> mChangedAttributeSet;
+    std::set<ConcreteDataAttributePath> mChangedAttributeSet;
     std::vector<EndpointId> mAddedEndpoints;
     BufferedReadCallback mBufferedReader;
 };
