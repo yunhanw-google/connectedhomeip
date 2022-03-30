@@ -62,7 +62,9 @@ CHIP_ERROR AttributeCache::UpdateCache(const ConcreteDataAttributePath & aPath, 
     }
 
     mCache[aPath.mEndpointId][aPath.mClusterId][aPath.mAttributeId] = std::move(state);
-    mChangedAttributeSet.insert(aPath);
+    ConcreteDataAttributePathWithSize pathWithSize(aPath);
+    GetClusterSize(pathWithSize);
+    mChangedAttributeSet.insert(pathWithSize);
     return CHIP_NO_ERROR;
 }
 

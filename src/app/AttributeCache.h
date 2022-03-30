@@ -35,6 +35,8 @@
 namespace chip {
 namespace app {
 
+static inline bool cmp(const ConcreteDataAttributePathWithSize &a, const ConcreteDataAttributePathWithSize &b) { return a.mSize > b.mSize; }
+
 /*
  * This implements an attribute cache designed to aggregate attribute data received by a client
  * from either read or subscribe interactions and keep it resident and available for clients to
@@ -217,6 +219,37 @@ public:
      */
     CHIP_ERROR Get(const ConcreteAttributePath & path, TLV::TLVReader & reader);
 
+    void GetClusterSize(ConcreteDataAttributePathWithSize &aConcreteDataAttributePath)
+    {
+        uint32_t totalSize = 0;
+        ForEachAttribute(aConcreteDataAttributePath.mEndpointId, aConcreteDataAttributePath.mClusterId, [this, &totalSize](const ConcreteAttributePath & path) {
+            TLV::TLVReader reader;
+            CHIP_ERROR err;
+            err = Get(path, reader);
+            if (err == CHIP_ERROR_IM_STATUS_CODE_RECEIVED)
+            {
+                StatusIB status;
+                ReturnErrorOnFailure(GetStatus(path, status));
+                err = CHIP_NO_ERROR;
+            }
+            else if (err == CHIP_NO_ERROR)
+            {
+                // Skip to the end of the element.
+                ReturnErrorOnFailure(reader.Skip());
+
+                // Compute the amount of value data
+                totalSize += reader.GetLengthRead();
+            }
+            else
+            {
+                return err;
+            }
+
+            return CHIP_NO_ERROR;
+        });
+        aConcreteDataAttributePath.mSize = totalSize;
+    }
+
     /*
      * Execute an iterator function that is called for every attribute
      * in a given endpoint and cluster. The function when invoked is provided a concrete attribute path
@@ -366,7 +399,9 @@ private:
 private:
     Callback & mCallback;
     NodeState mCache;
-    std::set<ConcreteDataAttributePath> mChangedAttributeSet;
+
+    std::set<ConcreteDataAttributePathWithSize, decltype(&cmp)> mChangedAttributeSet;
+
     std::vector<EndpointId> mAddedEndpoints;
     BufferedReadCallback mBufferedReader;
 };

@@ -213,10 +213,11 @@ CHIP_ERROR ReadClient::SendReadRequest(ReadPrepareParams & aReadPrepareParams)
         msgBuf = System::PacketBufferHandle::New(kMaxSecureSduLengthBytes);
         VerifyOrReturnError(!msgBuf.IsNull(), err = CHIP_ERROR_NO_MEMORY);
 
-        writer.Init(std::move(msgBuf));
+        uint16_t reservedSize = 0;
 
-        uint16_t reservedSize =
-            static_cast<uint16_t>(Crypto::CHIP_CRYPTO_AEAD_MIC_LENGTH_BYTES + kReservedSizeForTLVEncodingOverhead);
+        reservedSize = reservedSize + static_cast<uint16_t>(Crypto::CHIP_CRYPTO_AEAD_MIC_LENGTH_BYTES + kReservedSizeForTLVEncodingOverhead);
+
+        writer.Init(std::move(msgBuf));
 
         ReturnErrorOnFailure(writer.ReserveBuffer(reservedSize));
 
@@ -843,9 +844,11 @@ CHIP_ERROR ReadClient::SendSubscribeRequest(ReadPrepareParams & aReadPreparePara
     VerifyOrReturnError(aReadPrepareParams.mMinIntervalFloorSeconds <= aReadPrepareParams.mMaxIntervalCeilingSeconds,
                         err = CHIP_ERROR_INVALID_ARGUMENT);
 
-    writer.Init(std::move(msgBuf));
+    uint16_t reservedSize = 0;
 
-    uint16_t reservedSize = static_cast<uint16_t>(Crypto::CHIP_CRYPTO_AEAD_MIC_LENGTH_BYTES + kReservedSizeForTLVEncodingOverhead);
+    reservedSize = reservedSize + static_cast<uint16_t>(Crypto::CHIP_CRYPTO_AEAD_MIC_LENGTH_BYTES + kReservedSizeForTLVEncodingOverhead);
+
+    writer.Init(std::move(msgBuf));
 
     ReturnErrorOnFailure(writer.ReserveBuffer(reservedSize));
 

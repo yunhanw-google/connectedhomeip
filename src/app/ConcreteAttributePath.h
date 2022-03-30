@@ -142,5 +142,11 @@ struct ConcreteDataAttributePath : public ConcreteAttributePath
     Optional<DataVersion> mDataVersion = NullOptional;
 };
 
+struct ConcreteDataAttributePathWithSize : public ConcreteDataAttributePath
+{
+    ConcreteDataAttributePathWithSize(const ConcreteDataAttributePath & path) : ConcreteDataAttributePath(path) {}
+    uint32_t mSize = 0;
+};
+
 } // namespace app
 } // namespace chip
