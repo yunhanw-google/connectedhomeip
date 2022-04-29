@@ -157,6 +157,7 @@ struct EventLoadOutContext
     const ObjectList<EventPathParams> * mpInterestedEventPaths = nullptr;
     bool mFirst                                                = true;
     Access::SubjectDescriptor mSubjectDescriptor;
+    uint32_t mFabricIndexEventNumber                           = 0;
 };
 } // namespace app
 } // namespace chip

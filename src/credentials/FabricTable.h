@@ -38,6 +38,7 @@
 #include <lib/support/CHIPMem.h>
 #include <lib/support/DLLUtil.h>
 #include <lib/support/Span.h>
+#include <lib/support/Span.h>
 
 namespace chip {
 
@@ -95,6 +96,8 @@ public:
 
     FabricId GetFabricId() const { return mFabricId; }
     FabricIndex GetFabricIndex() const { return mFabricIndex; }
+
+    uint32_t GetEventNumber() const { return mEventNumber; }
 
     CompressedFabricId GetCompressedId() const { return mOperationalId.GetCompressedFabricId(); }
 
@@ -178,6 +181,7 @@ public:
     {
         mOperationalId  = PeerId();
         mVendorId       = VendorId::NotSpecified;
+        mEventNumber    = 0;
         mFabricLabel[0] = '\0';
 
         if (mOperationalKey != nullptr)
@@ -202,6 +206,8 @@ public:
     CHIP_ERROR TestOnlyBuildFabric(ByteSpan rootCert, ByteSpan icacCert, ByteSpan nocCert, ByteSpan nodePubKey,
                                    ByteSpan nodePrivateKey);
 
+    void TestOnlySetEventNumber(uint32_t aNumber) { mEventNumber = aNumber; }
+
 private:
     static constexpr size_t MetadataTLVMaxSize()
     {
@@ -217,6 +223,8 @@ private:
 
     FabricIndex mFabricIndex                            = kUndefinedFabricIndex;
     uint16_t mVendorId                                  = VendorId::NotSpecified;
+    //TODO: use chip::EventNumber
+    uint32_t mEventNumber                            = 0;
     char mFabricLabel[kFabricLabelMaxLengthInBytes + 1] = { '\0' };
 
 #ifdef ENABLE_HSM_CASE_OPS_KEY
@@ -247,6 +255,7 @@ private:
 
     struct StorableFabricInfo
     {
+        uint32_t mEventNumber;
         uint8_t mFabricIndex;
         uint16_t mVendorId; /* This field is serialized in LittleEndian byte order */
 
