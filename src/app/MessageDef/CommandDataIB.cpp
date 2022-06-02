@@ -35,6 +35,7 @@ CommandDataIB::Parser::ParseFields(TLV::TLVReader & aReader, int aDepth) const
 
     if (aDepth == 0)
     {
+        ChipLogProgress(DataManagement, "debug parse fields");
         PRETTY_PRINT("\tCommandFields = ");
     }
     else
@@ -53,7 +54,7 @@ CommandDataIB::Parser::ParseFields(TLV::TLVReader & aReader, int aDepth) const
             // Anonymous tag, don't print anything
         }
     }
-
+    ChipLogProgress(DataManagement, "debug parse fields2");
     switch (aReader.GetType())
     {
     case TLV::kTLVType_Structure:
@@ -237,9 +238,12 @@ CHIP_ERROR CommandDataIB::Parser::CheckSchemaValidity() const
             break;
         case to_underlying(Tag::kFields):
             // check if this tag has appeared before
+            ChipLogProgress(DataManagement, "debug1");
             VerifyOrReturnError(!(tagPresenceMask & (1 << to_underlying(Tag::kFields))), CHIP_ERROR_INVALID_TLV_TAG);
+            ChipLogProgress(DataManagement, "debug2");
             tagPresenceMask |= (1 << to_underlying(Tag::kFields));
             ReturnErrorOnFailure(ParseFields(reader, 0));
+            ChipLogProgress(DataManagement, "debug3");
             break;
         default:
             PRETTY_PRINT("Unknown tag num %" PRIu32, tagNum);
