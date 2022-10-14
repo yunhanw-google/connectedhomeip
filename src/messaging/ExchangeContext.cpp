@@ -88,6 +88,8 @@ void ExchangeContext::UseSuggestedResponseTimeout(Timeout applicationProcessingT
 
 void ExchangeContext::SetResponseTimeout(Timeout timeout)
 {
+    ChipLogProgress(DataManagement,
+                                "SetResponseTimeout %lu ", static_cast<long unsigned>(timeout.count()));
     mResponseTimeout = timeout;
 }
 
