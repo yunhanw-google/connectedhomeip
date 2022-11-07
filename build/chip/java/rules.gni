@@ -16,11 +16,22 @@ import("//build_overrides/chip.gni")
 
 import("${chip_root}/build/config/android/config.gni")
 
+java_path = getenv("JAVA_PATH")
+declare_args() {
+  java_matter_controller_dependent_paths = []
+  build_java_matter_controller = false
+  if (java_path != "") {
+    java_matter_controller_dependent_paths += [ "${java_path}/include/",
+                                                "${java_path}/include/linux/"]
+      build_java_matter_controller = true
+  }
+}
+
 javac_runner = "${chip_root}/build/chip/java/javac_runner.py"
 jar_runner = "${chip_root}/build/chip/java/jar_runner.py"
 write_build_config = "${chip_root}/build/chip/java/write_build_config.py"
 
-assert(android_sdk_root != "", "android_sdk_root must be specified")
+assert(android_sdk_root != "" || build_java_matter_controller, "android_sdk_root or java_path must be specified")
 
 # Declare a java library target
 #

@@ -122,8 +122,10 @@ jint JNI_OnLoad(JavaVM * jvm, void * reserved)
     SuccessOrExit(err);
     ChipLogProgress(Controller, "Java class references loaded.");
 
+#ifndef JAVA_MATTER_CONTROLLER_TEST
     err = AndroidChipPlatformJNI_OnLoad(jvm, reserved);
     SuccessOrExit(err);
+#endif // JAVA_MATTER_CONTROLLER_TEST
 
 exit:
     if (err != CHIP_NO_ERROR)
@@ -317,6 +319,7 @@ JNI_METHOD(jlong, newDeviceController)(JNIEnv * env, jobject self, jobject contr
     err = chip::JniReferences::GetInstance().FindMethod(env, controllerParams, "getAdminSubject", "()J", &getAdminSubject);
     SuccessOrExit(err);
 
+#ifndef JAVA_MATTER_CONTROLLER_TEST
     {
         uint64_t fabricId                  = env->CallLongMethod(controllerParams, getFabricId);
         uint16_t listenPort                = env->CallIntMethod(controllerParams, getUdpListenPort);
@@ -354,6 +357,7 @@ JNI_METHOD(jlong, newDeviceController)(JNIEnv * env, jobject self, jobject contr
             }
         }
     }
+ #endif // JAVA_MATTER_CONTROLLER_TEST
 
     // Create and start the IO thread. Must be called after Controller()->Init
     if (sIOThread == PTHREAD_NULL)

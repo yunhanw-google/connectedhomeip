@@ -29,7 +29,9 @@
 #include <credentials/PersistentStorageOpCertStore.h>
 #include <credentials/attestation_verifier/DacOnlyPartialAttestationVerifier.h>
 #include <lib/support/TimeUtils.h>
+#ifndef JAVA_MATTER_CONTROLLER_TEST
 #include <platform/android/CHIPP256KeypairBridge.h>
+#endif // JAVA_MATTER_CONTROLLER_TEST
 #include <platform/internal/DeviceNetworkInfo.h>
 
 #include "AndroidOperationalCredentialsIssuer.h"
@@ -50,6 +52,7 @@ public:
     jobject JavaObjectRef() { return mJavaObjectRef; }
     jlong ToJNIHandle();
 
+#ifndef JAVA_MATTER_CONTROLLER_TEST
     /**
      * Returns a CHIPP256KeypairBridge which can be used to delegate signing operations
      * to a KeypairDelegate in the Java layer. Note that this will always return a pointer
@@ -63,6 +66,7 @@ public:
         }
         return mKeypairBridge;
     }
+#endif // JAVA_MATTER_CONTROLLER_TEST
 
     void CallJavaMethod(const char * methodName, jint argument);
     CHIP_ERROR InitializeOperationalCredentialsIssuer();
@@ -169,7 +173,9 @@ private:
 
     JavaVM * mJavaVM                       = nullptr;
     jobject mJavaObjectRef                 = nullptr;
+#ifndef JAVA_MATTER_CONTROLLER_TEST
     CHIPP256KeypairBridge * mKeypairBridge = nullptr;
+#endif // JAVA_MATTER_CONTROLLER_TEST
 
     // These fields allow us to release the string/byte array memory later.
     jstring ssidStr                    = nullptr;

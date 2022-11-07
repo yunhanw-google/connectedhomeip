@@ -248,6 +248,12 @@ config("strict_warnings") {
     ]
   }
 
+  if (getenv("JAVA_PATH") != "") {
+    cflags -= [
+      "-Wshadow",
+    ]
+  }
+
   cflags_cc = [ "-Wnon-virtual-dtor" ]
 
   ldflags = []

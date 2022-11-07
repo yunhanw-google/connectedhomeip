@@ -231,6 +231,14 @@ if (current_toolchain != "${dir_pw_toolchain}/default:default") {
         ]
       }
     }
+
+    if (getenv("JAVA_PATH") != "") {
+        deps += [
+          "${chip_root}/examples/java-matter-controller:java-matter-controller",
+        ]
+        chip_build_tools = false
+        chip_enable_python_modules = false
+    }
   }
 
   if (chip_build_tools) {
