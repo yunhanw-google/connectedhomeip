@@ -48,8 +48,8 @@ constexpr char kCDTrustStorePathVariable[]      = "CHIPTOOL_CD_TRUST_STORE_PATH"
 const chip::Credentials::AttestationTrustStore * CHIPCommand::sTrustStore = nullptr;
 chip::Credentials::GroupDataProviderImpl CHIPCommand::sGroupDataProvider{ kMaxGroupsPerFabric, kMaxGroupKeysPerFabric };
 // All fabrics share the same ICD client storage.
-chip::app::DefaultICDClientStorage * sICDClientStorage = nullptr;
 
+chip::app::DefaultICDClientStorage sICDClientStorage;
 namespace {
 
 CHIP_ERROR GetAttestationTrustStore(const char * paaTrustStorePath, const chip::Credentials::AttestationTrustStore ** trustStore)
@@ -102,11 +102,7 @@ CHIP_ERROR CHIPCommand::MaybeSetUpStack()
     ReturnLogErrorOnFailure(mOperationalKeystore.Init(&mDefaultStorage));
     ReturnLogErrorOnFailure(mOpCertStore.Init(&mDefaultStorage));
 
-    if (sICDClientStorage == nullptr)
-    {
-        ReturnLogErrorOnFailure(mICDClientStorage.Init(&mDefaultStorage, &mSessionKeystore));
-        sICDClientStorage = &mICDClientStorage;
-    }
+    ReturnLogErrorOnFailure(sICDClientStorage.Init(&mDefaultStorage, &mSessionKeystore));
 
     chip::Controller::FactoryInitParams factoryInitParams;
 
@@ -173,11 +169,6 @@ void CHIPCommand::MaybeTearDownStack()
     if (IsInteractive())
     {
         return;
-    }
-
-    if (sICDClientStorage == &mICDClientStorage)
-    {
-        sICDClientStorage = nullptr;
     }
 
     //
@@ -428,8 +419,7 @@ chip::Controller::DeviceCommissioner & CHIPCommand::GetCommissioner(std::string 
 chip::app::DefaultICDClientStorage & CHIPCommand::GetICDClientStorage()
 {
     // This method should not be called before MaybeSetUpStack or after MaybeShutdownStack
-    VerifyOrDie(sICDClientStorage != nullptr);
-    return *sICDClientStorage;
+    return sICDClientStorage;
 }
 
 void CHIPCommand::ShutdownCommissioner(const CommissionerIdentity & key)
