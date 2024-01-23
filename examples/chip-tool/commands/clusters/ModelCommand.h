@@ -52,11 +52,13 @@ public:
                             "Endpoint the command is targeted at.");
             }
         }
-        AddArgument("timeout", 0, UINT16_MAX, &mTimeout);
+
         AddArgument(
             "lit-icd-peer", 0, 1, &mIsPeerLIT,
             "Whether to treat the peer as a LIT ICD. false: Always no, true: Always yes, (not set): Yes if the peer is registered "
             "to this controller.");
+
+        AddArgument("timeout", 0, UINT16_MAX, &mTimeout);
     }
 
     /////////// CHIPCommand Interface /////////
@@ -77,7 +79,7 @@ protected:
 private:
     chip::NodeId mDestinationId;
     std::vector<chip::EndpointId> mEndPointId;
-    chip::Optional<bool> mIsPeerLIT;
+    chip::Optional<bool> mIsPeerLIT = chip::NullOptional;
 
     void CheckPeerICDType();
 
