@@ -53,7 +53,7 @@ class DefaultICDClientStorage : public ICDClientStorage
 public:
     using ICDClientInfoIterator = CommonIterator<ICDClientInfo>;
 
-    static constexpr size_t kIteratorsMax = CHIP_CONFIG_MAX_ICD_CLIENTS_INFO_STORAGE_CONCURRENT_ITERATORS;
+    static constexpr size_t kIteratorsMax = 1;
 
     CHIP_ERROR Init(PersistentStorageDelegate * clientInfoStore, Crypto::SymmetricKeystore * keyStore);
 
