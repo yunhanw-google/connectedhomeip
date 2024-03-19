@@ -25,7 +25,7 @@ concurrency:
 
 env:
     CHIP_NO_LOG_TIMESTAMPS: true
-    
+
 jobs:
     android:
         name: Smoke Run - Android
@@ -36,15 +36,24 @@ jobs:
         runs-on: ubuntu-latest
         if: github.actor != 'restyled-io[bot]'
 
-        container:
-            image: ghcr.io/project-chip/chip-build-android:35
-            volumes:
-                - "/:/runner-root-volume"
-                - "/tmp/log_output:/tmp/test_logs"
-
         steps:
             - name: Checkout
               uses: actions/checkout@v4
+
+            - name: Enable KVM
+              run: |
+                echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                sudo udevadm control --reload-rules
+                sudo udevadm trigger --name-match=kvm
+
+            - name: run tests
+              uses: reactivecircus/android-emulator-runner@v2
+              with:
+                api-level: 29
+                ndk: 21.0.6113669
+                cmake: 3.10.2.4988404
+                script: ./gradlew connectedCheck
+
             - name: Checkout submodules & Bootstrap
               uses: ./.github/actions/checkout-submodules-and-bootstrap
               with:
