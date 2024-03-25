@@ -249,7 +249,7 @@ class DeviceProvisioningFragment : Fragment() {
       Log.d(TAG, "Pairing status update: $status")
     }
 
-    override fun onCommissioningComplete(nodeId: Long, errorCode: Int) {
+    override fun onCommissioningComplete(nodeId: Long, errorCode: Long) {
       if (errorCode == STATUS_PAIRING_SUCCESS) {
         FragmentUtil.getHost(this@DeviceProvisioningFragment, Callback::class.java)
           ?.onCommissioningComplete(0, nodeId)
@@ -260,7 +260,7 @@ class DeviceProvisioningFragment : Fragment() {
       }
     }
 
-    override fun onPairingComplete(code: Int) {
+    override fun onPairingComplete(code: Long) {
       Log.d(TAG, "onPairingComplete: $code")
 
       if (code != STATUS_PAIRING_SUCCESS) {
@@ -274,7 +274,7 @@ class DeviceProvisioningFragment : Fragment() {
       Log.d(TAG, String(csr))
     }
 
-    override fun onPairingDeleted(code: Int) {
+    override fun onPairingDeleted(code: Long) {
       Log.d(TAG, "onPairingDeleted: $code")
     }
 
@@ -293,7 +293,7 @@ class DeviceProvisioningFragment : Fragment() {
       )
     }
 
-    override fun onICDRegistrationComplete(errorCode: Int, icdDeviceInfo: ICDDeviceInfo) {
+    override fun onICDRegistrationComplete(errorCode: Long, icdDeviceInfo: ICDDeviceInfo) {
       Log.d(
         TAG,
         "onICDRegistrationComplete - errorCode: $errorCode, symmetricKey : ${icdDeviceInfo.symmetricKey.toHex()}, icdDeviceInfo : $icdDeviceInfo"

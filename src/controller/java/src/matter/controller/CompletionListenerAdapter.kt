@@ -38,7 +38,7 @@ class CompletionListenerAdapter(val listener: MatterController.CompletionListene
   override fun onCommissioningComplete(nodeId: Long, errorCode: Int) =
     listener.onCommissioningComplete(nodeId, errorCode)
 
-  override fun onCommissioningStatusUpdate(nodeId: Long, stage: String?, errorCode: Int) =
+  override fun onCommissioningStatusUpdate(nodeId: Long, stage: String?, errorCode: Long) =
     listener.onCommissioningStatusUpdate(nodeId, stage, errorCode)
 
   override fun onReadCommissioningInfo(
@@ -52,7 +52,7 @@ class CompletionListenerAdapter(val listener: MatterController.CompletionListene
 
   override fun onICDRegistrationInfoRequired() = listener.onICDRegistrationInfoRequired()
 
-  override fun onICDRegistrationComplete(errorCode: Int, icdDeviceInfo: ICDDeviceInfo) =
+  override fun onICDRegistrationComplete(errorCode: Long, icdDeviceInfo: ICDDeviceInfo) =
     listener.onICDRegistrationComplete(errorCode, icdDeviceInfo)
 
   override fun onError(error: Throwable) = listener.onError(error)
