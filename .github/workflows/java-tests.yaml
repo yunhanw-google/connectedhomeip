@@ -68,6 +68,8 @@ jobs:
             - name: Build unit tests
               run: scripts/run_in_build_env.sh 'ninja -C out/linux-x64-tests src:java_controller_tests'
 
+            - name : check kvm
+              run: ls -al /dev/kvm
             - name: Run unit tests
               # TODO: this direct path loading is not maintainable. Our build system should define and
               #       support test classes.
