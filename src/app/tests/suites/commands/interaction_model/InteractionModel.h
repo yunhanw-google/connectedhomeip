@@ -205,9 +205,9 @@ protected:
         return *this;
     }
 
-    InteractionModelReports & SetPeerLIT(bool isPeerLIT)
+    InteractionModelReports & SetPeerICD(bool isPeerICD)
     {
-        mIsPeerLIT = isPeerLIT;
+        mPeerICD = isPeerICD;
         return *this;
     }
 
@@ -219,7 +219,7 @@ protected:
         mFabricFiltered    = chip::Optional<bool>(true);
         mKeepSubscriptions = chip::NullOptional;
         mAutoResubscribe   = chip::NullOptional;
-        mIsPeerLIT         = false;
+        mPeerICD           = false;
         mMinInterval       = 0;
         mMaxInterval       = 0;
     }
@@ -230,7 +230,7 @@ protected:
     chip::Optional<bool> mFabricFiltered;
     chip::Optional<bool> mKeepSubscriptions;
     chip::Optional<bool> mAutoResubscribe;
-    bool mIsPeerLIT;
+    bool mPeerICD;
     uint16_t mMinInterval;
     uint16_t mMaxInterval;
 };

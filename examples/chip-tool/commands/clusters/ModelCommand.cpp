@@ -106,9 +106,9 @@ void ModelCommand::StoreICDEntryWithKey(app::ICDClientInfo & clientInfo, ByteSpa
 
 void ModelCommand::CheckPeerICDType()
 {
-    if (mIsPeerLIT.HasValue())
+    if (mIsPeerICD.HasValue())
     {
-        ChipLogProgress(chipTool, "Peer ICD type is set to %s", mIsPeerLIT.Value() == 1 ? "LIT-ICD" : "non LIT-ICD");
+        ChipLogProgress(chipTool, "Peer device can send ICD checkin message: %s", mIsPeerICD.Value() == 1 ? "Yes" : "no");
         return;
     }
 
@@ -125,17 +125,17 @@ void ModelCommand::CheckPeerICDType()
     {
         if (ScopedNodeId(info.peer_node.GetNodeId(), info.peer_node.GetFabricIndex()) == destinationPeerId)
         {
-            ChipLogProgress(chipTool, "Peer is a registered LIT ICD.");
-            mIsPeerLIT.SetValue(true);
+            ChipLogProgress(chipTool, "Peer is a registered ICD with checkin capability.");
+            mIsPeerICD.SetValue(true);
             return;
         }
     }
 }
 
-bool ModelCommand::IsPeerLIT()
+bool ModelCommand::IsPeerICD()
 {
     CheckPeerICDType();
-    return mIsPeerLIT.ValueOr(false);
+    return mIsPeerICD.ValueOr(false);
 }
 
 bool ModelCommand::AllowLargePayload()

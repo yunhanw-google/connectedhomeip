@@ -208,9 +208,10 @@ void ReadClient::Close(CHIP_ERROR aError, bool allowResubscription)
                 aError = mpCallback.OnResubscriptionNeeded(this, aError);
                 if (aError == CHIP_NO_ERROR)
                 {
-                    if (IsPeerLIT() && (originalReason == CHIP_ERROR_TIMEOUT))
+                    if (IsPeerICD() && (originalReason == CHIP_ERROR_TIMEOUT))
                     {
-                        ChipLogProgress(DataManagement,
+                        ChipLogProgress(
+                            DataManagement,
                             "ICD device is unreachable, mark subscription as FailedICDSubscription, retrying has been scheduled");
                         MoveToState(ClientState::FailedICDSubscription);
                     }
@@ -493,17 +494,18 @@ CHIP_ERROR ReadClient::GenerateDataVersionFilterList(DataVersionFilterIBs::Build
 void ReadClient::OnActiveModeNotification()
 {
     VerifyOrDie(mpImEngine->InActiveReadClientList(this));
-    // If the current state is InactiveICDSubscription (the subscription definitely exceeded the liveness timeout for LIT ICD), it means subscription retry is on-hold, once OnActiveModeNotification
-    // is triggered, and the deferred resubscription logic in `OnLivenessTimeoutCallback` would be executed immediately.
+    // If the current state is InactiveICDSubscription (the subscription definitely exceeded the liveness timeout for LIT ICD), it
+    // means subscription retry is on-hold, once OnActiveModeNotification is triggered, and the deferred resubscription logic in
+    // `OnLivenessTimeoutCallback` would be executed immediately.
     if (IsInactiveICDSubscription())
-    {.
+    {
         TriggerResubscriptionForLivenessTimeout(CHIP_ERROR_TIMEOUT);
         return;
     }
 
-    // If the current state is FailedICDSubscription (various timeouts happens), the subscription retrying continues to run, 
-    // once OnActiveModeNotification is triggered, scheduled resubscription would be cancelled, mNumRetries needs to be reset, the subscription would be
-    // rescheduled immediately.
+    // If the current state is FailedICDSubscription (various timeouts happens), the subscription retrying continues to run,
+    // once OnActiveModeNotification is triggered, scheduled resubscription would be cancelled, mNumRetries needs to be reset, the
+    // subscription would be rescheduled immediately.
     if (IsFailedICDSubscription())
     {
         mNumRetries = 0;
@@ -517,11 +519,10 @@ void ReadClient::OnActiveModeNotification()
 void ReadClient::OnPeerOperatingModeChange(PeerOperatingMode aMode)
 {
     VerifyOrDie(mpImEngine->InActiveReadClientList(this));
-    ChipLogProgress(DataManagement, "Peer operation mode is now %s LIT ICD.",
-                    mPeerOperatingMode == PeerOperatingMode::kLITICD ? "a" : "not a");
+    ChipLogProgress(DataManagement, "Peer operation mode is now %s LIT ICD.", IsLITOperatingMode() ? "a" : "not a");
 
     // If the peer operating mode becomes normal, try to wake up the subscription and do resubscribe when necessary.
-    if (mPeerOperatingMode == PeerOperatingMode::kNormal)
+    if (!IsLITOperatingMode())
     {
         OnActiveModeNotification();
     }
@@ -754,8 +755,8 @@ CHIP_ERROR ReadClient::ReadICDOperatingModeFromAttributeDataIB(TLV::TLVReader &&
         break;
     case Clusters::IcdManagement::OperatingModeEnum::kLit:
         aMode = PeerOperatingMode::kLITICD;
-        // If operating mode is LIT, this device should be LIT ICD.
-        mIsPeerLIT = true;
+        // If operating mode is LIT, this device can send check-in message.
+        mPeerICD = true;
         break;
     default:
         err = CHIP_ERROR_INVALID_ARGUMENT;
@@ -763,6 +764,17 @@ CHIP_ERROR ReadClient::ReadICDOperatingModeFromAttributeDataIB(TLV::TLVReader &&
     }
 
     return err;
+}
+
+bool ReadClient::CheckIfCheckInCapable(TLV::TLVReader && aReader)
+{
+    Clusters::IcdManagement::Attributes::FeatureMap::TypeInfo::DecodableType featureMap;
+    CHIP_ERROR err = DataModel::Decode(aReader, featureMap);
+    if (err != CHIP_NO_ERROR)
+    {
+        return false;
+    }
+    return !!(featureMap & to_underlying(Clusters::IcdManagement::Feature::kCheckInProtocolSupport));
 }
 
 CHIP_ERROR ReadClient::ProcessAttributePath(AttributePathIB::Parser & aAttributePathParser,
@@ -875,6 +887,17 @@ CHIP_ERROR ReadClient::ProcessAttributeReportIBs(TLV::TLVReader & aAttributeRepo
                 {
                     ChipLogError(DataManagement, "Failed to get ICD state from attribute data with error'%" CHIP_ERROR_FORMAT "'",
                                  err.Format());
+                }
+            }
+
+            if (attributePath.MatchesConcreteAttributePath(ConcreteAttributePath(
+                    kRootEndpointId, Clusters::IcdManagement::Id, Clusters::IcdManagement::Attributes::FeatureMap::Id)))
+            {
+                TLV::TLVReader featureMapTlvReader;
+                featureMapTlvReader.Init(dataReader);
+                if (CheckIfCheckInCapable(std::move(featureMapTlvReader)))
+                {
+                    mPeerICD = true;
                 }
             }
 
@@ -1048,7 +1071,7 @@ void ReadClient::OnLivenessTimeoutCallback(System::Layer * apSystemLayer, void *
                  "Subscription Liveness timeout with SubscriptionID = 0x%08" PRIx32 ", Peer = %02x:" ChipLogFormatX64,
                  _this->mSubscriptionId, _this->GetFabricIndex(), ChipLogValueX64(_this->GetPeerNodeId()));
 
-    if (_this->IsPeerLIT())
+    if (_this->IsLITOperatingMode())
     {
         subscriptionTerminationCause = CHIP_ERROR_LIT_SUBSCRIBE_INACTIVE_TIMEOUT;
     }
@@ -1178,7 +1201,7 @@ CHIP_ERROR ReadClient::SendSubscribeRequestImpl(const ReadPrepareParams & aReadP
         mReadPrepareParams.mSessionHolder = aReadPrepareParams.mSessionHolder;
     }
 
-    mIsPeerLIT = aReadPrepareParams.mIsPeerLIT;
+    mPeerICD = aReadPrepareParams.mPeerICD;
 
     mMinIntervalFloorSeconds = aReadPrepareParams.mMinIntervalFloorSeconds;
 
@@ -1324,7 +1347,7 @@ void ReadClient::HandleDeviceConnectionFailure(void * context, const Operational
 {
     ReadClient * const _this = static_cast<ReadClient *>(context);
     VerifyOrDie(_this != nullptr);
-    
+
     ChipLogError(DataManagement, "Failed to establish CASE for re-subscription with error '%" CHIP_ERROR_FORMAT "'",
                  failureInfo.error.Format());
 

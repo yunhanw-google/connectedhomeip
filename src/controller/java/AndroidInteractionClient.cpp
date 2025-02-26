@@ -46,7 +46,7 @@ static CHIP_ERROR ParseDataVersionFilterList(jobject dataVersionFilterList,
 
 CHIP_ERROR subscribe(JNIEnv * env, jlong handle, jlong callbackHandle, jlong devicePtr, jobject attributePathList,
                      jobject eventPathList, jobject dataVersionFilterList, jint minInterval, jint maxInterval,
-                     jboolean keepSubscriptions, jboolean isFabricFiltered, jint imTimeoutMs, jobject eventMin, jboolean isPeerLIT)
+                     jboolean keepSubscriptions, jboolean isFabricFiltered, jint imTimeoutMs, jobject eventMin, jboolean isPeerICD)
 {
     chip::DeviceLayer::StackLock lock;
     CHIP_ERROR err               = CHIP_NO_ERROR;
@@ -130,8 +130,8 @@ CHIP_ERROR subscribe(JNIEnv * env, jlong handle, jlong callbackHandle, jlong dev
         params.mEventNumber.SetValue(static_cast<chip::EventNumber>(JniReferences::GetInstance().LongToPrimitive(eventMin)));
     }
 
-    params.mIsPeerLIT = (isPeerLIT == JNI_TRUE);
-    ChipLogProgress(Controller, "Peer ICD type is set to %s", params.mIsPeerLIT ? "LIT-ICD" : "non LIT-ICD");
+    params.mPeerICD = (isPeerICD == JNI_TRUE);
+    ChipLogProgress(Controller, "Peer device is ICD with Checkin capability %s", params.mPeerICD ? "Yes" : "No");
 
     if (eventPathList != nullptr)
     {

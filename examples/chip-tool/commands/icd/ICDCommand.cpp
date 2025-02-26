@@ -72,9 +72,9 @@ CHIP_ERROR ICDListCommand::RunCommand()
 
 CHIP_ERROR ICDWaitForDeviceCommand::RunCommand()
 {
-    if (!IsPeerLIT())
+    if (!IsPeerICD())
     {
-        ChipLogError(chipTool, "The device is not a registered LIT-ICD device.");
+        ChipLogError(chipTool, "The device is not a registered ICD device with check-in capability.");
         return CHIP_ERROR_NOT_FOUND;
     }
     mInterestedNode = ScopedNodeId(GetDestinationId(), CurrentCommissioner().GetFabricIndex());

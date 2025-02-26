@@ -92,7 +92,7 @@ void ModelCommand::StoreICDEntryWithKey(app::ICDClientInfo & clientinfo, ByteSpa
     ChipLogError(chipTool, "StoreICDEntryWithKey is not implemented in tv-casting-app");
 }
 
-bool ModelCommand::IsPeerLIT()
+bool ModelCommand::isPeerICD()
 {
     // Does not support tv-casting-app
     return false;

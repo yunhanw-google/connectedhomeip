@@ -2297,7 +2297,7 @@ TEST_F(TestRead, TestSubscribe_OnActiveModeNotification)
         constexpr uint16_t maxIntervalCeilingSeconds = 1;
 
         readPrepareParams.mMaxIntervalCeilingSeconds = maxIntervalCeilingSeconds;
-        readPrepareParams.mIsPeerLIT                 = true;
+        readPrepareParams.mPeerICD                   = true;
 
         auto err = readClient.SendAutoResubscribeRequest(std::move(readPrepareParams));
         EXPECT_EQ(err, CHIP_NO_ERROR);
@@ -2387,7 +2387,7 @@ TEST_F(TestRead, TestSubscribe_DynamicLITSubscription)
         constexpr uint16_t maxIntervalCeilingSeconds = 1;
 
         readPrepareParams.mMaxIntervalCeilingSeconds = maxIntervalCeilingSeconds;
-        readPrepareParams.mIsPeerLIT                 = true;
+        readPrepareParams.mPeerICD                   = true;
 
         auto err = readClient.SendAutoResubscribeRequest(std::move(readPrepareParams));
         EXPECT_EQ(err, CHIP_NO_ERROR);
@@ -2498,7 +2498,7 @@ TEST_F(TestRead, TestSubscribe_ImmediatelyResubscriptionForLIT)
         constexpr uint16_t maxIntervalCeilingSeconds = 1;
 
         readPrepareParams.mMaxIntervalCeilingSeconds = maxIntervalCeilingSeconds;
-        readPrepareParams.mIsPeerLIT                 = true;
+        readPrepareParams.mPeerICD                   = true;
 
         auto err = readClient.SendAutoResubscribeRequest(std::move(readPrepareParams));
         EXPECT_EQ(err, CHIP_NO_ERROR);

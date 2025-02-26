@@ -54,10 +54,10 @@ public:
                             "Endpoint the command is targeted at.");
             }
         }
-        AddArgument(
-            "lit-icd-peer", 0, 1, &mIsPeerLIT,
-            "Whether to treat the peer as a LIT ICD. false: Always no, true: Always yes, (not set): Yes if the peer is registered "
-            "to this controller.");
+        AddArgument("icd-peer", 0, 1, &mIsPeerICD,
+                    "Whether to treat the peer as ICD with check-in capability. false: Always no, true: Always yes, (not set): Yes "
+                    "if the peer is registered "
+                    "to this controller.");
         AddArgument("timeout", 0, UINT16_MAX, &mTimeout);
         AddArgument("allow-large-payload", 0, 1, &mAllowLargePayload,
                     "If true, indicates that the session should allow large application payloads (which requires a TCP connection)."
@@ -77,7 +77,7 @@ public:
     void Shutdown() override;
 
 protected:
-    bool IsPeerLIT();
+    bool IsPeerICD();
 
     chip::NodeId GetDestinationId() const { return mDestinationId; }
 
@@ -86,7 +86,7 @@ protected:
 private:
     chip::NodeId mDestinationId;
     std::vector<chip::EndpointId> mEndPointId;
-    chip::Optional<bool> mIsPeerLIT;
+    chip::Optional<bool> mIsPeerICD;
     chip::Optional<bool> mAllowLargePayload;
 
     void CheckPeerICDType();

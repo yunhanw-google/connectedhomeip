@@ -352,10 +352,10 @@ public:
      *
      *  When subscribing to LIT-ICD and liveness timeout reached and OnResubscriptionNeeded returns
      *  CHIP_ERROR_LIT_SUBSCRIBE_INACTIVE_TIMEOUT, the read client will move to the InactiveICDSubscription state and the
-     *  subscription is put on hold, resubscription can be triggered via OnActiveModeNotification(). 
-     *  When client encounters various timeouts, whether that be exchange timeout, CASE setup timeout, or lack of getting a report on time, 
-     *  client will move to FailedICDSubscription state and subscription is still retrying with back-off algorithm, 
-     *  the pending subscription can be canceled, and new subscription can be rescheduled immediately via OnActiveModeNotification().
+     *  subscription is put on hold, resubscription can be triggered via OnActiveModeNotification().
+     *  When client encounters various timeouts, whether that be exchange timeout, CASE setup timeout, or lack of getting a report
+     * on time, client will move to FailedICDSubscription state and subscription is still retrying with back-off algorithm, the
+     * pending subscription can be canceled, and new subscription can be rescheduled immediately via OnActiveModeNotification().
      *
      */
     void OnActiveModeNotification();
@@ -504,8 +504,8 @@ public:
      */
     Optional<System::Clock::Timeout> GetSubscriptionTimeout();
 
-    bool IsPeerLIT() { return mIsPeerLIT; }
-    PeerOperatingMode GetLITOperatingMode() { return mPeerOperatingMode; }
+    bool IsPeerICD() { return mPeerICD; }
+    bool IsLITOperatingMode() { return mPeerOperatingMode == PeerOperatingMode::kLITICD; }
 
 private:
     friend class TestReadInteraction;
@@ -568,7 +568,10 @@ private:
     CHIP_ERROR BuildDataVersionFilterList(DataVersionFilterIBs::Builder & aDataVersionFilterIBsBuilder,
                                           const Span<AttributePathParams> & aAttributePaths,
                                           const Span<DataVersionFilter> & aDataVersionFilters, bool & aEncodedDataVersionList);
+
     CHIP_ERROR ReadICDOperatingModeFromAttributeDataIB(TLV::TLVReader && aReader, PeerOperatingMode & aMode);
+    bool CheckIfCheckInCapable(TLV::TLVReader && aReader);
+
     CHIP_ERROR ProcessAttributeReportIBs(TLV::TLVReader & aAttributeDataIBsReader);
     CHIP_ERROR ProcessEventReportIBs(TLV::TLVReader & aEventReportIBsReader);
 
@@ -671,7 +674,7 @@ private:
 
     System::Clock::Timeout mLivenessTimeoutOverride = System::Clock::kZero;
 
-    bool mIsPeerLIT = false;
+    bool mPeerICD = false;
 
     PeerOperatingMode mPeerOperatingMode = PeerOperatingMode::kNormal;
 

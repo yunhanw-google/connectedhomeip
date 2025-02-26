@@ -78,9 +78,9 @@ void ModelCommand::Shutdown()
 
 void ModelCommand::CheckPeerICDType()
 {
-    if (mIsPeerLIT.HasValue())
+    if (mIsPeerICD.HasValue())
     {
-        ChipLogProgress(NotSpecified, "Peer ICD type is set to %s", mIsPeerLIT.Value() == 1 ? "LIT-ICD" : "non LIT-ICD");
+        ChipLogProgress(NotSpecified, "Peer device is ICD with check-in capability: %s", mIsPeerICD.Value() == 1 ? "Yes" : "No");
         return;
     }
 
@@ -97,8 +97,8 @@ void ModelCommand::CheckPeerICDType()
     {
         if (ScopedNodeId(info.peer_node.GetNodeId(), info.peer_node.GetFabricIndex()) == destinationPeerId)
         {
-            ChipLogProgress(NotSpecified, "Peer is a registered LIT ICD.");
-            mIsPeerLIT.SetValue(true);
+            ChipLogProgress(NotSpecified, "Peer is a registered ICD with checkin capability.");
+            mIsPeerICD.SetValue(true);
             return;
         }
     }

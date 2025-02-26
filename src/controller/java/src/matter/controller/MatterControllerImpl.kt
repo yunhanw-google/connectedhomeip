@@ -237,7 +237,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     keepSubscriptions: Boolean,
     isFabricFiltered: Boolean,
     imTimeoutMs: Int,
-    isPeerLIT: Boolean
+    isPeerICD: Boolean
   )
 
   override suspend fun read(request: ReadRequest): ReadResponse {

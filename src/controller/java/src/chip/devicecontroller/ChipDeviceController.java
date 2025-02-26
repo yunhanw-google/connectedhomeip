@@ -1220,7 +1220,7 @@ public class ChipDeviceController {
       boolean isFabricFiltered,
       int imTimeoutMs,
       @Nullable Long eventMin,
-      @Nullable Boolean isPeerLIT) {
+      @Nullable Boolean isPeerICD) {
     ReportCallbackJni jniCallback =
         new ReportCallbackJni(
             subscriptionEstablishedCallback, reportCallback, resubscriptionAttemptCallback);
@@ -1237,8 +1237,8 @@ public class ChipDeviceController {
         isFabricFiltered,
         imTimeoutMs,
         eventMin,
-        isPeerLIT != null
-            ? isPeerLIT
+        isPeerICD != null
+            ? isPeerICD
             : ChipICDClient.isPeerICDClient(
                 ChipInteractionClient.getFabricIndex(devicePtr),
                 ChipInteractionClient.getRemoteDeviceId(devicePtr)));

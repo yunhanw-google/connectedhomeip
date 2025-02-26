@@ -22,10 +22,10 @@
 
 JNI_METHOD(void, subscribe)
 (JNIEnv * env, jobject self, jlong handle, jlong callbackHandle, jlong devicePtr, jobject attributePathList, jobject eventPathList,
- jint minInterval, jint maxInterval, jboolean keepSubscriptions, jboolean isFabricFiltered, jint imTimeoutMs, jboolean isPeerLIT)
+ jint minInterval, jint maxInterval, jboolean keepSubscriptions, jboolean isFabricFiltered, jint imTimeoutMs, jboolean isPeerICD)
 {
     CHIP_ERROR err = subscribe(env, handle, callbackHandle, devicePtr, attributePathList, eventPathList, nullptr, minInterval,
-                               maxInterval, keepSubscriptions, isFabricFiltered, imTimeoutMs, nullptr, isPeerLIT);
+                               maxInterval, keepSubscriptions, isFabricFiltered, imTimeoutMs, nullptr, isPeerICD);
     if (err != CHIP_NO_ERROR)
     {
         ChipLogError(Controller, "JNI IM Subscribe Error: %" CHIP_ERROR_FORMAT, err.Format());
