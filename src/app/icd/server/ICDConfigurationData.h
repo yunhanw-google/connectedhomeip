@@ -94,6 +94,10 @@ public:
 
     ICDMode GetICDMode() { return mICDMode; }
 
+#if CONFIG_BUILD_FOR_HOST_UNIT_TEST
+    void SetICDModeForTests(ICDMode mode) { mICDMode = mode; };
+#endif // CONFIG_BUILD_FOR_HOST_UNIT_TEST
+
 private:
     // Singleton Object
     ICDConfigurationData()

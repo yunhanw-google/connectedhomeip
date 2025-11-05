@@ -66,8 +66,14 @@ public:
     static CHIP_ERROR MockReadHandlerSubscriptionTransaction(ReadHandler * readHandler, ReportScheduler * scheduler,
                                                              uint8_t min_interval_seconds, uint8_t max_interval_seconds)
     {
-        ReturnErrorOnFailure(readHandler->SetMaxReportingInterval(max_interval_seconds));
+#if CHIP_CONFIG_ENABLE_ICD_SERVER && CONFIG_BUILD_FOR_HOST_UNIT_TEST
+        ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::SIT);
+#endif // CHIP_CONFIG_ENABLE_ICD_SERVER && CONFIG_BUILD_FOR_HOST_UNIT_TEST
+
+#if CONFIG_BUILD_FOR_HOST_UNIT_TEST
+        ReturnErrorOnFailure(readHandler->SetMaxReportingIntervalForTests(max_interval_seconds));
         ReturnErrorOnFailure(readHandler->SetMinReportingIntervalForTests(min_interval_seconds));
+#endif
         readHandler->ClearStateFlag(ReadHandler::ReadHandlerFlags::PrimingReports);
         readHandler->SetStateFlag(ReadHandler::ReadHandlerFlags::ActiveSubscription);
         scheduler->OnSubscriptionEstablished(readHandler);

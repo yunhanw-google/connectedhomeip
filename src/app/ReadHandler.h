@@ -254,6 +254,9 @@ public:
      */
     inline uint16_t GetSubscriberRequestedMaxInterval() const { return mSubscriberRequestedMaxInterval; }
 
+#if CONFIG_BUILD_FOR_HOST_UNIT_TEST
+    CHIP_ERROR SetMaxReportingIntervalForTests(uint16_t aMinInterval) { return SetMaxReportingIntervalInternal(aMinInterval); }
+
     CHIP_ERROR SetMinReportingIntervalForTests(uint16_t aMinInterval)
     {
         VerifyOrReturnError(IsIdle(), CHIP_ERROR_INCORRECT_STATE);
@@ -262,22 +265,17 @@ public:
         mMinIntervalFloorSeconds = std::max(mMinIntervalFloorSeconds, aMinInterval);
         return CHIP_NO_ERROR;
     }
+#endif
 
     /*
      * Set the maximum reporting interval for the subscription. This SHALL only be called
      * from the OnSubscriptionRequested callback above. The restriction is as below
      * MinIntervalFloor ≤ MaxInterval ≤ MAX(SUBSCRIPTION_MAX_INTERVAL_PUBLISHER_LIMIT, MaxIntervalCeiling)
      * Where SUBSCRIPTION_MAX_INTERVAL_PUBLISHER_LIMIT is set to 60m in the spec.
+     * When working as LIT mode, for an ICD publisher, this SHALL be set to the idle mode duration, and SetMaxReportingInterval
+     * won't be allowed to change it to a different value.
      */
-    CHIP_ERROR SetMaxReportingInterval(uint16_t aMaxInterval)
-    {
-        VerifyOrReturnError(IsIdle(), CHIP_ERROR_INCORRECT_STATE);
-        VerifyOrReturnError(mMinIntervalFloorSeconds <= aMaxInterval, CHIP_ERROR_INVALID_ARGUMENT);
-        VerifyOrReturnError(aMaxInterval <= std::max(GetPublisherSelectedIntervalLimit(), mSubscriberRequestedMaxInterval),
-                            CHIP_ERROR_INVALID_ARGUMENT);
-        mMaxInterval = aMaxInterval;
-        return CHIP_NO_ERROR;
-    }
+    CHIP_ERROR SetMaxReportingInterval(uint16_t aMaxInterval);
 
 #if CHIP_CONFIG_PERSIST_SUBSCRIPTIONS
     /**
@@ -290,6 +288,16 @@ public:
 #endif
 
 private:
+    CHIP_ERROR SetMaxReportingIntervalInternal(uint16_t aMaxInterval)
+    {
+        VerifyOrReturnError(IsIdle(), CHIP_ERROR_INCORRECT_STATE);
+        VerifyOrReturnError(mMinIntervalFloorSeconds <= aMaxInterval, CHIP_ERROR_INVALID_ARGUMENT);
+        VerifyOrReturnError(aMaxInterval <= std::max(GetPublisherSelectedIntervalLimit(), mSubscriberRequestedMaxInterval),
+                            CHIP_ERROR_INVALID_ARGUMENT);
+        mMaxInterval = aMaxInterval;
+        return CHIP_NO_ERROR;
+    }
+
     PriorityLevel GetCurrentPriority() const { return mCurrentPriority; }
     EventNumber & GetEventMin() { return mEventMin; }
 

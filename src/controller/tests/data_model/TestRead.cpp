@@ -2075,8 +2075,6 @@ TEST_F(TestRead, TestReadHandler_SubscriptionReportingIntervalsTest3)
     EXPECT_EQ(GetExchangeManager().GetNumActiveExchanges(), 0u);
 }
 
-#endif // CHIP_CONFIG_ENABLE_ICD_SERVER
-
 // Subscriber sends the request with particular max-interval value:
 // Max interval greater than client-requested min-interval but lower than 60m:
 // server adjustment to a value greater than client-requested, but greater than 60 (not allowed).
@@ -2132,8 +2130,6 @@ TEST_F(TestRead, TestReadHandler_SubscriptionReportingIntervalsTest4)
 
     EXPECT_EQ(GetExchangeManager().GetNumActiveExchanges(), 0u);
 }
-
-#if CHIP_CONFIG_ENABLE_ICD_SERVER != 1
 
 // Subscriber sends the request with particular max-interval value:
 // Max interval greater than client-requested min-interval but greater than 60m:
@@ -2328,8 +2324,6 @@ TEST_F(TestRead, TestReadHandler_SubscriptionReportingIntervalsTest7)
     EXPECT_EQ(GetExchangeManager().GetNumActiveExchanges(), 0u);
 }
 
-#endif // CHIP_CONFIG_ENABLE_ICD_SERVER
-
 // Subscriber sends the request with particular max-interval value:
 // Max interval greater than client-requested min-interval but greater than 60m:
 // With server adjustment to a value larger than 60m, but larger than max interval. Disallowed
@@ -2385,6 +2379,7 @@ TEST_F(TestRead, TestReadHandler_SubscriptionReportingIntervalsTest8)
 
     EXPECT_EQ(GetExchangeManager().GetNumActiveExchanges(), 0u);
 }
+#endif // CHIP_CONFIG_ENABLE_ICD_SERVER
 
 // Subscriber sends the request with particular max-interval value:
 // Validate client is not requesting max-interval < min-interval.

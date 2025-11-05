@@ -773,7 +773,7 @@ CHIP_ERROR ReadHandler::ProcessSubscribeRequest(System::PacketBufferHandle && aP
 
 #if CHIP_CONFIG_ENABLE_ICD_SERVER
 
-    // Default behavior for ICDs where the wanted MaxInterval for a subscription is the IdleModeDuration
+    // Default behavior for LIT ICDs where the wanted MaxInterval for a subscription is the IdleModeDuration
     // defined in the ICD Management Cluster.
     // Behavior can be changed with the OnSubscriptionRequested function defined in the application callbacks
 
@@ -782,43 +782,44 @@ CHIP_ERROR ReadHandler::ProcessSubscribeRequest(System::PacketBufferHandle && aP
     // MinInterval.
     // If the next interval is greater than the MaxIntervalCeiling, use the MaxIntervalCeiling.
     // Otherwise, use IdleModeDuration as MaxInterval
-
-    uint32_t decidedMaxInterval = ICDConfigurationData::GetInstance().GetIdleModeDuration().count();
-
-    // Check if the PublisherSelectedIntervalLimit is 0. If so, set decidedMaxInterval to MaxIntervalCeiling
-    if (decidedMaxInterval == 0)
+    if (ICDConfigurationData::GetInstance().GetICDMode() == chip::ICDConfigurationData::ICDMode::LIT)
     {
-        decidedMaxInterval = mMaxInterval;
-    }
+        uint32_t decidedMaxInterval = ICDConfigurationData::GetInstance().GetIdleModeDuration().count();
 
-    // If requestedMinInterval is greater than the IdleTimeInterval, select next active up time as max interval
-    if (mMinIntervalFloorSeconds > decidedMaxInterval)
-    {
-        uint16_t ratio = mMinIntervalFloorSeconds / static_cast<uint16_t>(decidedMaxInterval);
-        if (mMinIntervalFloorSeconds % decidedMaxInterval)
+        // Check if the PublisherSelectedIntervalLimit is 0. If so, set decidedMaxInterval to MaxIntervalCeiling
+        if (decidedMaxInterval == 0)
         {
-            ratio++;
+            decidedMaxInterval = mMaxInterval;
         }
 
-        decidedMaxInterval *= ratio;
+        // If requestedMinInterval is greater than the IdleTimeInterval, select next active up time as max interval
+        if (mMinIntervalFloorSeconds > decidedMaxInterval)
+        {
+            uint16_t ratio = mMinIntervalFloorSeconds / static_cast<uint16_t>(decidedMaxInterval);
+            if (mMinIntervalFloorSeconds % decidedMaxInterval)
+            {
+                ratio++;
+            }
+
+            decidedMaxInterval *= ratio;
+        }
+
+        // Verify that decidedMaxInterval is an acceptable value (overflow)
+        if (decidedMaxInterval > System::Clock::Seconds16::max().count())
+        {
+            decidedMaxInterval = System::Clock::Seconds16::max().count();
+        }
+
+        // Verify that the decidedMaxInterval respects MAX(GetPublisherSelectedIntervalLimit(), MaxIntervalCeiling)
+        uint16_t maximumMaxInterval = std::max(GetPublisherSelectedIntervalLimit(), mMaxInterval);
+        if (decidedMaxInterval > maximumMaxInterval)
+        {
+            decidedMaxInterval = maximumMaxInterval;
+        }
+
+        // Set max interval of the subscription
+        mMaxInterval = static_cast<uint16_t>(decidedMaxInterval);
     }
-
-    // Verify that decidedMaxInterval is an acceptable value (overflow)
-    if (decidedMaxInterval > System::Clock::Seconds16::max().count())
-    {
-        decidedMaxInterval = System::Clock::Seconds16::max().count();
-    }
-
-    // Verify that the decidedMaxInterval respects MAX(GetPublisherSelectedIntervalLimit(), MaxIntervalCeiling)
-    uint16_t maximumMaxInterval = std::max(GetPublisherSelectedIntervalLimit(), mMaxInterval);
-    if (decidedMaxInterval > maximumMaxInterval)
-    {
-        decidedMaxInterval = maximumMaxInterval;
-    }
-
-    // Set max interval of the subscription
-    mMaxInterval = static_cast<uint16_t>(decidedMaxInterval);
-
 #endif // CHIP_CONFIG_ENABLE_ICD_SERVER
 
     //
@@ -959,5 +960,15 @@ size_t ReadHandler::GetReportBufferMaxSize()
     return kMaxSecureSduLengthBytes;
 }
 
+CHIP_ERROR ReadHandler::SetMaxReportingInterval(uint16_t aMaxInterval)
+{
+#if CHIP_CONFIG_ENABLE_ICD_SERVER
+    if (ICDConfigurationData::GetInstance().GetICDMode() == chip::ICDConfigurationData::ICDMode::LIT)
+    {
+        return CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE;
+    }
+#endif // CHIP_CONFIG_ENABLE_ICD_SERVER
+    return SetMaxReportingIntervalInternal(aMaxInterval);
+}
 } // namespace app
 } // namespace chip
