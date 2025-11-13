@@ -946,13 +946,12 @@ void TestReadInteraction::TestReadHandlerLITNotAbleToSetMaxReportingInterval()
         subscribeRequestBuilder.IsFabricFiltered(false).EndOfSubscribeRequestMessage();
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
         EXPECT_EQ(writer.Finalize(&subscribeRequestbuf), CHIP_NO_ERROR);
 
         ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::LIT);
         EXPECT_EQ(readHandler.ProcessSubscribeRequest(std::move(subscribeRequestbuf)), CHIP_NO_ERROR);
 
-        // When an ICD build, the default behavior is to select the IdleModeDuration as MaxInterval
+        // When operation mode is LIT, the default behavior is to select the IdleModeDuration as MaxInterval
         kMaxIntervalCeiling =
             std::chrono::duration_cast<System::Clock::Seconds16>(ICDConfigurationData::GetInstance().GetIdleModeDuration()).count();
 
