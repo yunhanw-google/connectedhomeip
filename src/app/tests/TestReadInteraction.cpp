@@ -801,8 +801,8 @@ void TestReadInteraction::TestReadHandlerSetMaxReportingInterval()
     auto * engine = chip::app::InteractionModelEngine::GetInstance();
     EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
 
-    uint16_t kMinInterval        = 120;
-    uint16_t kMaxIntervalCeiling = 500;
+    uint16_t testMinInterval        = 120;
+    uint16_t testMaxIntervalCeiling = 500;
 
     Messaging::ExchangeContext * exchangeCtx = NewExchangeToAlice(nullptr, false);
 
@@ -819,10 +819,10 @@ void TestReadInteraction::TestReadHandlerSetMaxReportingInterval()
         subscribeRequestBuilder.KeepSubscriptions(true);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MinIntervalFloorSeconds(kMinInterval);
+        subscribeRequestBuilder.MinIntervalFloorSeconds(testMinInterval);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MaxIntervalCeilingSeconds(kMaxIntervalCeiling);
+        subscribeRequestBuilder.MaxIntervalCeilingSeconds(testMaxIntervalCeiling);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
         AttributePathIBs::Builder & attributePathListBuilder = subscribeRequestBuilder.CreateAttributeRequests();
@@ -853,7 +853,7 @@ void TestReadInteraction::TestReadHandlerSetMaxReportingInterval()
         EXPECT_EQ(readHandler.SetMaxReportingInterval(340), CHIP_ERROR_INCORRECT_STATE);
 
         readHandler.GetReportingIntervals(minInterval, maxInterval);
-        EXPECT_EQ(kMaxIntervalCeiling, maxInterval);
+        EXPECT_EQ(testMaxIntervalCeiling, maxInterval);
         // Set ReadHandler to Idle to allow MaxInterval changes
         readHandler.MoveToState(ReadHandler::HandlerState::Idle);
 
@@ -861,19 +861,19 @@ void TestReadInteraction::TestReadHandlerSetMaxReportingInterval()
         EXPECT_EQ(readHandler.SetMaxReportingInterval(kIntervalInfMinInterval), CHIP_ERROR_INVALID_ARGUMENT);
 
         readHandler.GetReportingIntervals(minInterval, maxInterval);
-        EXPECT_EQ(kMaxIntervalCeiling, maxInterval);
+        EXPECT_EQ(testMaxIntervalCeiling, maxInterval);
 
         // TC2: MaxInterval == MinIntervalFloor
-        EXPECT_EQ(readHandler.SetMaxReportingInterval(kMinInterval), CHIP_NO_ERROR);
+        EXPECT_EQ(readHandler.SetMaxReportingInterval(testMinInterval), CHIP_NO_ERROR);
 
         readHandler.GetReportingIntervals(minInterval, maxInterval);
-        EXPECT_EQ(kMinInterval, maxInterval);
+        EXPECT_EQ(testMinInterval, maxInterval);
 
         // TC3: Minterval < MaxInterval < max(GetPublisherSelectedIntervalLimit(), mSubscriberRequestedMaxInterval)
-        EXPECT_EQ(readHandler.SetMaxReportingInterval(kMaxIntervalCeiling), CHIP_NO_ERROR);
+        EXPECT_EQ(readHandler.SetMaxReportingInterval(testMaxIntervalCeiling), CHIP_NO_ERROR);
 
         readHandler.GetReportingIntervals(minInterval, maxInterval);
-        EXPECT_EQ(kMaxIntervalCeiling, maxInterval);
+        EXPECT_EQ(testMaxIntervalCeiling, maxInterval);
 
         // TC4: MaxInterval == Subscriber Requested Max Interval
         EXPECT_EQ(readHandler.SetMaxReportingInterval(readHandler.GetSubscriberRequestedMaxInterval()), CHIP_NO_ERROR);
@@ -910,8 +910,8 @@ void TestReadInteraction::TestReadHandlerLITNotAbleToSetMaxReportingInterval()
     auto * engine = chip::app::InteractionModelEngine::GetInstance();
     EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
 
-    uint16_t kMinInterval        = 120;
-    uint16_t kMaxIntervalCeiling = 500;
+    uint16_t testMinInterval        = 120;
+    uint16_t testMaxIntervalCeiling = 500;
 
     Messaging::ExchangeContext * exchangeCtx = NewExchangeToAlice(nullptr, false);
 
@@ -925,10 +925,10 @@ void TestReadInteraction::TestReadHandlerLITNotAbleToSetMaxReportingInterval()
         subscribeRequestBuilder.KeepSubscriptions(true);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MinIntervalFloorSeconds(kMinInterval);
+        subscribeRequestBuilder.MinIntervalFloorSeconds(testMinInterval);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MaxIntervalCeilingSeconds(kMaxIntervalCeiling);
+        subscribeRequestBuilder.MaxIntervalCeilingSeconds(testMaxIntervalCeiling);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
         AttributePathIBs::Builder & attributePathListBuilder = subscribeRequestBuilder.CreateAttributeRequests();
@@ -952,13 +952,13 @@ void TestReadInteraction::TestReadHandlerLITNotAbleToSetMaxReportingInterval()
         EXPECT_EQ(readHandler.ProcessSubscribeRequest(std::move(subscribeRequestbuf)), CHIP_NO_ERROR);
 
         // When operation mode is LIT, the default behavior is to select the IdleModeDuration as MaxInterval
-        kMaxIntervalCeiling =
+        testMaxIntervalCeiling =
             std::chrono::duration_cast<System::Clock::Seconds16>(ICDConfigurationData::GetInstance().GetIdleModeDuration()).count();
 
         uint16_t minInterval;
         uint16_t maxInterval;
         readHandler.GetReportingIntervals(minInterval, maxInterval);
-        EXPECT_EQ(kMaxIntervalCeiling, maxInterval);
+        EXPECT_EQ(testMaxIntervalCeiling, maxInterval);
         EXPECT_EQ(readHandler.SetMaxReportingInterval(340), CHIP_ERROR_UNSUPPORTED_CHIP_FEATURE);
         ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::SIT);
     }
@@ -1914,8 +1914,8 @@ void TestReadInteraction::TestICDProcessSubscribeRequestSupMaxIntervalCeiling()
     auto * engine = chip::app::InteractionModelEngine::GetInstance();
     EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
 
-    uint16_t kMinInterval        = 0;
-    uint16_t kMaxIntervalCeiling = 1;
+    uint16_t testMinInterval        = 0;
+    uint16_t testMaxIntervalCeiling = 1;
 
     Messaging::ExchangeContext * exchangeCtx = NewExchangeToAlice(nullptr, false);
 
@@ -1929,10 +1929,10 @@ void TestReadInteraction::TestICDProcessSubscribeRequestSupMaxIntervalCeiling()
         subscribeRequestBuilder.KeepSubscriptions(true);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MinIntervalFloorSeconds(kMinInterval);
+        subscribeRequestBuilder.MinIntervalFloorSeconds(testMinInterval);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MaxIntervalCeilingSeconds(kMaxIntervalCeiling);
+        subscribeRequestBuilder.MaxIntervalCeilingSeconds(testMaxIntervalCeiling);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
         AttributePathIBs::Builder & attributePathListBuilder = subscribeRequestBuilder.CreateAttributeRequests();
@@ -1962,9 +1962,9 @@ void TestReadInteraction::TestICDProcessSubscribeRequestSupMaxIntervalCeiling()
         uint16_t maxInterval;
         readHandler.GetReportingIntervals(minInterval, maxInterval);
 
-        EXPECT_EQ(minInterval, kMinInterval);
+        EXPECT_EQ(minInterval, testMinInterval);
         EXPECT_EQ(maxInterval, idleModeDuration);
-        EXPECT_EQ(kMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
+        EXPECT_EQ(testMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
         ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::SIT);
     }
     engine->Shutdown();
@@ -1986,8 +1986,8 @@ void TestReadInteraction::TestICDProcessSubscribeRequestInfMaxIntervalCeiling()
     auto * engine = chip::app::InteractionModelEngine::GetInstance();
     EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
 
-    uint16_t kMinInterval        = 0;
-    uint16_t kMaxIntervalCeiling = 1;
+    uint16_t testMinInterval        = 0;
+    uint16_t testMaxIntervalCeiling = 1;
 
     Messaging::ExchangeContext * exchangeCtx = NewExchangeToAlice(nullptr, false);
 
@@ -2001,10 +2001,10 @@ void TestReadInteraction::TestICDProcessSubscribeRequestInfMaxIntervalCeiling()
         subscribeRequestBuilder.KeepSubscriptions(true);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MinIntervalFloorSeconds(kMinInterval);
+        subscribeRequestBuilder.MinIntervalFloorSeconds(testMinInterval);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MaxIntervalCeilingSeconds(kMaxIntervalCeiling);
+        subscribeRequestBuilder.MaxIntervalCeilingSeconds(testMaxIntervalCeiling);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
         AttributePathIBs::Builder & attributePathListBuilder = subscribeRequestBuilder.CreateAttributeRequests();
@@ -2034,9 +2034,9 @@ void TestReadInteraction::TestICDProcessSubscribeRequestInfMaxIntervalCeiling()
         uint16_t maxInterval;
         readHandler.GetReportingIntervals(minInterval, maxInterval);
 
-        EXPECT_EQ(minInterval, kMinInterval);
+        EXPECT_EQ(minInterval, testMinInterval);
         EXPECT_EQ(maxInterval, idleModeDuration);
-        EXPECT_EQ(kMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
+        EXPECT_EQ(testMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
         ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::SIT);
     }
     engine->Shutdown();
@@ -2058,8 +2058,8 @@ void TestReadInteraction::TestICDProcessSubscribeRequestSupMinInterval()
     auto * engine = chip::app::InteractionModelEngine::GetInstance();
     EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
 
-    uint16_t kMinInterval        = 305; // Default IdleModeDuration is 300
-    uint16_t kMaxIntervalCeiling = 605;
+    uint16_t testMinInterval        = 305; // Default IdleModeDuration is 300
+    uint16_t testMaxIntervalCeiling = 605;
 
     Messaging::ExchangeContext * exchangeCtx = NewExchangeToAlice(nullptr, false);
 
@@ -2073,10 +2073,10 @@ void TestReadInteraction::TestICDProcessSubscribeRequestSupMinInterval()
         subscribeRequestBuilder.KeepSubscriptions(true);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MinIntervalFloorSeconds(kMinInterval);
+        subscribeRequestBuilder.MinIntervalFloorSeconds(testMinInterval);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MaxIntervalCeilingSeconds(kMaxIntervalCeiling);
+        subscribeRequestBuilder.MaxIntervalCeilingSeconds(testMaxIntervalCeiling);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
         AttributePathIBs::Builder & attributePathListBuilder = subscribeRequestBuilder.CreateAttributeRequests();
@@ -2106,9 +2106,9 @@ void TestReadInteraction::TestICDProcessSubscribeRequestSupMinInterval()
         uint16_t maxInterval;
         readHandler.GetReportingIntervals(minInterval, maxInterval);
 
-        EXPECT_EQ(minInterval, kMinInterval);
+        EXPECT_EQ(minInterval, testMinInterval);
         EXPECT_EQ(maxInterval, (2 * idleModeDuration));
-        EXPECT_EQ(kMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
+        EXPECT_EQ(testMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
         ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::SIT);
     }
     engine->Shutdown();
@@ -2130,8 +2130,8 @@ void TestReadInteraction::TestICDProcessSubscribeRequestMaxMinInterval()
     auto * engine = chip::app::InteractionModelEngine::GetInstance();
     EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
 
-    uint16_t kMinInterval        = System::Clock::Seconds16::max().count();
-    uint16_t kMaxIntervalCeiling = System::Clock::Seconds16::max().count();
+    uint16_t testMinInterval        = System::Clock::Seconds16::max().count();
+    uint16_t testMaxIntervalCeiling = System::Clock::Seconds16::max().count();
 
     Messaging::ExchangeContext * exchangeCtx = NewExchangeToAlice(nullptr, false);
 
@@ -2145,10 +2145,10 @@ void TestReadInteraction::TestICDProcessSubscribeRequestMaxMinInterval()
         subscribeRequestBuilder.KeepSubscriptions(true);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MinIntervalFloorSeconds(kMinInterval);
+        subscribeRequestBuilder.MinIntervalFloorSeconds(testMinInterval);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MaxIntervalCeilingSeconds(kMaxIntervalCeiling);
+        subscribeRequestBuilder.MaxIntervalCeilingSeconds(testMaxIntervalCeiling);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
         AttributePathIBs::Builder & attributePathListBuilder = subscribeRequestBuilder.CreateAttributeRequests();
@@ -2175,9 +2175,9 @@ void TestReadInteraction::TestICDProcessSubscribeRequestMaxMinInterval()
         uint16_t maxInterval;
         readHandler.GetReportingIntervals(minInterval, maxInterval);
 
-        EXPECT_EQ(minInterval, kMinInterval);
-        EXPECT_EQ(maxInterval, kMaxIntervalCeiling);
-        EXPECT_EQ(kMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
+        EXPECT_EQ(minInterval, testMinInterval);
+        EXPECT_EQ(maxInterval, testMaxIntervalCeiling);
+        EXPECT_EQ(testMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
         ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::SIT);
     }
     engine->Shutdown();
@@ -2201,8 +2201,8 @@ void TestReadInteraction::TestICDProcessSubscribeRequestInvalidIdleModeDuration(
 
     // Since the default IdleModeDuration is 300s for unit test,
     // we need to set both values higher than 3600s which is the publisher selected max interval limit in this situation.
-    uint16_t kMinInterval        = 3610;
-    uint16_t kMaxIntervalCeiling = 3610;
+    uint16_t testMinInterval        = 3610;
+    uint16_t testMaxIntervalCeiling = 3610;
 
     Messaging::ExchangeContext * exchangeCtx = NewExchangeToAlice(nullptr, false);
 
@@ -2216,10 +2216,10 @@ void TestReadInteraction::TestICDProcessSubscribeRequestInvalidIdleModeDuration(
         subscribeRequestBuilder.KeepSubscriptions(true);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MinIntervalFloorSeconds(kMinInterval);
+        subscribeRequestBuilder.MinIntervalFloorSeconds(testMinInterval);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
-        subscribeRequestBuilder.MaxIntervalCeilingSeconds(kMaxIntervalCeiling);
+        subscribeRequestBuilder.MaxIntervalCeilingSeconds(testMaxIntervalCeiling);
         EXPECT_EQ(subscribeRequestBuilder.GetError(), CHIP_NO_ERROR);
 
         AttributePathIBs::Builder & attributePathListBuilder = subscribeRequestBuilder.CreateAttributeRequests();
@@ -2246,9 +2246,9 @@ void TestReadInteraction::TestICDProcessSubscribeRequestInvalidIdleModeDuration(
         uint16_t maxInterval;
         readHandler.GetReportingIntervals(minInterval, maxInterval);
 
-        EXPECT_EQ(minInterval, kMinInterval);
-        EXPECT_EQ(maxInterval, kMaxIntervalCeiling);
-        EXPECT_EQ(kMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
+        EXPECT_EQ(minInterval, testMinInterval);
+        EXPECT_EQ(maxInterval, testMaxIntervalCeiling);
+        EXPECT_EQ(testMaxIntervalCeiling, readHandler.GetSubscriberRequestedMaxInterval());
         ICDConfigurationData::GetInstance().SetICDModeForTests(ICDConfigurationData::ICDMode::SIT);
     }
     engine->Shutdown();
