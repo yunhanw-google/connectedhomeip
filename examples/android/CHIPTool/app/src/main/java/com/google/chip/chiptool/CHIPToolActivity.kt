@@ -59,7 +59,11 @@ class CHIPToolActivity :
     setContentView(R.layout.top_activity)
 
     if (savedInstanceState == null) {
-      val fragment = SelectActionFragment.newInstance()
+      val fragment = if (intent?.getBooleanExtra("open_scan", false) == true) {
+        BarcodeFragment.newInstance()
+      } else {
+        SelectActionFragment.newInstance()
+      }
       supportFragmentManager
         .beginTransaction()
         .add(R.id.nav_host_fragment, fragment, fragment.javaClass.simpleName)
@@ -73,6 +77,14 @@ class CHIPToolActivity :
 
     if (Intent.ACTION_VIEW == intent?.action) {
       onReturnIntent(intent)
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    if (intent.getBooleanExtra("open_scan", false)) {
+      showFragment(BarcodeFragment.newInstance(), false)
     }
   }
 

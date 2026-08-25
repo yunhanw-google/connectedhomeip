@@ -29,7 +29,6 @@ using namespace chip::app;
 using namespace chip::bdx;
 using Protocols::InteractionModel::Status;
 
-// TODO Expose a method onto the delegate to make that configurable.
 constexpr uint32_t kMaxBdxBlockSize = 1024;
 
 // Since the BDX timeout is 5 minutes and we are starting this after query image is available and before the BDX init comes,
@@ -40,76 +39,60 @@ constexpr System::Clock::Timeout kBdxTimeout        = System::Clock::Seconds16(5
 constexpr System::Clock::Timeout kBdxPollIntervalMs = System::Clock::Milliseconds32(50);
 constexpr bdx::TransferRole kBdxRole                = bdx::TransferRole::kSender;
 
-CHIP_ERROR BdxOTASender::PrepareForTransfer(FabricIndex fabricIndex, NodeId nodeId)
+// ================= BdxOTASession Implementation =================
+
+BdxOTASession::BdxOTASession(BdxOTASender * owner, jobject otaDelegate, System::Layer * systemLayer, FabricIndex fabricIndex,
+                             NodeId nodeId) :
+    mOwner(owner), mOtaDelegate(otaDelegate), mSystemLayer(systemLayer), mFabricIndex(fabricIndex), mNodeId(nodeId)
+{}
+
+BdxOTASession::~BdxOTASession()
+{
+    ResetState();
+}
+
+void BdxOTASession::HandleBdxInitReceivedTimeoutExpired(System::Layer * systemLayer, void * state)
+{
+    VerifyOrReturn(state != nullptr);
+    static_cast<BdxOTASession *>(state)->ResetState();
+}
+
+CHIP_ERROR BdxOTASession::PrepareForTransfer()
 {
     assertChipStackLockedByCurrentThread();
-
-    VerifyOrReturnError(mExchangeMgr != nullptr, CHIP_ERROR_INCORRECT_STATE);
     VerifyOrReturnError(mSystemLayer != nullptr, CHIP_ERROR_INCORRECT_STATE);
 
-    ReturnErrorOnFailure(ConfigureState(fabricIndex, nodeId));
+    if (mInitialized)
+    {
+        ResetState();
+    }
+
+    CHIP_ERROR err = mSystemLayer->StartTimer(kBdxInitReceivedTimeout, HandleBdxInitReceivedTimeoutExpired, this);
+    LogErrorOnFailure(err);
 
     BitFlags<bdx::TransferControlFlags> flags(bdx::TransferControlFlags::kReceiverDrive);
-    return Responder::PrepareForTransfer(mSystemLayer, kBdxRole, flags, kMaxBdxBlockSize, kBdxTimeout, kBdxPollIntervalMs);
-}
-
-CHIP_ERROR BdxOTASender::Init(System::Layer * systemLayer, Messaging::ExchangeManager * exchangeMgr)
-{
-    assertChipStackLockedByCurrentThread();
-
-    VerifyOrReturnError(mSystemLayer == nullptr, CHIP_ERROR_INCORRECT_STATE);
-    VerifyOrReturnError(mExchangeMgr == nullptr, CHIP_ERROR_INCORRECT_STATE);
-    VerifyOrReturnError(systemLayer != nullptr, CHIP_ERROR_INCORRECT_STATE);
-    VerifyOrReturnError(exchangeMgr != nullptr, CHIP_ERROR_INCORRECT_STATE);
-
-    TEMPORARY_RETURN_IGNORED exchangeMgr->RegisterUnsolicitedMessageHandlerForProtocol(Protocols::BDX::Id, this);
-
-    mSystemLayer = systemLayer;
-    mExchangeMgr = exchangeMgr;
-
-    return CHIP_NO_ERROR;
-}
-
-CHIP_ERROR BdxOTASender::Shutdown()
-{
-    assertChipStackLockedByCurrentThread();
-    VerifyOrReturnError(mExchangeMgr != nullptr, CHIP_ERROR_INCORRECT_STATE);
-
-    TEMPORARY_RETURN_IGNORED mExchangeMgr->UnregisterUnsolicitedMessageHandlerForProtocol(Protocols::BDX::Id);
-    ResetState();
-
-    mExchangeMgr = nullptr;
-
-    return CHIP_NO_ERROR;
-}
-
-void BdxOTASender::ResetState()
-{
-    assertChipStackLockedByCurrentThread();
-    if (mNodeId != kUndefinedNodeId && mFabricIndex != kUndefinedFabricIndex)
+    err = Responder::PrepareForTransfer(mSystemLayer, kBdxRole, flags, kMaxBdxBlockSize, kBdxTimeout, kBdxPollIntervalMs);
+    if (err == CHIP_NO_ERROR)
     {
-        ChipLogProgress(Controller,
-                        "Resetting state for OTA Provider; no longer providing an update for node id 0x" ChipLogFormatX64
-                        ", fabric index %u",
-                        ChipLogValueX64(mNodeId), mFabricIndex);
+        mInitialized = true;
     }
-    else
-    {
-        ChipLogProgress(Controller, "Resetting state for OTA Provider");
-    }
+    return err;
+}
+
+void BdxOTASession::ResetState()
+{
+    assertChipStackLockedByCurrentThread();
     if (mSystemLayer)
     {
         mSystemLayer->CancelTimer(HandleBdxInitReceivedTimeoutExpired, this);
     }
-    // TODO: Check if this can be removed. It seems like we can close the exchange context and reset transfer regardless.
     if (!mInitialized)
     {
         return;
     }
+    mInitialized = false;
     Responder::ResetTransfer();
     ++mTransferGeneration;
-    mFabricIndex = kUndefinedFabricIndex;
-    mNodeId      = kUndefinedNodeId;
 
     if (mExchangeCtx != nullptr)
     {
@@ -117,10 +100,18 @@ void BdxOTASender::ResetState()
         mExchangeCtx = nullptr;
     }
 
-    mInitialized = false;
+    FabricIndex fabricIndex = mFabricIndex;
+    NodeId nodeId           = mNodeId;
+    BdxOTASender * owner    = mOwner;
+    mOwner                  = nullptr;
+
+    if (owner != nullptr)
+    {
+        owner->RemoveSession(fabricIndex, nodeId);
+    }
 }
 
-CHIP_ERROR BdxOTASender::OnMessageToSend(TransferSession::OutputEvent & event)
+CHIP_ERROR BdxOTASession::OnMessageToSend(TransferSession::OutputEvent & event)
 {
     assertChipStackLockedByCurrentThread();
 
@@ -137,8 +128,6 @@ CHIP_ERROR BdxOTASender::OnMessageToSend(TransferSession::OutputEvent & event)
     }
 
     auto & msgTypeData = event.msgTypeData;
-    // If there's an error sending the message, close the exchange and call ResetState.
-    // TODO: If we can remove the !mInitialized check in ResetState(), just calling ResetState() will suffice here.
     CHIP_ERROR err =
         mExchangeCtx->SendMessage(msgTypeData.ProtocolId, msgTypeData.MessageType, std::move(event.MsgData), sendFlags);
     if (err != CHIP_NO_ERROR)
@@ -149,18 +138,15 @@ CHIP_ERROR BdxOTASender::OnMessageToSend(TransferSession::OutputEvent & event)
     }
     else if (event.msgTypeData.HasMessageType(Protocols::SecureChannel::MsgType::StatusReport))
     {
-        // If the send was successful for a status report, since we are not expecting a response the exchange context is
-        // already closed. We need to null out the reference to avoid having a dangling pointer.
         mExchangeCtx = nullptr;
         ResetState();
     }
     return err;
 }
 
-CHIP_ERROR BdxOTASender::OnTransferSessionBegin(TransferSession::OutputEvent & event)
+CHIP_ERROR BdxOTASession::OnTransferSessionBegin(TransferSession::OutputEvent & event)
 {
     assertChipStackLockedByCurrentThread();
-    // Once we receive the BDX init, cancel the BDX Init timeout and start the BDX session
     if (mSystemLayer)
     {
         mSystemLayer->CancelTimer(HandleBdxInitReceivedTimeoutExpired, this);
@@ -207,7 +193,7 @@ CHIP_ERROR BdxOTASender::OnTransferSessionBegin(TransferSession::OutputEvent & e
     return CHIP_NO_ERROR;
 }
 
-CHIP_ERROR BdxOTASender::OnTransferSessionEnd(TransferSession::OutputEvent & event)
+CHIP_ERROR BdxOTASession::OnTransferSessionEnd(TransferSession::OutputEvent & event)
 {
     assertChipStackLockedByCurrentThread();
 
@@ -246,7 +232,7 @@ CHIP_ERROR BdxOTASender::OnTransferSessionEnd(TransferSession::OutputEvent & eve
     return CHIP_NO_ERROR;
 }
 
-CHIP_ERROR BdxOTASender::OnBlockQuery(TransferSession::OutputEvent & event)
+CHIP_ERROR BdxOTASession::OnBlockQuery(TransferSession::OutputEvent & event)
 {
     assertChipStackLockedByCurrentThread();
 
@@ -261,8 +247,6 @@ CHIP_ERROR BdxOTASender::OnBlockQuery(TransferSession::OutputEvent & event)
     {
         bytesToSkip = event.bytesToSkip.BytesToSkip;
     }
-
-    // uint64_t transferGeneration = mTransferGeneration;
 
     JNIEnv * env = JniReferences::GetInstance().GetEnvForCurrentThread();
 
@@ -328,7 +312,7 @@ CHIP_ERROR BdxOTASender::OnBlockQuery(TransferSession::OutputEvent & event)
     return CHIP_NO_ERROR;
 }
 
-void BdxOTASender::HandleTransferSessionOutput(TransferSession::OutputEvent & event)
+void BdxOTASession::HandleTransferSessionOutput(TransferSession::OutputEvent & event)
 {
     VerifyOrReturn(mOtaDelegate != nullptr);
 
@@ -359,39 +343,103 @@ void BdxOTASender::HandleTransferSessionOutput(TransferSession::OutputEvent & ev
         break;
     case TransferSession::OutputEventType::kNone:
     case TransferSession::OutputEventType::kAckReceived:
-        // Nothing to do.
         break;
     case TransferSession::OutputEventType::kAcceptReceived:
     case TransferSession::OutputEventType::kBlockReceived:
     default:
-        // Should never happens.
         chipDie();
         break;
     }
     LogErrorOnFailure(err);
 }
 
-CHIP_ERROR BdxOTASender::ConfigureState(chip::FabricIndex fabricIndex, chip::NodeId nodeId)
+// ================= BdxOTASender Implementation =================
+
+CHIP_ERROR BdxOTASender::Init(System::Layer * systemLayer, Messaging::ExchangeManager * exchangeMgr)
 {
     assertChipStackLockedByCurrentThread();
 
-    if (mInitialized)
-    {
-        // Prevent a new node connection since another is active.
-        VerifyOrReturnError(mFabricIndex == fabricIndex && mNodeId == nodeId, CHIP_ERROR_BUSY);
+    VerifyOrReturnError(mSystemLayer == nullptr, CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrReturnError(mExchangeMgr == nullptr, CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrReturnError(systemLayer != nullptr, CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrReturnError(exchangeMgr != nullptr, CHIP_ERROR_INCORRECT_STATE);
 
-        // Reset stale connection from the same Node if exists.
-        ResetState();
-    }
+    TEMPORARY_RETURN_IGNORED exchangeMgr->RegisterUnsolicitedMessageHandlerForProtocol(Protocols::BDX::Id, this);
 
-    // Start a timer to track whether we receive a BDX init after a successful query image in a reasonable amount of time
-    CHIP_ERROR err = mSystemLayer->StartTimer(kBdxInitReceivedTimeout, HandleBdxInitReceivedTimeoutExpired, this);
-    LogErrorOnFailure(err);
-
-    mFabricIndex = fabricIndex;
-    mNodeId      = nodeId;
-
-    mInitialized = true;
+    mSystemLayer = systemLayer;
+    mExchangeMgr = exchangeMgr;
 
     return CHIP_NO_ERROR;
+}
+
+CHIP_ERROR BdxOTASender::Shutdown()
+{
+    assertChipStackLockedByCurrentThread();
+    if (mExchangeMgr != nullptr)
+    {
+        TEMPORARY_RETURN_IGNORED mExchangeMgr->UnregisterUnsolicitedMessageHandlerForProtocol(Protocols::BDX::Id);
+        mExchangeMgr = nullptr;
+    }
+    ResetState();
+    mSystemLayer = nullptr;
+    return CHIP_NO_ERROR;
+}
+
+void BdxOTASender::ResetState()
+{
+    assertChipStackLockedByCurrentThread();
+    mSessions.clear();
+}
+
+void BdxOTASender::RemoveSession(FabricIndex fabricIndex, NodeId nodeId)
+{
+    assertChipStackLockedByCurrentThread();
+    auto key = std::make_pair(fabricIndex, nodeId);
+    mSessions.erase(key);
+}
+
+CHIP_ERROR BdxOTASender::PrepareForTransfer(FabricIndex fabricIndex, NodeId nodeId)
+{
+    assertChipStackLockedByCurrentThread();
+    VerifyOrReturnError(mExchangeMgr != nullptr, CHIP_ERROR_INCORRECT_STATE);
+    VerifyOrReturnError(mSystemLayer != nullptr, CHIP_ERROR_INCORRECT_STATE);
+
+    auto key = std::make_pair(fabricIndex, nodeId);
+    auto it  = mSessions.find(key);
+    if (it != mSessions.end())
+    {
+        it->second->ResetState();
+    }
+
+    auto session   = std::make_unique<BdxOTASession>(this, mOtaDelegate, mSystemLayer, fabricIndex, nodeId);
+    CHIP_ERROR err = session->PrepareForTransfer();
+    if (err != CHIP_NO_ERROR)
+    {
+        ChipLogError(Controller, "Failed to prepare BDX transfer for node 0x" ChipLogFormatX64 ": %" CHIP_ERROR_FORMAT,
+                     ChipLogValueX64(nodeId), err.Format());
+        return err;
+    }
+
+    mSessions[key] = std::move(session);
+    return CHIP_NO_ERROR;
+}
+
+CHIP_ERROR BdxOTASender::OnUnsolicitedMessageReceived(const PayloadHeader & payloadHeader, const SessionHandle & session,
+                                                      Messaging::ExchangeDelegate *& newDelegate)
+{
+    ScopedNodeId peer       = session->GetPeer();
+    FabricIndex fabricIndex = peer.GetFabricIndex();
+    NodeId peerNodeId       = peer.GetNodeId();
+
+    auto key = std::make_pair(fabricIndex, peerNodeId);
+    auto it  = mSessions.find(key);
+    if (it != mSessions.end())
+    {
+        newDelegate = it->second.get();
+        return CHIP_NO_ERROR;
+    }
+
+    ChipLogError(Controller, "No BDX session registered for node 0x" ChipLogFormatX64 ", fabric %u", ChipLogValueX64(peerNodeId),
+                 fabricIndex);
+    return CHIP_ERROR_NOT_FOUND;
 }

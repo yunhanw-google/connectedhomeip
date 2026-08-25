@@ -43,3 +43,10 @@ python3 third_party/android_deps/set_up_android_deps.py
 # Build CMake for Android Studio
 echo "build ide"
 gn gen --check --fail-on-unused-args out/"android_$TARGET_CPU" --args="target_os=\"android\" target_cpu=\"$TARGET_CPU\" android_ndk_root=\"$ANDROID_NDK_HOME\" android_sdk_root=\"$ANDROID_HOME\"" --ide=json --json-ide-script=//scripts/examples/gn_to_cmakelists.py
+
+echo "=== Android App IDE Setup Completed Successfully ==="
+echo "Output build directory: out/android_$TARGET_CPU"
+echo "To build from source in Android Studio or Gradle:"
+echo "1. Set 'matterSdkSourceBuild=true' in examples/android/CHIPTool/gradle.properties"
+echo "2. Set 'matterBuildSrcDir=../../../../out/android_$TARGET_CPU' in gradle.properties"
+echo "3. Open examples/android/CHIPTool in Android Studio or run ./gradlew assembleDebug"

@@ -26,6 +26,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
+import android.util.Size
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -36,11 +37,14 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.checkSelfPermission
 import androidx.fragment.app.Fragment
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import com.google.chip.chiptool.R
 import com.google.chip.chiptool.SelectActionFragment
 import com.google.chip.chiptool.databinding.BarcodeFragmentBinding
 import com.google.chip.chiptool.util.FragmentUtil
 import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
@@ -56,6 +60,8 @@ class BarcodeFragment : Fragment() {
   private var _binding: BarcodeFragmentBinding? = null
   private val binding
     get() = _binding!!
+
+  private var isFrontCamera = false
 
   private fun aspectRatio(width: Int, height: Int): Int {
     val previewRatio = max(width, height).toDouble() / min(width, height)
@@ -107,27 +113,46 @@ class BarcodeFragment : Fragment() {
             .setTargetAspectRatio(screenAspectRatio)
             .setTargetRotation(binding.cameraView.display.rotation)
             .build()
+        binding.cameraView.scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
         preview.setSurfaceProvider(binding.cameraView.surfaceProvider)
 
-        // Setup barcode scanner
+        // Setup barcode scanner with HD resolution and Keep Latest strategy
         val imageAnalysis =
           ImageAnalysis.Builder()
-            .setTargetAspectRatio(screenAspectRatio)
+            .setTargetResolution(Size(1280, 720))
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setTargetRotation(binding.cameraView.display.rotation)
             .build()
         val cameraExecutor = Executors.newSingleThreadExecutor()
-        val barcodeScanner: BarcodeScanner = BarcodeScanning.getClient()
+        val barcodeScannerOptions = BarcodeScannerOptions.Builder()
+          .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_ALL_FORMATS)
+          .build()
+        val barcodeScanner: BarcodeScanner = BarcodeScanning.getClient(barcodeScannerOptions)
         imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
           processImageProxy(barcodeScanner, imageProxy)
         }
-        // Select back camera as a default
-        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+        // Select back camera if available, otherwise fallback to front camera
+        val cameraSelector = when {
+          cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> {
+            isFrontCamera = false
+            CameraSelector.DEFAULT_BACK_CAMERA
+          }
+          cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> {
+            isFrontCamera = true
+            CameraSelector.DEFAULT_FRONT_CAMERA
+          }
+          else -> {
+            isFrontCamera = false
+            CameraSelector.DEFAULT_BACK_CAMERA
+          }
+        }
         try {
           // Unbind use cases before rebinding
           cameraProvider.unbindAll()
 
           // Bind use cases to camera
-          cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+          val camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+          Log.d(TAG, "Bound camera selector=$cameraSelector, sensorRotation=${camera.cameraInfo.sensorRotationDegrees}")
         } catch (exc: Exception) {
           Log.e(TAG, "Use case binding failed", exc)
         }
@@ -144,21 +169,44 @@ class BarcodeFragment : Fragment() {
     }
   }
 
+  private var frameCount = 0L
+
   @ExperimentalGetImage
   private fun processImageProxy(barcodeScanner: BarcodeScanner, imageProxy: ImageProxy) {
-    val inputImage =
-      InputImage.fromMediaImage(imageProxy.image!!, imageProxy.imageInfo.rotationDegrees)
+    val mediaImage = imageProxy.image
+    if (mediaImage == null) {
+      imageProxy.close()
+      return
+    }
 
-    barcodeScanner
-      .process(inputImage)
-      .addOnSuccessListener { barcodes -> barcodes.forEach { handleScannedQrCode(it) } }
-      .addOnFailureListener { Log.e(TAG, it.message ?: it.toString()) }
+    frameCount++
+    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+    val isLogFrame = (frameCount % 30 == 0L)
+
+    if (isLogFrame) {
+      Log.d(
+        TAG,
+        "Frame #$frameCount: isFrontCamera=$isFrontCamera, size=${imageProxy.width}x${imageProxy.height}, rotation=$rotationDegrees"
+      )
+    }
+
+    val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
+    barcodeScanner.process(inputImage)
+      .addOnSuccessListener { barcodes ->
+        if (barcodes.isNotEmpty()) {
+          Log.d(TAG, "FOUND ${barcodes.size} BARCODE(S) on frame #$frameCount!")
+          barcodes.forEach { barcode ->
+            Log.d(TAG, "Scanned Barcode: displayValue=${barcode.displayValue}")
+            handleScannedQrCode(barcode)
+          }
+        }
+      }
+      .addOnFailureListener { e ->
+        if (isLogFrame) {
+          Log.d(TAG, "Barcode scanning failed on frame #$frameCount", e)
+        }
+      }
       .addOnCompleteListener {
-        // When the image is from CameraX analysis use case, must call image.close() on
-        // received
-        // images when finished using them. Otherwise, new images may not be received or the
-        // camera
-        // may stall.
         imageProxy.close()
       }
   }
@@ -202,18 +250,22 @@ class BarcodeFragment : Fragment() {
       Log.d(TAG, "onDestroyView has already been called in BarcodeFragment.")
       return
     }
+    val qrText = barcode.displayValue ?: ""
+    Log.d(TAG, "handleScannedQrCode received: $qrText")
     val isLIT = binding.enableLITCommissioningSwitchInBarcode.isChecked
     Handler(Looper.getMainLooper()).post {
       try {
-        val payload =
-          barcode.displayValue?.let { OnboardingPayloadParser().parseQrCode(it) } ?: return@post
+        Toast.makeText(requireContext(), "Scanned QR: $qrText", Toast.LENGTH_SHORT).show()
+        val payload = OnboardingPayloadParser().parseQrCode(qrText)
 
         FragmentUtil.getHost(this@BarcodeFragment, Callback::class.java)
           ?.onCHIPDeviceInfoReceived(CHIPDeviceInfo.fromSetupPayload(payload, isLIT))
       } catch (ex: UnrecognizedQrCodeException) {
-        Log.e(TAG, "Unrecognized QR Code", ex)
-        Toast.makeText(requireContext(), "Unrecognized QR Code", Toast.LENGTH_SHORT).show()
-        return@post
+        Log.e(TAG, "Unrecognized QR Code: $qrText", ex)
+        Toast.makeText(requireContext(), "Unrecognized QR Code format: $qrText", Toast.LENGTH_LONG).show()
+      } catch (ex: Exception) {
+        Log.e(TAG, "Exception parsing QR Code: $qrText", ex)
+        Toast.makeText(requireContext(), "Error: ${ex.message}", Toast.LENGTH_LONG).show()
       }
     }
   }

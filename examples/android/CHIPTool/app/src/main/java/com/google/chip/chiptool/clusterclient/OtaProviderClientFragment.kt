@@ -2,14 +2,17 @@ package com.google.chip.chiptool.clusterclient
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -72,6 +75,29 @@ class OtaProviderClientFragment : Fragment() {
 
   private val attributeList = ClusterIDMapping.OtaSoftwareUpdateRequestor.Attribute.values()
 
+  private var wakeLock: PowerManager.WakeLock? = null
+
+  private fun acquireWakeLock() {
+    if (wakeLock == null) {
+      val powerManager = requireContext().getSystemService(Context.POWER_SERVICE) as? PowerManager
+      wakeLock = powerManager?.newWakeLock(
+        PowerManager.PARTIAL_WAKE_LOCK,
+        "CHIPTool:OtaTransferWakeLock"
+      )
+    }
+    if (wakeLock?.isHeld == false) {
+      wakeLock?.acquire(60 * 60 * 1000L) // 60-minute safety timeout
+      Log.d(TAG, "Acquired PowerManager WakeLock for OTA transfer")
+    }
+  }
+
+  private fun releaseWakeLock() {
+    if (wakeLock?.isHeld == true) {
+      wakeLock?.release()
+      Log.d(TAG, "Released PowerManager WakeLock for OTA transfer")
+    }
+  }
+
   override fun onCreateView(
     inflater: LayoutInflater,
     container: ViewGroup?,
@@ -79,6 +105,10 @@ class OtaProviderClientFragment : Fragment() {
   ): View {
     _binding = OtaProviderClientFragmentBinding.inflate(inflater, container, false)
     scope = viewLifecycleOwner.lifecycleScope
+
+    // Keep screen and CPU awake during OTA operations
+    requireActivity().window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    acquireWakeLock()
 
     deviceController.setCompletionListener(ChipControllerCallback())
 
@@ -89,6 +119,9 @@ class OtaProviderClientFragment : Fragment() {
     binding.updateOTAStatusBtn.setOnClickListener { updateOTAStatusBtnClick() }
     binding.announceOTAProviderBtn.setOnClickListener {
       scope.launch { sendAnnounceOTAProviderBtnClick() }
+    }
+    binding.retryFailedOtaBtn.setOnClickListener {
+      scope.launch { retryFailedOTAUpdatesBtnClick() }
     }
 
     binding.writeAclBtn.setOnClickListener { scope.launch { sendAclBtnClick() } }
@@ -496,42 +529,181 @@ class OtaProviderClientFragment : Fragment() {
     }
   }
 
-  private suspend fun sendAnnounceOTAProviderBtnClick() {
+  private fun getFileSize(uri: Uri?): Long {
+    if (uri == null) return 0L
+    try {
+      val cursor = requireContext().contentResolver.query(uri, null, null, null, null)
+      cursor?.use { c ->
+        val sizeIndex = c.getColumnIndex(OpenableColumns.SIZE)
+        if (sizeIndex != -1 && c.moveToFirst()) {
+          return c.getLong(sizeIndex)
+        }
+      }
+    } catch (e: Exception) {
+      Log.d(TAG, "Failed to query size from contentResolver cursor", e)
+    }
+    try {
+      requireContext().contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+        return pfd.statSize
+      }
+    } catch (e: Exception) {
+      Log.d(TAG, "Failed to get statSize from fileDescriptor", e)
+    }
+    return 0L
+  }
+
+  private fun formatTimeDuration(durationMs: Long): String {
+    val totalSec = durationMs / 1000
+    val hours = totalSec / 3600
+    val minutes = (totalSec % 3600) / 60
+    val seconds = totalSec % 60
+    return if (hours > 0) {
+      String.format("%02d:%02d:%02d", hours, minutes, seconds)
+    } else {
+      String.format("%02d:%02d", minutes, seconds)
+    }
+  }
+
+  data class DeviceOtaStatus(
+    val nodeId: Long,
+    var status: String = "Idle",
+    var blockIndex: Long = 0L,
+    var startTimeMs: Long = 0L,
+    var totalBytesTransferred: Long = 0L,
+    var totalFileSize: Long = 0L,
+    var transferSpeedKBps: Double = 0.0,
+    var isComplete: Boolean = false,
+    var endTimeMs: Long = 0L
+  )
+
+  private val deviceStatusMap = java.util.concurrent.ConcurrentHashMap<Long, DeviceOtaStatus>()
+  private val deviceInputStreams = java.util.concurrent.ConcurrentHashMap<Long, BufferedInputStream>()
+
+  private fun getTargetDeviceIds(): List<Long> {
+    val input = binding.targetDeviceIdsEd.text.toString().trim()
+    if (input.isNotBlank()) {
+      val ids = input.split(",").mapNotNull { it.trim().toLongOrNull() }
+      if (ids.isNotEmpty()) {
+        return ids
+      }
+    }
+    return listOf(addressUpdateFragment.deviceId)
+  }
+
+  private fun updateDeviceStatus(nodeId: Long, status: String, blockIndex: Long = 0L) {
+    val deviceStatus = deviceStatusMap.getOrPut(nodeId) { DeviceOtaStatus(nodeId) }
+    deviceStatus.status = status
+    if (blockIndex > 0) {
+      deviceStatus.blockIndex = blockIndex
+    }
+    renderMultiDeviceStatus()
+  }
+
+  private fun renderMultiDeviceStatus() {
+    val activity = activity ?: return
+    activity.runOnUiThread {
+      val sb = StringBuilder()
+      sb.append("=== Multi-Device OTA Progress ===\n")
+      if (deviceStatusMap.isEmpty()) {
+        sb.append("No active OTA devices.")
+      } else {
+        for ((nodeId, status) in deviceStatusMap) {
+          sb.append("• Node ").append(nodeId).append(": ").append(status.status)
+          if (status.blockIndex > 0) {
+            sb.append(" (Block #").append(status.blockIndex)
+            val transferredKB = status.totalBytesTransferred / 1024.0
+            if (transferredKB > 0) {
+              sb.append(String.format(", %.1f KB", transferredKB))
+            }
+            if (status.totalFileSize > 0) {
+              val totalKB = status.totalFileSize / 1024.0
+              val percent = (status.totalBytesTransferred.toDouble() / status.totalFileSize.toDouble()) * 100.0
+              sb.append(String.format(" / %.1f KB [%.1f%%]", totalKB, percent.coerceAtMost(100.0)))
+            }
+            sb.append(")")
+          }
+          sb.append("\n")
+        }
+      }
+      binding.commandStatusTv.text = sb.toString()
+    }
+  }
+
+  private suspend fun sendAnnounceOTAProviderBtnClick(nodesToAnnounce: List<Long>? = null) {
     requireActivity().runOnUiThread { updateOTAStatusBtnClick() }
 
-    val devicePtr =
-      try {
-        ChipClient.getConnectedDevicePointer(requireContext(), addressUpdateFragment.deviceId)
-      } catch (e: IllegalStateException) {
-        Log.d(TAG, "getConnectedDevicePointer exception", e)
-        showMessage("Get DevicePointer fail!")
-        return
+    val targetNodeIds = nodesToAnnounce ?: getTargetDeviceIds()
+    if (nodesToAnnounce == null) {
+      deviceStatusMap.clear()
+    }
+    for (nodeId in targetNodeIds) {
+      deviceStatusMap[nodeId] = DeviceOtaStatus(nodeId, "Announcing OTA Provider...")
+    }
+    renderMultiDeviceStatus()
+
+    for (nodeId in targetNodeIds) {
+      val devicePtr =
+        try {
+          ChipClient.getConnectedDevicePointer(requireContext(), nodeId)
+        } catch (e: IllegalStateException) {
+          Log.d(TAG, "getConnectedDevicePointer exception for Node $nodeId", e)
+          updateDeviceStatus(nodeId, "Connection failed: ${e.message}")
+          continue
+        }
+
+      val otaRequestCluster =
+        ChipClusters.OtaSoftwareUpdateRequestorCluster(devicePtr, OTA_REQUESTER_ENDPOINT_ID)
+      otaRequestCluster.announceOTAProvider(
+        object : DefaultClusterCallback {
+          override fun onSuccess() {
+            Log.i(TAG, "announceOTAProvider command success for Node $nodeId")
+            updateDeviceStatus(nodeId, "Announced. Waiting for QueryImage...")
+          }
+
+          override fun onError(ex: java.lang.Exception?) {
+            Log.e(TAG, "announceOTAProvider command failure for Node $nodeId", ex)
+            updateDeviceStatus(nodeId, "Announce failed: ${ex?.message}")
+          }
+        },
+        deviceController.controllerNodeId.toULong().toLong(),
+        vendorId,
+        0 /* AnnounceReason */,
+        Optional.empty(),
+        OTA_PROVIDER_ENDPOINT_ID
+      )
+    }
+  }
+
+  private suspend fun retryFailedOTAUpdatesBtnClick() {
+    val allNodeIds = getTargetDeviceIds()
+    val failedNodeIds = allNodeIds.filter { nodeId ->
+      val status = deviceStatusMap[nodeId]?.status ?: ""
+      status.contains("fail", ignoreCase = true) ||
+          status.contains("error", ignoreCase = true) ||
+          status.isEmpty() ||
+          status == "Announcing OTA Provider..."
+    }
+
+    if (failedNodeIds.isEmpty()) {
+      requireActivity().runOnUiThread {
+        Toast.makeText(requireContext(), "No failed OTA nodes to retry", Toast.LENGTH_SHORT).show()
       }
+      return
+    }
 
-    val otaRequestCluster =
-      ChipClusters.OtaSoftwareUpdateRequestorCluster(devicePtr, OTA_REQUESTER_ENDPOINT_ID)
-    otaRequestCluster.announceOTAProvider(
-      object : DefaultClusterCallback {
-        override fun onSuccess() {
-          showMessage("announceOTAProvider command success")
-          Log.e(TAG, "announceOTAProvider command success")
-        }
-
-        override fun onError(ex: java.lang.Exception?) {
-          showMessage("announceOTAProvider command failure $ex")
-          Log.e(TAG, "announceOTAProvider command failure", ex)
-        }
-      },
-      deviceController.controllerNodeId.toULong().toLong(),
-      vendorId,
-      0 /* AnnounceReason */,
-      Optional.empty(),
-      OTA_PROVIDER_ENDPOINT_ID
-    )
+    sendAnnounceOTAProviderBtnClick(failedNodeIds)
   }
 
   override fun onDestroyView() {
     super.onDestroyView()
+    for ((_, stream) in deviceInputStreams) {
+      try {
+        stream.close()
+      } catch (ignored: Exception) {}
+    }
+    deviceInputStreams.clear()
+    releaseWakeLock()
+    activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     deviceController.finishOTAProvider()
     _binding = null
   }
@@ -541,9 +713,6 @@ class OtaProviderClientFragment : Fragment() {
     private var version: Long = 0
     private var versionString: String? = null
     private var uri: Uri? = null
-
-    private var inputStream: InputStream? = null
-    private var bufferedInputStream: BufferedInputStream? = null
 
     private var status: QueryImageResponseStatusEnum? = null
     private var delayedTime: UInt? = null
@@ -590,6 +759,13 @@ class OtaProviderClientFragment : Fragment() {
         TAG,
         "handleQueryImage, $vendorId, $productId, $softwareVersion, $hardwareVersion, $location"
       )
+      val targetIds = getTargetDeviceIds()
+      for (nodeId in targetIds) {
+        if (deviceStatusMap[nodeId]?.status?.startsWith("Announced") == true) {
+          updateDeviceStatus(nodeId, "QueryImage received (SW Ver: $softwareVersion)")
+          break
+        }
+      }
 
       return when (status) {
         QueryImageResponseStatusEnum.UpdateAvailable ->
@@ -616,6 +792,7 @@ class OtaProviderClientFragment : Fragment() {
       newVersion: Long
     ): OTAProviderDelegate.ApplyUpdateResponse {
       Log.d(TAG, "handleApplyUpdateRequest, $nodeId, $newVersion")
+      updateDeviceStatus(nodeId, "Applying Update (Target Version: $newVersion)")
       return OTAProviderDelegate.ApplyUpdateResponse(
         OTAProviderDelegate.ApplyUpdateActionEnum.Proceed,
         APPLY_WAITING_TIME
@@ -624,7 +801,7 @@ class OtaProviderClientFragment : Fragment() {
 
     override fun handleNotifyUpdateApplied(nodeId: Long) {
       Log.d(TAG, "handleNotifyUpdateApplied, $nodeId")
-      showMessage("Finish Firmware Update : $nodeId")
+      updateDeviceStatus(nodeId, "Firmware Update Completed Successfully!")
     }
 
     override fun handleBDXTransferSessionBegin(
@@ -633,26 +810,51 @@ class OtaProviderClientFragment : Fragment() {
       offset: Long
     ) {
       Log.d(TAG, "handleBDXTransferSessionBegin, $nodeId, $fileDesignator, $offset")
+      acquireWakeLock()
       try {
-        inputStream = getInputStream(uri)
-        bufferedInputStream = BufferedInputStream(inputStream)
+        val inputStream = getInputStream(uri)
+        val bufferedInputStream = BufferedInputStream(inputStream)
+        deviceInputStreams[nodeId] = bufferedInputStream
+        val deviceStatus = deviceStatusMap.getOrPut(nodeId) { DeviceOtaStatus(nodeId) }
+        deviceStatus.startTimeMs = System.currentTimeMillis()
+        deviceStatus.totalBytesTransferred = 0L
+        deviceStatus.totalFileSize = getFileSize(uri)
+        deviceStatus.transferSpeedKBps = 0.0
+        deviceStatus.isComplete = false
+        deviceStatus.endTimeMs = 0L
+        updateDeviceStatus(nodeId, "BDX Transfer Started (offset: $offset)")
       } catch (e: IOException) {
-        Log.d(TAG, "exception", e)
-        inputStream?.close()
-        bufferedInputStream?.close()
-        inputStream = null
-        bufferedInputStream = null
+        Log.d(TAG, "exception for Node $nodeId", e)
+        updateDeviceStatus(nodeId, "BDX Session Error: ${e.message}")
+        deviceInputStreams.remove(nodeId)?.close()
+        if (deviceInputStreams.isEmpty()) {
+          releaseWakeLock()
+        }
         return
       }
     }
 
     override fun handleBDXTransferSessionEnd(errorCode: Long, nodeId: Long) {
       Log.d(TAG, "handleBDXTransferSessionEnd, $errorCode, $nodeId")
-      inputStream?.close()
-      bufferedInputStream?.close()
-      inputStream = null
-      bufferedInputStream = null
-      showMessage("BDXTransfer End! - ErrorCode: $errorCode")
+      deviceInputStreams.remove(nodeId)?.close()
+      if (deviceInputStreams.isEmpty()) {
+        releaseWakeLock()
+      }
+      val statusObj = deviceStatusMap[nodeId]
+      if (statusObj != null) {
+        statusObj.endTimeMs = System.currentTimeMillis()
+        val totalMs = statusObj.endTimeMs - statusObj.startTimeMs
+        statusObj.isComplete = (errorCode == 0L)
+        val lastingTimeStr = formatTimeDuration(totalMs)
+        val finalSpeedMsg = if (statusObj.transferSpeedKBps > 0) {
+          String.format(" (Avg: %.1f KB/s / %.1f kbps, Total OTA Time: %s)", statusObj.transferSpeedKBps, statusObj.transferSpeedKBps * 8.0, lastingTimeStr)
+        } else " (Total OTA Time: $lastingTimeStr)"
+        val msg = if (errorCode == 0L) "BDX Transfer Finished$finalSpeedMsg" else "BDX Transfer Ended with error $errorCode (Total OTA Time: $lastingTimeStr)"
+        updateDeviceStatus(nodeId, msg)
+      } else {
+        val msg = if (errorCode == 0L) "BDX Transfer Finished" else "BDX Transfer Ended with error $errorCode"
+        updateDeviceStatus(nodeId, msg)
+      }
     }
 
     override fun handleBDXQuery(
@@ -661,15 +863,13 @@ class OtaProviderClientFragment : Fragment() {
       blockIndex: Long,
       bytesToSkip: Long
     ): OTAProviderDelegate.BDXData? {
-      // This code is just example code. This code doesn't check blockIndex and bytesToSkip
-      // variable.
       Log.d(TAG, "handleBDXQuery, $nodeId, $blockSize, $blockIndex, $bytesToSkip")
-      showMessage("sending.. $blockIndex")
+      val bufferedInputStream = deviceInputStreams[nodeId]
       if (bufferedInputStream == null) {
         return OTAProviderDelegate.BDXData(ByteArray(0), true)
       }
       val packet = ByteArray(blockSize)
-      val len = bufferedInputStream!!.read(packet)
+      val len = bufferedInputStream.read(packet)
 
       val sendPacket =
         if (len < blockSize) {
@@ -681,6 +881,47 @@ class OtaProviderClientFragment : Fragment() {
         }
 
       val isEOF = len < blockSize
+
+      val deviceStatus = deviceStatusMap.getOrPut(nodeId) { DeviceOtaStatus(nodeId) }
+      if (sendPacket.isNotEmpty()) {
+        // Matter Protocol Overhead per BDX Data Frame (excluding IP/UDP transport headers):
+        // Matter Common Header (8B) + Matter Payload Header (6B) + BDX Block Header (4B) = 18 Bytes
+        val headerOverheadBytes = 18
+        val frameSizeBytes = sendPacket.size + headerOverheadBytes
+        deviceStatus.totalBytesTransferred += frameSizeBytes
+        val elapsedTimeSec = (System.currentTimeMillis() - deviceStatus.startTimeMs) / 1000.0
+        if (elapsedTimeSec > 0) {
+          deviceStatus.transferSpeedKBps = (deviceStatus.totalBytesTransferred / 1024.0) / elapsedTimeSec
+        }
+      }
+
+      val now = System.currentTimeMillis()
+      val lastingMs = if (deviceStatus.startTimeMs > 0) now - deviceStatus.startTimeMs else 0L
+      val lastingText = formatTimeDuration(lastingMs)
+
+      var etaText = ""
+      if (deviceStatus.totalFileSize > 0 && deviceStatus.transferSpeedKBps > 0) {
+        val remainingBytes = deviceStatus.totalFileSize - deviceStatus.totalBytesTransferred
+        if (remainingBytes > 0) {
+          val speedBytesPerSec = deviceStatus.transferSpeedKBps * 1024.0
+          val remainingMs = ((remainingBytes / speedBytesPerSec) * 1000).toLong()
+          etaText = ", ETA: ${formatTimeDuration(remainingMs)}"
+        } else if (isEOF) {
+          etaText = ", ETA: 00:00"
+        }
+      }
+
+      val speedText = if (deviceStatus.transferSpeedKBps > 0) {
+        val kbps = deviceStatus.transferSpeedKBps * 8.0
+        String.format("%.1f KB/s [%.1f kbps]", deviceStatus.transferSpeedKBps, kbps)
+      } else ""
+
+      val statusMsg = if (speedText.isNotEmpty()) {
+        "Sending firmware... Speed: $speedText (Elapsed: $lastingText$etaText)"
+      } else {
+        "Sending firmware... (Elapsed: $lastingText)"
+      }
+      updateDeviceStatus(nodeId, statusMsg, blockIndex)
 
       return OTAProviderDelegate.BDXData(sendPacket, isEOF)
     }

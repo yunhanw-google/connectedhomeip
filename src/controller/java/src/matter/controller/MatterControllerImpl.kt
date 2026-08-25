@@ -55,7 +55,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     pinCode: Long,
   ) {
     this.nodeId = nodeId
-    deviceController.pairDeviceWithAddress(nodeId, address, port, discriminator, pinCode, null)
+    deviceController.pairDeviceWithAddress(nodeId, address, port, discriminator, pinCode, null as ByteArray?)
   }
 
   override fun unpairDevice(nodeId: Long) {

@@ -100,18 +100,21 @@ def SetVariableList(out, variable_name, values):
     if len(values) == 1:
         SetVariable(out, variable_name, values[0])
         return
-    out.write('list(APPEND "')
-    out.write(CMakeStringEscape(variable_name))
-    out.write('"\n  "')
-    out.write('"\n  "'.join([CMakeStringEscape(value) for value in values]))
-    out.write('")\n')
+    CHUNK_SIZE = 50
+    for i in range(0, len(values), CHUNK_SIZE):
+        chunk = values[i:i + CHUNK_SIZE]
+        out.write('list(APPEND "')
+        out.write(CMakeStringEscape(variable_name))
+        out.write('"\n  "')
+        out.write('"\n  "'.join([CMakeStringEscape(value) for value in chunk]))
+        out.write('")\n')
 
 
 def SetFilesProperty(output, variable, property_name, values, sep):
     """Given a set of source files, sets the given property on them."""
-    output.write('set_source_files_properties(')
+    output.write('set_source_files_properties("')
     WriteVariable(output, variable)
-    output.write(' PROPERTIES ')
+    output.write('" PROPERTIES ')
     output.write(property_name)
     output.write(' "')
     for value in values:
@@ -306,7 +309,7 @@ def WriteAction(out, target, project, sources, synthetic_dependencies):
         out.write('"')
     out.write('\n')
 
-    out.write('  DEPENDS ')
+    out.write('  DEPENDS')
     for sources_type_name in sources.values():
         WriteVariable(out, sources_type_name, ' ')
     out.write('\n')
@@ -430,7 +433,7 @@ def WriteCopy(out, target, project, sources, synthetic_dependencies):
         out.write(CMakeStringEscape(dst))
         out.write('"\n')
 
-    out.write('  DEPENDS ')
+    out.write('  DEPENDS')
     for sources_type_name in sources.values():
         WriteVariable(out, sources_type_name, ' ')
     out.write('\n')
@@ -602,9 +605,11 @@ def WriteSourceVariables(out, target, project):
 
     sources = {}
     for source_type, sources_of_type in source_types.items():
-        if sources_of_type:
+        if sources_of_type and source_type != 'obj_target':
             sources[source_type] = '${target}__' + source_type + '_srcs'
             SetVariableList(out, sources[source_type], sources_of_type)
+        elif sources_of_type and source_type == 'obj_target':
+            sources[source_type] = '${target}__' + source_type + '_srcs'
     return sources
 
 
@@ -636,13 +641,25 @@ def WriteTarget(out, target, project):
     if target.cmake_type.modifier is not None:
         out.write(' ')
         out.write(target.cmake_type.modifier)
-    for sources_type_name in sources.values():
-        WriteVariable(out, sources_type_name, ' ')
+    for source_type, sources_type_name in sources.items():
+        if source_type != 'obj_target':
+            WriteVariable(out, sources_type_name, ' ')
     if synthetic_dependencies:
         out.write(' DEPENDS')
         for synthetic_dependencie in synthetic_dependencies:
             WriteVariable(out, synthetic_dependencie, ' ')
     out.write(')\n')
+
+    if 'obj_target' in sources:
+        object_dependencies = set()
+        project.GetObjectSourceDependencies(target.gn_name, object_dependencies)
+        obj_target_sources = ['$<TARGET_OBJECTS:' + project.GetCMakeTargetName(dep) + '>' for dep in object_dependencies]
+        CHUNK_SIZE = 50
+        for i in range(0, len(obj_target_sources), CHUNK_SIZE):
+            chunk = obj_target_sources[i:i + CHUNK_SIZE]
+            out.write('target_sources("${target}" PRIVATE\n  ')
+            out.write('\n  '.join(chunk))
+            out.write('\n)\n')
 
     if target.cmake_type.command != 'add_custom_target':
         WriteCompilerFlags(out, target, project, sources)
@@ -665,7 +682,7 @@ def WriteTarget(out, target, project):
     for dependency in dependencies:
         gn_dependency_type = project.targets.get(
             dependency, {}).get('type', None)
-        cmake_dependency_type = cmake_target_types.get(gn_dependency_type)
+        cmake_dependency_type = cmake_target_types.get(gn_dependency_type, CMakeTargetType.custom)
         cmake_dependency_name = project.GetCMakeTargetName(dependency)
 
         if cmake_dependency_type.command != 'add_library':
@@ -680,12 +697,12 @@ def WriteTarget(out, target, project):
     if nonlibraries:
         nonlibrarieslist = list(nonlibraries)
         nonlibrarieslist.sort()
-        out.write('add_dependencies("${target}"')
-        for nonlibrary in nonlibrarieslist:
-            out.write('\n  "')
-            out.write(nonlibrary)
-            out.write('"')
-        out.write(')\n')
+        CHUNK_SIZE = 50
+        for i in range(0, len(nonlibrarieslist), CHUNK_SIZE):
+            chunk = nonlibrarieslist[i:i + CHUNK_SIZE]
+            out.write('add_dependencies("${target}"\n  "')
+            out.write('"\n  "'.join([CMakeStringEscape(val) for val in chunk]))
+            out.write('")\n')
 
     # Non-OBJECT library dependencies.
     combined_library_lists = [target.properties.get(

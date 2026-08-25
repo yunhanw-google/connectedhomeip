@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
 
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/addressUpdateFragment"
@@ -12,12 +16,31 @@
         android:layout_alignParentTop="true" />
 
     <TextView
+        android:id="@+id/targetDeviceIdsTv"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/ota_provider_target_device_ids_label"
+        android:textSize="14sp"
+        android:paddingStart="8dp"
+        android:layout_below="@id/addressUpdateFragment" />
+
+    <EditText
+        android:id="@+id/targetDeviceIdsEd"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/ota_provider_target_device_ids_hint"
+        android:inputType="text"
+        android:textSize="14sp"
+        android:padding="8dp"
+        android:layout_below="@id/targetDeviceIdsTv" />
+
+    <TextView
         android:id="@+id/titleStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/ota_provider_query_image_response_status_text"
         android:textSize="16sp"
-        android:layout_below="@id/addressUpdateFragment" />
+        android:layout_below="@id/targetDeviceIdsEd" />
 
     <Spinner
         android:id="@+id/titleStatusSp"
@@ -180,7 +203,7 @@
         android:padding="8dp"
         android:textSize="16sp" />
 
-    <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    <LinearLayout
         android:orientation="vertical"
         android:layout_width="match_parent"
         android:id="@+id/buttonLayout"
@@ -214,6 +237,15 @@
             android:background="@android:color/darker_gray"
             android:text="@string/ota_provider_start_firmware_update_text"
             android:textSize="16sp"/>
+        <TextView
+            android:id="@+id/retryFailedOtaBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:layout_margin="8dp"
+            android:background="@android:color/darker_gray"
+            android:text="@string/ota_provider_retry_failed_updates_text"
+            android:textSize="16sp"/>
     </LinearLayout>
     <TextView
         android:id="@+id/firmwareFileTv"
@@ -235,4 +267,5 @@
         android:minLines="4"
         android:singleLine="false"
         android:textSize="16sp" />
-</RelativeLayout>
+    </RelativeLayout>
+</ScrollView>

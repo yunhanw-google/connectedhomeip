@@ -85,6 +85,10 @@
     <string name="enter_thread_xpanid_text">11:11:11:11:22:22:22:22</string>
     <string name="enter_thread_master_key_text">00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF</string>
     <string name="enter_thread_save_network_btn">Save network</string>
+    <string name="enter_thread_fetch_from_system_btn">Fetch dataset from system Thread manager</string>
+    <string name="enter_thread_fetch_success">Thread dataset successfully imported from system</string>
+    <string name="enter_thread_fetch_error">Failed to fetch Thread dataset: %1$s</string>
+    <string name="enter_thread_manager_unavailable">ThreadNetworkManager is not available on this device</string>
 
     <string name="nfc_tag_action_title">CHIP NFC Tag read. Choose an action:</string>
     <string name="nfc_tag_action_show">Show device information</string>
@@ -285,6 +289,7 @@
     <string name="ota_provider_select_firmware_file_text">Select Firmware</string>
     <string name="ota_provider_update_ota_status_text">Update OTA Status</string>
     <string name="ota_provider_start_firmware_update_text">Start Firmware Update</string>
+    <string name="ota_provider_retry_failed_updates_text">Retry Failed OTA Updates</string>
     <string name="ota_provider_invalid_attribute">Invalid Attribute</string>
     <string name="ota_provider_write_default_ota_providers_text">Write Default OTA Providers</string>
     <string name="ota_provider_fabric_index_text">Fabric Index</string>
@@ -292,6 +297,9 @@
     <string name="ota_provider_endpoint_id_text">Endpoint ID</string>
     <string name="ota_provider_write_text">Write</string>
     <string name="ota_provider_node_id_text">Node ID</string>
+    <string name="ota_provider_target_device_ids_hint">Target Device IDs (comma-separated, e.g. 1, 2, 3)</string>
+    <string name="ota_provider_target_device_ids_label">Target Node IDs:</string>
+    <string name="ota_provider_multi_device_status_title">Multi-Device OTA Progress Status:</string>
 
     <string name="mode_select_btn_text">Mode Select</string>
     <string name="mode_select_description_text">Description</string>

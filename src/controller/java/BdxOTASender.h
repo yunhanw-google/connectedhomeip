@@ -18,18 +18,54 @@
 #pragma once
 
 #include <jni.h>
+#include <map>
+#include <memory>
+#include <utility>
+
 #include <messaging/ExchangeMgr.h>
 #include <protocols/bdx/BdxUri.h>
 #include <protocols/bdx/TransferFacilitator.h>
 
 constexpr uint32_t kMaxBDXURILen = 256;
 
-class BdxOTASender : public chip::bdx::Responder
+class BdxOTASender;
+
+class BdxOTASession : public chip::bdx::Responder
+{
+public:
+    BdxOTASession(BdxOTASender * owner, jobject otaDelegate, chip::System::Layer * systemLayer, chip::FabricIndex fabricIndex,
+                  chip::NodeId nodeId);
+    ~BdxOTASession() override;
+
+    CHIP_ERROR PrepareForTransfer();
+    void ResetState();
+
+    chip::FabricIndex GetFabricIndex() const { return mFabricIndex; }
+    chip::NodeId GetNodeId() const { return mNodeId; }
+
+private:
+    static void HandleBdxInitReceivedTimeoutExpired(chip::System::Layer * systemLayer, void * state);
+
+    CHIP_ERROR OnMessageToSend(chip::bdx::TransferSession::OutputEvent & event);
+    CHIP_ERROR OnTransferSessionBegin(chip::bdx::TransferSession::OutputEvent & event);
+    CHIP_ERROR OnTransferSessionEnd(chip::bdx::TransferSession::OutputEvent & event);
+    CHIP_ERROR OnBlockQuery(chip::bdx::TransferSession::OutputEvent & event);
+    void HandleTransferSessionOutput(chip::bdx::TransferSession::OutputEvent & event) override;
+
+    BdxOTASender * mOwner                           = nullptr;
+    jobject mOtaDelegate                            = nullptr;
+    chip::System::Layer * mSystemLayer              = nullptr;
+    bool mInitialized                               = false;
+    chip::FabricIndex mFabricIndex                  = chip::kUndefinedFabricIndex;
+    chip::NodeId mNodeId                            = chip::kUndefinedNodeId;
+    uint64_t mTransferGeneration                    = 0;
+};
+
+class BdxOTASender : public chip::Messaging::UnsolicitedMessageHandler
 {
 public:
     BdxOTASender(jobject otaDelegate) : mOtaDelegate(otaDelegate) {}
-
-    ~BdxOTASender() {}
+    ~BdxOTASender() override { static_cast<void>(Shutdown()); }
 
     CHIP_ERROR PrepareForTransfer(chip::FabricIndex fabricIndex, chip::NodeId nodeId);
 
@@ -39,38 +75,15 @@ public:
 
     void ResetState();
 
+    void RemoveSession(chip::FabricIndex fabricIndex, chip::NodeId nodeId);
+
+    CHIP_ERROR OnUnsolicitedMessageReceived(const chip::PayloadHeader & payloadHeader, const chip::SessionHandle & session,
+                                            chip::Messaging::ExchangeDelegate *& newDelegate) override;
+
 private:
-    /**
-     * Timer callback called when we don't receive a BDX init within a reasonable time after a successful QueryImage response.
-     */
-    static void HandleBdxInitReceivedTimeoutExpired(chip::System::Layer * systemLayer, void * state)
-    {
-        VerifyOrReturn(state != nullptr);
-        static_cast<BdxOTASender *>(state)->ResetState();
-    }
-
-    CHIP_ERROR OnMessageToSend(chip::bdx::TransferSession::OutputEvent & event);
-
-    CHIP_ERROR OnTransferSessionBegin(chip::bdx::TransferSession::OutputEvent & event);
-
-    CHIP_ERROR OnTransferSessionEnd(chip::bdx::TransferSession::OutputEvent & event);
-
-    CHIP_ERROR OnBlockQuery(chip::bdx::TransferSession::OutputEvent & event);
-
-    void HandleTransferSessionOutput(chip::bdx::TransferSession::OutputEvent & event) override;
-
-    CHIP_ERROR ConfigureState(chip::FabricIndex fabricIndex, chip::NodeId nodeId);
-
-    bool mInitialized                               = false;
-    chip::FabricIndex mFabricIndex                  = chip::kUndefinedFabricIndex;
-    chip::NodeId mNodeId                            = chip::kUndefinedNodeId;
+    jobject mOtaDelegate                            = nullptr;
+    chip::System::Layer * mSystemLayer              = nullptr;
     chip::Messaging::ExchangeManager * mExchangeMgr = nullptr;
 
-    jobject mOtaDelegate = nullptr;
-
-    // Since we are a singleton, we get reused across transfers, but also have
-    // async calls that can happen.  The transfer generation keeps track of
-    // which transfer we are currently doing, so we can ignore async calls
-    // attached to no-longer-running transfers.
-    uint64_t mTransferGeneration = 0;
+    std::map<std::pair<chip::FabricIndex, chip::NodeId>, std::unique_ptr<BdxOTASession>> mSessions;
 };
