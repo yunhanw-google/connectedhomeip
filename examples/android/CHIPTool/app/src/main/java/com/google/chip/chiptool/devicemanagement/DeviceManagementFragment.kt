@@ -627,6 +627,9 @@ class ClusterAttributeAdapter(
           textLayout.addView(metaTv)
 
           val switch = com.google.android.material.materialswitch.MaterialSwitch(ctx).apply {
+            showText = false
+            textOn = ""
+            textOff = ""
             isChecked = (attr.currentValue as? Boolean) == true
             isEnabled = attr.isWritable
             setOnCheckedChangeListener { _, isChecked ->

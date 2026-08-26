@@ -83,6 +83,9 @@
           android:id="@+id/quickToggleSwitch"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
+          android:textOn=""
+          android:textOff=""
+          app:showText="false"
           android:visibility="visible" />
 
       <!-- Inline Lock/Unlock Button (for DoorLock) -->
