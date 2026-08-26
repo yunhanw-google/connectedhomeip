@@ -150,6 +150,15 @@
           app:chipIcon="@android:drawable/presence_online" />
 
       <com.google.android.material.chip.Chip
+          android:id="@+id/badgeUnassigned"
+          style="@style/Widget.MaterialComponents.Chip.Action"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:text="Unassigned"
+          android:visibility="gone"
+          app:chipIcon="@android:drawable/ic_menu_help" />
+
+      <com.google.android.material.chip.Chip
           android:id="@+id/badgeBattery"
           style="@style/Widget.MaterialComponents.Chip.Action"
           android:layout_width="wrap_content"
@@ -188,8 +197,9 @@
           style="@style/Widget.MaterialComponents.Button.TextButton"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:text="Edit Room/Aliases"
-          android:textSize="12sp" />
+          android:text="Edit Name &amp; Room"
+          android:textSize="12sp"
+          app:icon="@android:drawable/ic_menu_edit" />
 
       <com.google.android.material.button.MaterialButton
           android:id="@+id/inspectEndpointsButton"

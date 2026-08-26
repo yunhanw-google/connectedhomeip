@@ -36,7 +36,10 @@ import com.google.chip.chiptool.setuppayloadscanner.BarcodeFragment
 import com.google.chip.chiptool.setuppayloadscanner.CHIPDeviceDetailsFragment
 import com.google.chip.chiptool.setuppayloadscanner.CHIPDeviceInfo
 import com.google.chip.chiptool.setuppayloadscanner.CHIPLedgerDetailsFragment
+import com.google.chip.chiptool.devicemanagement.DeviceManagementFragment
+import com.google.chip.chiptool.devicemanagement.PostCommissioningDialogHelper
 import com.google.chip.chiptool.util.DeviceIdUtil
+import com.google.chip.chiptool.voice.CommissionedNodeRegistry
 import matter.onboardingpayload.OnboardingPayload
 import matter.onboardingpayload.OnboardingPayloadParser
 import matter.onboardingpayload.UnrecognizedQrCodeException
@@ -114,7 +117,21 @@ class CHIPToolActivity :
     }
     DeviceIdUtil.setCommissionedNodeId(this, nodeId)
     ChipClient.getDeviceController(this).close()
-    showFragment(SelectActionFragment.newInstance(), false)
+
+    if (code == 0L && nodeId > 0L) {
+      val registry = CommissionedNodeRegistry(this)
+      PostCommissioningDialogHelper.showPostCommissioningDialog(
+        activity = this,
+        nodeId = nodeId,
+        registry = registry,
+        deviceInfo = deviceInfo,
+        onComplete = {
+          showFragment(DeviceManagementFragment.newInstance(), false)
+        }
+      )
+    } else {
+      showFragment(SelectActionFragment.newInstance(), false)
+    }
   }
 
   override fun onShowDeviceAddressInput() {

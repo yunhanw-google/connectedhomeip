@@ -45,6 +45,7 @@ enum class AttributeControlType {
 enum class DeviceBadgeType {
   ONLINE,
   OFFLINE,
+  UNASSIGNED,
   BATTERY,
   STATE_ON,
   STATE_OFF,
@@ -202,6 +203,10 @@ object RoomDeviceHierarchyMapper {
       badges.add(LiveBadge(DeviceBadgeType.ONLINE, "Online", "Online", colorHex = "#34A853"))
     } else {
       badges.add(LiveBadge(DeviceBadgeType.OFFLINE, "Offline", "Offline", colorHex = "#EA4335", isWarning = true))
+    }
+
+    if (node.roomName.equals("Unassigned", ignoreCase = true) || node.roomName.isBlank()) {
+      badges.add(LiveBadge(DeviceBadgeType.UNASSIGNED, "Unassigned", "Unassigned", colorHex = "#757575", isWarning = false))
     }
 
     node.batteryPercent?.let {

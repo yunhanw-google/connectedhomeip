@@ -157,6 +157,7 @@ object MatterClusterMetaRegistry {
   const val CLUSTER_DEVICE_ENERGY_MANAGEMENT = 0x0098L
   const val CLUSTER_ENERGY_EVSE = 0x0099L
   const val CLUSTER_BOOLEAN_STATE = 0x0045L
+  const val CLUSTER_BASIC_INFORMATION = 0x0028L
   const val CLUSTER_SMOKE_CO_ALARM = 0x005CL
   const val CLUSTER_TEMPERATURE_MEASUREMENT = 0x0402L
   const val CLUSTER_RELATIVE_HUMIDITY_MEASUREMENT = 0x0405L
@@ -173,6 +174,7 @@ object MatterClusterMetaRegistry {
     registerApplianceAndRoboticsClusters()
     registerEnergyClusters()
     registerSensorAndAlarmClusters()
+    registerGeneralAndSystemClusters()
   }
 
   fun getCluster(clusterId: Long): MatterClusterMeta? = registry[clusterId]
@@ -737,6 +739,25 @@ object MatterClusterMetaRegistry {
       CLUSTER_SMOKE_CO_ALARM, "SmokeCOAlarm", ClusterCategory.SENSORS_AND_ALARMS,
       "Reports smoke detection, carbon monoxide levels, and alarm test states.",
       emptyMap(), smokeCoAttributes, listOf("smoke detector", "co detector", "fire alarm")
+    ))
+  }
+
+  private fun registerGeneralAndSystemClusters() {
+    val basicInfoAttributes = mapOf(
+      0x0001L to MatterAttributeMeta(0x0001L, "VendorName", MatterDataType.UTF8_STRING, isWritable = false, description = "Specifies the name of the vendor"),
+      0x0002L to MatterAttributeMeta(0x0002L, "VendorID", MatterDataType.UINT16, isWritable = false, description = "Specifies the Vendor ID"),
+      0x0003L to MatterAttributeMeta(0x0003L, "ProductName", MatterDataType.UTF8_STRING, isWritable = false, description = "Specifies the product name"),
+      0x0004L to MatterAttributeMeta(0x0004L, "ProductID", MatterDataType.UINT16, isWritable = false, description = "Specifies the Product ID"),
+      0x0005L to MatterAttributeMeta(0x0005L, "NodeLabel", MatterDataType.UTF8_STRING, isWritable = true, defaultValue = "Matter Device", description = "User-defined name or label for the Node", naturalSynonyms = listOf("device name", "device label", "node label")),
+      0x0006L to MatterAttributeMeta(0x0006L, "Location", MatterDataType.UTF8_STRING, isWritable = true, defaultValue = "XX", description = "ISO 3166-1 alpha-2 country code"),
+      0x0007L to MatterAttributeMeta(0x0007L, "HardwareVersion", MatterDataType.UINT16, isWritable = false),
+      0x0009L to MatterAttributeMeta(0x0009L, "SoftwareVersion", MatterDataType.UINT32, isWritable = false),
+      0x000AL to MatterAttributeMeta(0x000AL, "SoftwareVersionString", MatterDataType.UTF8_STRING, isWritable = false)
+    )
+    registerCluster(MatterClusterMeta(
+      CLUSTER_BASIC_INFORMATION, "BasicInformation", ClusterCategory.GENERAL_AND_SYSTEM,
+      "Provides attributes and events related to the device's physical identity, naming, and software version.",
+      emptyMap(), basicInfoAttributes, listOf("basic information", "device info", "node label")
     ))
   }
 }

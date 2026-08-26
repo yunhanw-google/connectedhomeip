@@ -144,6 +144,65 @@ class CommissionedNodeRegistry(context: Context? = null) {
     return nodes.values.filter { it.roomName.equals(roomName, ignoreCase = true) }
   }
 
+  fun autoRegisterCommissionedNode(
+    nodeId: Long,
+    defaultLabel: String? = null,
+    productName: String? = null,
+    vendorName: String? = null,
+    roomName: String = "Unassigned"
+  ): CommissionedNode {
+    val existing = nodes[nodeId]
+    if (existing != null) {
+      return existing
+    }
+    val label = defaultLabel ?: productName ?: "Device $nodeId"
+    val node = CommissionedNode(
+      nodeId = nodeId,
+      nodeLabel = label,
+      roomName = roomName.ifBlank { "Unassigned" },
+      vendorName = vendorName ?: "Standard Matter Vendor",
+      productName = productName ?: "Matter Device",
+      endpoints = listOf(
+        CommissionedEndpoint(
+          endpointId = 0,
+          deviceTypeId = 0x0016L,
+          deviceTypeName = "Root Node",
+          serverClusters = setOf(MatterClusterMetaRegistry.CLUSTER_BASIC_INFORMATION)
+        ),
+        CommissionedEndpoint(
+          endpointId = 1,
+          deviceTypeId = MatterDeviceTypes.ON_OFF_LIGHT,
+          deviceTypeName = "Matter Device",
+          serverClusters = setOf(
+            MatterClusterMetaRegistry.CLUSTER_ON_OFF,
+            MatterClusterMetaRegistry.CLUSTER_LEVEL_CONTROL
+          )
+        )
+      ),
+      isOnline = true,
+      aliases = emptyList()
+    )
+    registerNode(node)
+    return node
+  }
+
+  fun updateNodeMetadata(
+    nodeId: Long,
+    nodeLabel: String,
+    roomName: String,
+    aliases: List<String>
+  ): CommissionedNode? {
+    val existing = nodes[nodeId] ?: return null
+    val updated = existing.copy(
+      nodeLabel = nodeLabel.trim(),
+      roomName = roomName.trim().ifEmpty { "Unassigned" },
+      aliases = aliases.map { it.trim() }.filter { it.isNotEmpty() }
+    )
+    nodes[nodeId] = updated
+    notifyNodeUpdated(updated)
+    return updated
+  }
+
   fun updateNodeRoom(nodeId: Long, newRoomName: String): CommissionedNode? {
     val existing = nodes[nodeId] ?: return null
     val updated = existing.copy(roomName = newRoomName.trim())

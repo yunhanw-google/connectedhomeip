@@ -363,45 +363,14 @@ class DeviceManagementFragment : Fragment() {
   }
 
   fun showEditRoomAndAliasesDialog(node: CommissionedNode) {
-    val layout = LinearLayout(requireContext()).apply {
-      orientation = LinearLayout.VERTICAL
-      setPadding(40, 20, 40, 20)
-    }
-
-    val roomInput = EditText(requireContext()).apply {
-      hint = "Room Name"
-      setText(node.roomName)
-    }
-    val labelInput = EditText(requireContext()).apply {
-      hint = "Device Label"
-      setText(node.nodeLabel)
-    }
-    val aliasInput = EditText(requireContext()).apply {
-      hint = "Voice Aliases (comma separated)"
-      setText(node.aliases.joinToString(", "))
-    }
-
-    layout.addView(roomInput)
-    layout.addView(labelInput)
-    layout.addView(aliasInput)
-
-    AlertDialog.Builder(requireContext())
-      .setTitle("Edit Room & Voice Metadata")
-      .setView(layout)
-      .setPositiveButton("Save") { _, _ ->
-        val newRoom = roomInput.text.toString().trim()
-        val newLabel = labelInput.text.toString().trim()
-        val newAliases = aliasInput.text.toString().split(",").map { it.trim() }.filter { it.isNotEmpty() }
-
-        if (newRoom.isNotEmpty()) viewModel.reassignDeviceRoom(node.nodeId, newRoom)
-        if (newLabel.isNotEmpty()) viewModel.updateDeviceLabel(node.nodeId, newLabel)
-        viewModel.updateDeviceAliases(node.nodeId, newAliases)
-        context?.let { ctx -> registry.saveFabricToPreferences(ctx) }
-
-        Toast.makeText(requireContext(), "Updated metadata for ${node.nodeLabel}", Toast.LENGTH_SHORT).show()
+    PostCommissioningDialogHelper.showEditDeviceDialog(
+      context = requireContext(),
+      node = node,
+      registry = registry,
+      onSaved = {
+        viewModel.refreshFabric()
       }
-      .setNegativeButton("Cancel", null)
-      .show()
+    )
   }
 
   override fun onDestroyView() {
@@ -502,6 +471,11 @@ class DeviceCardAdapter(
 
       // Badges
       binding.badgeOnline.text = if (card.isOnline) "Online" else "Offline"
+
+      val isUnassigned = card.roomName.equals("Unassigned", ignoreCase = true) ||
+        card.badges.any { it.type == DeviceBadgeType.UNASSIGNED }
+      binding.badgeUnassigned.visibility = if (isUnassigned) View.VISIBLE else View.GONE
+
       if (card.batteryPercent != null) {
         binding.badgeBattery.visibility = View.VISIBLE
         binding.badgeBattery.text = "${card.batteryPercent}%"

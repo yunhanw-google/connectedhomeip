@@ -89,9 +89,9 @@ class DeviceManagementViewModel(
     }
 
     // 2. Group by room
-    val groupedByRoom = matchingNodes.groupBy { it.roomName }
+    val groupedByRoom = matchingNodes.groupBy { it.roomName.trim().ifEmpty { "Unassigned" } }
 
-    // 3. Construct RoomHierarchyItems
+    // 3. Construct RoomHierarchyItems with "Unassigned" guaranteed at the top
     val roomItems = groupedByRoom.map { (roomName, roomNodes) ->
       val deviceCards = roomNodes.map { node ->
         RoomDeviceHierarchyMapper.toDeviceCardState(node, liveStates)
@@ -100,7 +100,15 @@ class DeviceManagementViewModel(
         roomName = roomName,
         deviceCards = deviceCards
       )
-    }.sortedBy { it.roomName }
+    }.sortedWith(
+      Comparator { a, b ->
+        val aUnassigned = a.roomName.equals("Unassigned", ignoreCase = true)
+        val bUnassigned = b.roomName.equals("Unassigned", ignoreCase = true)
+        if (aUnassigned && !bUnassigned) -1
+        else if (!aUnassigned && bUnassigned) 1
+        else a.roomName.compareTo(b.roomName, ignoreCase = true)
+      }
+    )
 
     // 4. Apply Room Filter if set
     if (roomFilter != null) {
@@ -111,7 +119,15 @@ class DeviceManagementViewModel(
   }.stateIn(coroutineScope, SharingStarted.Eagerly, emptyList())
 
   val availableRooms: StateFlow<List<String>> = combine(_allNodes) {
-    nodeRegistry.getAllRooms()
+    nodeRegistry.getAllRooms().sortedWith(
+      Comparator { a, b ->
+        val aUnassigned = a.equals("Unassigned", ignoreCase = true)
+        val bUnassigned = b.equals("Unassigned", ignoreCase = true)
+        if (aUnassigned && !bUnassigned) -1
+        else if (!aUnassigned && bUnassigned) 1
+        else a.compareTo(b, ignoreCase = true)
+      }
+    )
   }.stateIn(coroutineScope, SharingStarted.Eagerly, emptyList())
 
   init {
@@ -147,6 +163,11 @@ class DeviceManagementViewModel(
 
   fun setSearchQuery(query: String) {
     _searchQuery.value = query
+  }
+
+  fun updateDeviceMetadata(nodeId: Long, nodeLabel: String, newRoomName: String, aliases: List<String>) {
+    nodeRegistry.updateNodeMetadata(nodeId, nodeLabel, newRoomName, aliases)
+    _allNodes.value = nodeRegistry.getAllNodes()
   }
 
   fun reassignDeviceRoom(nodeId: Long, newRoomName: String) {
