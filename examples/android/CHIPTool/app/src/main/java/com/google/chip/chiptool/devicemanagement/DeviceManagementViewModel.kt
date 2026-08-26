@@ -128,6 +128,10 @@ class DeviceManagementViewModel(
     }
   }
 
+  fun refreshFabric() {
+    _allNodes.value = nodeRegistry.getAllNodes()
+  }
+
   fun setRoomFilter(roomName: String?) {
     _selectedRoomFilter.value = roomName
   }

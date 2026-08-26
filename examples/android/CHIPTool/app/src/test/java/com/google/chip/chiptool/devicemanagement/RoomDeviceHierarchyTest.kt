@@ -129,4 +129,17 @@ class RoomDeviceHierarchyTest {
     val livingRoomNodes = grouped["Living Room"]!!
     assertTrue(livingRoomNodes.isNotEmpty())
   }
+
+  @Test
+  fun testEmptyFabricAndRoomHierarchyHandling() {
+    registry.clear()
+    assertEquals(0, registry.count())
+    assertTrue(registry.getAllNodes().isEmpty())
+    assertTrue(registry.getAllRooms().isEmpty())
+
+    val emptyTopology = HomeFabricTopology(fabricId = 1L, rooms = emptyList())
+    assertEquals(0, emptyTopology.totalDevicesCount)
+    assertEquals(0, emptyTopology.totalOnlineCount)
+    assertTrue(emptyTopology.rooms.isEmpty())
+  }
 }

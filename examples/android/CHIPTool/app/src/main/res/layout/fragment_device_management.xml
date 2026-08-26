@@ -101,37 +101,7 @@
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
           app:singleSelection="true"
-          app:selectionRequired="false">
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipAllRooms"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:text="All Rooms" />
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipLivingRoom"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Living Room" />
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipKitchen"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Kitchen" />
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipEntryway"
-            style="@style/Widget.Material3.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Entryway" />
-      </com.google.android.material.chip.ChipGroup>
+          app:selectionRequired="false" />
     </HorizontalScrollView>
   </com.google.android.material.appbar.AppBarLayout>
 
@@ -144,6 +114,85 @@
       android:paddingBottom="88dp"
       app:layout_behavior="@string/appbar_scrolling_view_behavior"
       tools:listitem="@layout/item_room_section" />
+
+  <!-- Empty State View when NO devices are commissioned -->
+  <LinearLayout
+      android:id="@+id/emptyStateLayout"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="vertical"
+      android:gravity="center"
+      android:padding="24dp"
+      android:visibility="gone"
+      app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/emptyStateCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="2dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="@color/colorOutlineVariant">
+
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:orientation="vertical"
+          android:gravity="center"
+          android:padding="24dp">
+
+        <ImageView
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@android:drawable/ic_dialog_info"
+            android:contentDescription="No devices" />
+
+        <TextView
+            android:id="@+id/emptyStateTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="No Matter devices commissioned yet"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:textColor="@color/colorOnSurface" />
+
+        <TextView
+            android:id="@+id/emptyStateSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Commission a device to get started or explore demo devices."
+            android:textSize="14sp"
+            android:gravity="center"
+            android:textColor="@color/colorOnSurfaceVariant" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:orientation="horizontal">
+
+          <com.google.android.material.button.MaterialButton
+              android:id="@+id/commissionDeviceBtn"
+              style="@style/Widget.MaterialComponents.Button"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:text="Commission Device" />
+
+          <com.google.android.material.button.MaterialButton
+              android:id="@+id/loadDemoDevicesBtn"
+              style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:layout_marginStart="8dp"
+              android:text="Load Demo Devices" />
+        </LinearLayout>
+      </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+  </LinearLayout>
 
   <!-- FAB for Dynamic Voice AI & Commissioning -->
   <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton

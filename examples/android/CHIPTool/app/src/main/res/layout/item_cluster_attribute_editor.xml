@@ -29,7 +29,7 @@
     app:cardCornerRadius="12dp"
     app:cardElevation="1dp"
     app:strokeWidth="1dp"
-    app:strokeColor="?attr/colorOutlineVariant">
+    app:strokeColor="@color/colorOutlineVariant">
 
   <LinearLayout
       android:layout_width="match_parent"
@@ -52,20 +52,20 @@
           android:text="OnOff (0x0006)"
           android:textSize="15sp"
           android:textStyle="bold"
-          android:textColor="?attr/colorOnSurface" />
+          android:textColor="@color/colorOnSurface" />
 
       <TextView
           android:id="@+id/clusterCategoryBadge"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:background="?attr/colorSurfaceVariant"
+          android:background="@color/colorSurfaceVariant"
           android:paddingStart="6dp"
           android:paddingEnd="6dp"
           android:paddingTop="2dp"
           android:paddingBottom="2dp"
           android:text="Lighting &amp; Power"
           android:textSize="10sp"
-          android:textColor="?attr/colorOnSurfaceVariant" />
+          android:textColor="@color/colorOnSurfaceVariant" />
     </LinearLayout>
 
     <TextView
@@ -75,14 +75,14 @@
         android:layout_marginTop="2dp"
         android:text="Attributes and commands for switching power and state."
         android:textSize="11sp"
-        android:textColor="?attr/colorOnSurfaceVariant" />
+        android:textColor="@color/colorOnSurfaceVariant" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginTop="8dp"
         android:layout_marginBottom="8dp"
-        android:background="?attr/colorOutlineVariant" />
+        android:background="@color/colorOutlineVariant" />
 
     <!-- Container for Dynamically Injected Attribute Rows -->
     <LinearLayout
@@ -121,7 +121,7 @@
               android:layout_height="wrap_content"
               android:text="Boolean • Writable • Reportable"
               android:textSize="10sp"
-              android:textColor="?attr/colorOnSurfaceVariant" />
+              android:textColor="@color/colorOnSurfaceVariant" />
         </LinearLayout>
 
         <com.google.android.material.materialswitch.MaterialSwitch
@@ -160,7 +160,7 @@
               android:text="2700 K (370 Mireds)"
               android:textSize="12sp"
               android:textStyle="bold"
-              android:textColor="?attr/colorPrimary" />
+              android:textColor="@color/colorPrimary" />
         </LinearLayout>
 
         <com.google.android.material.slider.Slider
@@ -201,12 +201,12 @@
               android:layout_height="wrap_content"
               android:text="Enum8 • Value: 4 (Cool)"
               android:textSize="11sp"
-              android:textColor="?attr/colorOnSurfaceVariant" />
+              android:textColor="@color/colorOnSurfaceVariant" />
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/attrReadButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Read"
@@ -214,7 +214,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/attrEditButton"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"

@@ -17,7 +17,7 @@
  */
 package com.google.chip.chiptool.devicemanagement
 
-import androidx.appcompat.app.AlertDialog
+import android.content.Context
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -26,13 +26,23 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
+import com.google.android.material.slider.Slider
+import com.google.android.material.tabs.TabLayout
+import com.google.chip.chiptool.R
+import com.google.chip.chiptool.databinding.DialogEndpointInspectorBinding
 import com.google.chip.chiptool.databinding.FragmentDeviceManagementBinding
+import com.google.chip.chiptool.databinding.ItemClusterAttributeEditorBinding
+import com.google.chip.chiptool.databinding.ItemDeviceCardBinding
+import com.google.chip.chiptool.databinding.ItemRoomSectionBinding
+import com.google.chip.chiptool.setuppayloadscanner.BarcodeFragment
 import com.google.chip.chiptool.voice.CommissionedNode
 import com.google.chip.chiptool.voice.CommissionedNodeRegistry
 import com.google.chip.chiptool.voice.UniversalMatterDispatcher
@@ -54,10 +64,15 @@ class DeviceManagementFragment : Fragment() {
   private lateinit var viewModel: DeviceManagementViewModel
   private lateinit var voiceEngine: VoiceControlEngine
 
+  private lateinit var roomHierarchyAdapter: RoomHierarchyAdapter
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     registry = CommissionedNodeRegistry()
-    registry.loadDefaultSmartHomeFabric()
+    context?.let { registry.loadFabricFromPreferences(it) }
+    if (registry.count() == 0) {
+      registry.loadDefaultSmartHomeFabric()
+    }
     synchronizer = MatterStateSynchronizer.getInstance(registry)
     dispatcher = UniversalMatterDispatcher(registry)
     viewModel = DeviceManagementViewModel(registry, synchronizer, dispatcher)
@@ -78,10 +93,17 @@ class DeviceManagementFragment : Fragment() {
 
     setupSearchAndFilters()
     setupVoiceActions()
+    setupEmptyStateActions()
     setupRecyclerView()
 
-    // Start fabric subscriptions
-    viewModel.subscribeToAllFabricNodes(requireContext())
+    // Start fabric subscriptions safely
+    context?.let { ctx ->
+      try {
+        viewModel.subscribeToAllFabricNodes(ctx)
+      } catch (e: Exception) {
+        // Safe fallback
+      }
+    }
   }
 
   private fun setupSearchAndFilters() {
@@ -96,6 +118,7 @@ class DeviceManagementFragment : Fragment() {
     // Setup room filter chips dynamically
     viewLifecycleOwner.lifecycleScope.launch {
       viewModel.availableRooms.collectLatest { rooms ->
+        if (!isAdded || _binding == null) return@collectLatest
         binding.roomChipGroup.removeAllViews()
 
         val allChip = Chip(requireContext()).apply {
@@ -124,6 +147,87 @@ class DeviceManagementFragment : Fragment() {
     binding.voiceAiFab.setOnClickListener { promptVoiceCommandDialog() }
   }
 
+  private fun setupEmptyStateActions() {
+    binding.commissionDeviceBtn.setOnClickListener {
+      parentFragmentManager
+        .beginTransaction()
+        .replace(R.id.nav_host_fragment, BarcodeFragment.newInstance(), BarcodeFragment::class.java.simpleName)
+        .addToBackStack(null)
+        .commit()
+    }
+
+    binding.loadDemoDevicesBtn.setOnClickListener {
+      registry.loadDefaultSmartHomeFabric()
+      context?.let { ctx -> registry.saveFabricToPreferences(ctx) }
+      viewModel.refreshFabric()
+      context?.let { ctx -> viewModel.subscribeToAllFabricNodes(ctx) }
+      Toast.makeText(requireContext(), "Loaded demo Matter smart home fabric", Toast.LENGTH_SHORT).show()
+    }
+  }
+
+  private fun setupRecyclerView() {
+    roomHierarchyAdapter = RoomHierarchyAdapter(
+      onBulkOffClicked = { roomName ->
+        context?.let { ctx ->
+          viewModel.executeBulkRoomAction(ctx, roomName, BulkRoomAction.TURN_ALL_OFF)
+        }
+      },
+      onTogglePower = { card ->
+        context?.let { ctx ->
+          val node = registry.getNode(card.nodeId)
+          if (node != null) {
+            val cardVm = DeviceCardViewModel(node, registry, synchronizer, dispatcher)
+            cardVm.togglePower(ctx)
+          }
+        }
+      },
+      onToggleLock = { card ->
+        context?.let { ctx ->
+          val node = registry.getNode(card.nodeId)
+          if (node != null) {
+            val cardVm = DeviceCardViewModel(node, registry, synchronizer, dispatcher)
+            cardVm.toggleLock(ctx)
+          }
+        }
+      },
+      onBrightnessChanged = { card, percent ->
+        context?.let { ctx ->
+          val node = registry.getNode(card.nodeId)
+          if (node != null) {
+            val cardVm = DeviceCardViewModel(node, registry, synchronizer, dispatcher)
+            cardVm.setBrightness(ctx, percent)
+          }
+        }
+      },
+      onEditAliasesClicked = { card ->
+        val node = registry.getNode(card.nodeId)
+        if (node != null) {
+          showEditRoomAndAliasesDialog(node)
+        }
+      },
+      onInspectEndpointsClicked = { card ->
+        showEndpointInspector(card.nodeId)
+      }
+    )
+
+    binding.roomHierarchyRecyclerView.layoutManager = LinearLayoutManager(requireContext())
+    binding.roomHierarchyRecyclerView.adapter = roomHierarchyAdapter
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      viewModel.filteredRoomHierarchy.collectLatest { roomItems ->
+        if (!isAdded || _binding == null) return@collectLatest
+        if (roomItems.isEmpty()) {
+          binding.emptyStateLayout.visibility = View.VISIBLE
+          binding.roomHierarchyRecyclerView.visibility = View.GONE
+        } else {
+          binding.emptyStateLayout.visibility = View.GONE
+          binding.roomHierarchyRecyclerView.visibility = View.VISIBLE
+          roomHierarchyAdapter.submitList(roomItems)
+        }
+      }
+    }
+  }
+
   private fun promptVoiceCommandDialog() {
     val input = EditText(requireContext()).apply {
       hint = "e.g. 'Turn off all lights in living room' or 'Lock front door'"
@@ -146,19 +250,96 @@ class DeviceManagementFragment : Fragment() {
       .show()
   }
 
-  private fun setupRecyclerView() {
-    binding.roomHierarchyRecyclerView.layoutManager = LinearLayoutManager(requireContext())
-    // Observe room items
-    viewLifecycleOwner.lifecycleScope.launch {
-      viewModel.filteredRoomHierarchy.collectLatest { roomItems ->
-        // Render room sections and device cards
-      }
-    }
-  }
-
   fun showEndpointInspector(nodeId: Long) {
     val inspectorVm = EndpointInspectorViewModel(nodeId, registry, synchronizer, dispatcher)
-    // Display Endpoint Inspector Dialog
+    val dialogBinding = DialogEndpointInspectorBinding.inflate(layoutInflater)
+
+    val dialog = AlertDialog.Builder(requireContext())
+      .setView(dialogBinding.root)
+      .create()
+
+    dialogBinding.inspectorToolbar.setNavigationOnClickListener { dialog.dismiss() }
+
+    val clusterAdapter = ClusterAttributeAdapter(
+      onSwitchToggled = { epId, clusterId, attrId, isChecked ->
+        inspectorVm.inPlaceWriteAttribute(requireContext(), epId, clusterId, attrId, isChecked)
+      },
+      onSliderChanged = { epId, clusterId, attrId, value ->
+        inspectorVm.inPlaceWriteAttribute(requireContext(), epId, clusterId, attrId, value)
+      },
+      onReadClicked = { epId, clusterId, attrId ->
+        inspectorVm.readAttribute(requireContext(), epId, clusterId, attrId)
+      },
+      onEditClicked = { epId, clusterId, attrId, attrName, currentVal ->
+        val input = EditText(requireContext()).apply {
+          hint = "New value"
+          setText(currentVal?.toString() ?: "")
+        }
+        AlertDialog.Builder(requireContext())
+          .setTitle("Write $attrName")
+          .setView(input)
+          .setPositiveButton("Write") { _, _ ->
+            val text = input.text.toString().trim()
+            if (text.isNotEmpty()) {
+              inspectorVm.inPlaceWriteAttribute(requireContext(), epId, clusterId, attrId, text)
+            }
+          }
+          .setNegativeButton("Cancel", null)
+          .show()
+      }
+    )
+
+    dialogBinding.clustersRecyclerView.layoutManager = LinearLayoutManager(requireContext())
+    dialogBinding.clustersRecyclerView.adapter = clusterAdapter
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      inspectorVm.node.collectLatest { node ->
+        if (node != null) {
+          dialogBinding.inspectorDeviceLabel.text = node.nodeLabel
+          dialogBinding.inspectorDeviceMeta.text =
+            "Node 0x${node.nodeId.toString(16)} • ${node.vendorName} • Room: ${node.roomName}"
+        }
+      }
+    }
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      inspectorVm.operationStatus.collectLatest { status ->
+        if (!status.isNullOrEmpty()) {
+          dialogBinding.inspectorStatusBanner.text = status
+        }
+      }
+    }
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      inspectorVm.endpoints.collectLatest { endpoints ->
+        dialogBinding.endpointTabLayout.removeAllTabs()
+        for ((idx, ep) in endpoints.withIndex()) {
+          val tab = dialogBinding.endpointTabLayout.newTab().setText("EP ${ep.endpointId}: ${ep.deviceTypeName}")
+          dialogBinding.endpointTabLayout.addTab(tab)
+        }
+      }
+    }
+
+    dialogBinding.endpointTabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+      override fun onTabSelected(tab: TabLayout.Tab?) {
+        tab?.let { inspectorVm.selectEndpoint(it.position) }
+      }
+      override fun onTabUnselected(tab: TabLayout.Tab?) {}
+      override fun onTabReselected(tab: TabLayout.Tab?) {}
+    })
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      inspectorVm.currentEndpoint.collectLatest { ep ->
+        if (ep != null) {
+          dialogBinding.endpointTitleText.text =
+            "Endpoint ${ep.endpointId}: ${ep.deviceTypeName} (0x${ep.deviceTypeId.toString(16)})"
+          dialogBinding.clusterCountText.text = "${ep.serverClusters.size} Server Clusters"
+          clusterAdapter.submitClusters(ep.endpointId, ep.serverClusters)
+        }
+      }
+    }
+
+    dialog.show()
   }
 
   fun showEditRoomAndAliasesDialog(node: CommissionedNode) {
@@ -195,6 +376,7 @@ class DeviceManagementFragment : Fragment() {
         if (newRoom.isNotEmpty()) viewModel.reassignDeviceRoom(node.nodeId, newRoom)
         if (newLabel.isNotEmpty()) viewModel.updateDeviceLabel(node.nodeId, newLabel)
         viewModel.updateDeviceAliases(node.nodeId, newAliases)
+        context?.let { ctx -> registry.saveFabricToPreferences(ctx) }
 
         Toast.makeText(requireContext(), "Updated metadata for ${node.nodeLabel}", Toast.LENGTH_SHORT).show()
       }
@@ -212,3 +394,344 @@ class DeviceManagementFragment : Fragment() {
     fun newInstance() = DeviceManagementFragment()
   }
 }
+
+class RoomHierarchyAdapter(
+  private val onBulkOffClicked: (String) -> Unit,
+  private val onTogglePower: (DeviceCardState) -> Unit,
+  private val onToggleLock: (DeviceCardState) -> Unit,
+  private val onBrightnessChanged: (DeviceCardState, Int) -> Unit,
+  private val onEditAliasesClicked: (DeviceCardState) -> Unit,
+  private val onInspectEndpointsClicked: (DeviceCardState) -> Unit
+) : RecyclerView.Adapter<RoomHierarchyAdapter.RoomViewHolder>() {
+
+  private val items = mutableListOf<RoomHierarchyItem>()
+
+  fun submitList(newItems: List<RoomHierarchyItem>) {
+    items.clear()
+    items.addAll(newItems)
+    notifyDataSetChanged()
+  }
+
+  override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RoomViewHolder {
+    val binding = ItemRoomSectionBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+    return RoomViewHolder(binding)
+  }
+
+  override fun onBindViewHolder(holder: RoomViewHolder, position: Int) {
+    holder.bind(items[position])
+  }
+
+  override fun getItemCount(): Int = items.size
+
+  inner class RoomViewHolder(private val binding: ItemRoomSectionBinding) :
+    RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(item: RoomHierarchyItem) {
+      binding.roomNameText.text = item.roomName
+      binding.roomCountBadge.text = "${item.totalCount} devices • ${item.activeCount} online"
+      binding.bulkOffButton.setOnClickListener { onBulkOffClicked(item.roomName) }
+
+      val deviceAdapter = DeviceCardAdapter(
+        onTogglePower = onTogglePower,
+        onToggleLock = onToggleLock,
+        onBrightnessChanged = onBrightnessChanged,
+        onEditAliasesClicked = onEditAliasesClicked,
+        onInspectEndpointsClicked = onInspectEndpointsClicked
+      )
+      binding.roomDevicesRecyclerView.layoutManager = LinearLayoutManager(binding.root.context)
+      binding.roomDevicesRecyclerView.adapter = deviceAdapter
+      deviceAdapter.submitList(item.deviceCards)
+    }
+  }
+}
+
+class DeviceCardAdapter(
+  private val onTogglePower: (DeviceCardState) -> Unit,
+  private val onToggleLock: (DeviceCardState) -> Unit,
+  private val onBrightnessChanged: (DeviceCardState, Int) -> Unit,
+  private val onEditAliasesClicked: (DeviceCardState) -> Unit,
+  private val onInspectEndpointsClicked: (DeviceCardState) -> Unit
+) : RecyclerView.Adapter<DeviceCardAdapter.DeviceViewHolder>() {
+
+  private val items = mutableListOf<DeviceCardState>()
+
+  fun submitList(newItems: List<DeviceCardState>) {
+    items.clear()
+    items.addAll(newItems)
+    notifyDataSetChanged()
+  }
+
+  override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): DeviceViewHolder {
+    val binding = ItemDeviceCardBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+    return DeviceViewHolder(binding)
+  }
+
+  override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
+    holder.bind(items[position])
+  }
+
+  override fun getItemCount(): Int = items.size
+
+  inner class DeviceViewHolder(private val binding: ItemDeviceCardBinding) :
+    RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(card: DeviceCardState) {
+      binding.deviceLabelText.text = card.nodeLabel
+      binding.deviceSubtitleText.text =
+        "${card.vendorName} • ${card.productName} • Node 0x${card.nodeId.toString(16)}"
+
+      // Badges
+      binding.badgeOnline.text = if (card.isOnline) "Online" else "Offline"
+      if (card.batteryPercent != null) {
+        binding.badgeBattery.visibility = View.VISIBLE
+        binding.badgeBattery.text = "${card.batteryPercent}%"
+      } else {
+        binding.badgeBattery.visibility = View.GONE
+      }
+
+      val stateBadge = card.badges.firstOrNull {
+        it.type == DeviceBadgeType.STATE_ON || it.type == DeviceBadgeType.STATE_OFF ||
+        it.type == DeviceBadgeType.STATE_LOCKED || it.type == DeviceBadgeType.STATE_UNLOCKED ||
+        it.type == DeviceBadgeType.TEMPERATURE
+      }
+      if (stateBadge != null) {
+        binding.badgeState.visibility = View.VISIBLE
+        binding.badgeState.text = stateBadge.label
+      } else {
+        binding.badgeState.visibility = View.GONE
+      }
+
+      // Aliases
+      if (card.aliases.isNotEmpty()) {
+        binding.aliasesText.visibility = View.VISIBLE
+        binding.aliasesText.text = "Voice Aliases: " + card.aliases.joinToString(", ")
+      } else {
+        binding.aliasesText.visibility = View.GONE
+      }
+
+      // Quick Controls
+      when (val qc = card.quickControl) {
+        is QuickControlAction.ToggleSwitch -> {
+          binding.quickToggleSwitch.visibility = View.VISIBLE
+          binding.quickLockButton.visibility = View.GONE
+          binding.sliderContainer.visibility = View.GONE
+          binding.quickToggleSwitch.setOnCheckedChangeListener(null)
+          binding.quickToggleSwitch.isChecked = qc.isOn
+          binding.quickToggleSwitch.setOnCheckedChangeListener { _, _ ->
+            onTogglePower(card)
+          }
+        }
+        is QuickControlAction.LockToggle -> {
+          binding.quickToggleSwitch.visibility = View.GONE
+          binding.quickLockButton.visibility = View.VISIBLE
+          binding.sliderContainer.visibility = View.GONE
+          binding.quickLockButton.text = if (qc.isLocked) "Unlock" else "Lock"
+          binding.quickLockButton.setOnClickListener {
+            onToggleLock(card)
+          }
+        }
+        is QuickControlAction.BrightnessSlider -> {
+          binding.quickToggleSwitch.visibility = View.VISIBLE
+          binding.quickLockButton.visibility = View.GONE
+          binding.sliderContainer.visibility = View.VISIBLE
+          binding.quickLevelSlider.value = qc.levelPercent.toFloat().coerceIn(0f, 100f)
+          binding.sliderValueText.text = "${qc.levelPercent}%"
+          binding.quickLevelSlider.clearOnChangeListeners()
+          binding.quickLevelSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+              binding.sliderValueText.text = "${value.toInt()}%"
+              onBrightnessChanged(card, value.toInt())
+            }
+          }
+        }
+        else -> {
+          binding.quickToggleSwitch.visibility = View.GONE
+          binding.quickLockButton.visibility = View.GONE
+          binding.sliderContainer.visibility = View.GONE
+        }
+      }
+
+      binding.editAliasesButton.setOnClickListener { onEditAliasesClicked(card) }
+      binding.inspectEndpointsButton.setOnClickListener { onInspectEndpointsClicked(card) }
+    }
+  }
+}
+
+class ClusterAttributeAdapter(
+  private val onSwitchToggled: (endpointId: Int, clusterId: Long, attributeId: Long, isChecked: Boolean) -> Unit,
+  private val onSliderChanged: (endpointId: Int, clusterId: Long, attributeId: Long, value: Any) -> Unit,
+  private val onReadClicked: (endpointId: Int, clusterId: Long, attributeId: Long) -> Unit,
+  private val onEditClicked: (endpointId: Int, clusterId: Long, attributeId: Long, attrName: String, currentValue: Any?) -> Unit
+) : RecyclerView.Adapter<ClusterAttributeAdapter.ClusterViewHolder>() {
+
+  private var endpointId: Int = 1
+  private val clusters = mutableListOf<ClusterDescriptor>()
+
+  fun submitClusters(epId: Int, newClusters: List<ClusterDescriptor>) {
+    endpointId = epId
+    clusters.clear()
+    clusters.addAll(newClusters)
+    notifyDataSetChanged()
+  }
+
+  override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ClusterViewHolder {
+    val binding = ItemClusterAttributeEditorBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+    return ClusterViewHolder(binding)
+  }
+
+  override fun onBindViewHolder(holder: ClusterViewHolder, position: Int) {
+    holder.bind(clusters[position])
+  }
+
+  override fun getItemCount(): Int = clusters.size
+
+  inner class ClusterViewHolder(private val binding: ItemClusterAttributeEditorBinding) :
+    RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(cluster: ClusterDescriptor) {
+      binding.clusterNameText.text = "${cluster.clusterName} (0x${cluster.clusterId.toString(16)})"
+      binding.clusterCategoryBadge.text = cluster.category
+      binding.clusterDescriptionText.text = cluster.description
+
+      binding.attributesContainer.removeAllViews()
+
+      for (attr in cluster.attributes) {
+        val row = createAttributeRow(cluster.clusterId, attr)
+        binding.attributesContainer.addView(row)
+      }
+    }
+
+    private fun createAttributeRow(clusterId: Long, attr: WritableAttributeState): View {
+      val ctx = binding.root.context
+      return when (attr.controlType) {
+        AttributeControlType.SWITCH -> {
+          val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, 8, 0, 8)
+          }
+          val textLayout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+          }
+          val nameTv = TextView(ctx).apply {
+            text = "${attr.attributeName} (0x${attr.attributeId.toString(16)})"
+            textSize = 13f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+          }
+          val metaTv = TextView(ctx).apply {
+            text = "${attr.dataType} • ${if (attr.isWritable) "Writable" else "Read-Only"} • Value: ${attr.formattedValue}"
+            textSize = 10f
+          }
+          textLayout.addView(nameTv)
+          textLayout.addView(metaTv)
+
+          val switch = com.google.android.material.materialswitch.MaterialSwitch(ctx).apply {
+            isChecked = (attr.currentValue as? Boolean) == true
+            isEnabled = attr.isWritable
+            setOnCheckedChangeListener { _, isChecked ->
+              onSwitchToggled(endpointId, clusterId, attr.attributeId, isChecked)
+            }
+          }
+          layout.addView(textLayout)
+          layout.addView(switch)
+          layout
+        }
+
+        AttributeControlType.SLIDER_COLOR_TEMP,
+        AttributeControlType.SLIDER_NUMERIC -> {
+          val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 8, 0, 8)
+          }
+          val header = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+          }
+          val nameTv = TextView(ctx).apply {
+            text = "${attr.attributeName} (0x${attr.attributeId.toString(16)})"
+            textSize = 13f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+          }
+          val valTv = TextView(ctx).apply {
+            text = attr.formattedValue
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+          }
+          header.addView(nameTv)
+          header.addView(valTv)
+          layout.addView(header)
+
+          val slider = Slider(ctx).apply {
+            valueFrom = (attr.minValue ?: 0.0).toFloat()
+            valueTo = (attr.maxValue ?: 254.0).toFloat()
+            val raw = (attr.currentValue as? Number)?.toFloat() ?: valueFrom
+            value = raw.coerceIn(valueFrom, valueTo)
+            stepSize = (attr.step ?: 1.0).toFloat()
+            isEnabled = attr.isWritable
+            addOnChangeListener { _, v, fromUser ->
+              if (fromUser) {
+                valTv.text = "$v"
+                onSliderChanged(endpointId, clusterId, attr.attributeId, v)
+              }
+            }
+          }
+          layout.addView(slider)
+          layout
+        }
+
+        else -> {
+          val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, 8, 0, 8)
+          }
+          val textLayout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+          }
+          val nameTv = TextView(ctx).apply {
+            text = "${attr.attributeName} (0x${attr.attributeId.toString(16)})"
+            textSize = 13f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+          }
+          val metaTv = TextView(ctx).apply {
+            text = "${attr.dataType} • Value: ${attr.formattedValue}"
+            textSize = 10f
+          }
+          textLayout.addView(nameTv)
+          textLayout.addView(metaTv)
+          layout.addView(textLayout)
+
+          val readBtn = com.google.android.material.button.MaterialButton(
+            ctx,
+            null,
+            com.google.android.material.R.attr.borderlessButtonStyle
+          ).apply {
+            text = "Read"
+            textSize = 11f
+            setOnClickListener { onReadClicked(endpointId, clusterId, attr.attributeId) }
+          }
+          layout.addView(readBtn)
+
+          if (attr.isWritable) {
+            val editBtn = com.google.android.material.button.MaterialButton(
+              ctx,
+              null,
+              com.google.android.material.R.attr.materialButtonOutlinedStyle
+            ).apply {
+              text = "Edit"
+              textSize = 11f
+              setOnClickListener {
+                onEditClicked(endpointId, clusterId, attr.attributeId, attr.attributeName, attr.currentValue)
+              }
+            }
+            layout.addView(editBtn)
+          }
+          layout
+        }
+      }
+    }
+  }
+}
+
