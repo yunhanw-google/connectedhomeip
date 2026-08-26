@@ -93,10 +93,14 @@ data class CommissionedNode(
  * Used by the Voice Control Engine, Room-Centric UI, and Gemini Nano prompt generator to constrain tools
  * to the exact devices present on the user's home fabric.
  */
-class CommissionedNodeRegistry {
+class CommissionedNodeRegistry(context: Context? = null) {
   private val nodes = ConcurrentHashMap<Long, CommissionedNode>()
   private val listeners = mutableListOf<(CommissionedNode) -> Unit>()
   private val gson = Gson()
+
+  init {
+    context?.let { loadFabricFromPreferences(it) }
+  }
 
   fun addNodeRegistryChangeListener(listener: (CommissionedNode) -> Unit) {
     synchronized(listeners) {
@@ -194,7 +198,29 @@ class CommissionedNodeRegistry {
     nodes.clear()
   }
 
+  fun clearAllNodes(context: Context? = null) {
+    nodes.clear()
+    context?.let { ctx ->
+      val prefs = ctx.getSharedPreferences("matter_voice_fabric", Context.MODE_PRIVATE)
+      prefs.edit().remove("commissioned_nodes").apply()
+    }
+    val snapshot = synchronized(listeners) { listeners.toList() }
+    snapshot.forEach { it.invoke(CommissionedNode(nodeId = -1L, nodeLabel = "", isOnline = false)) }
+  }
+
+  fun resetFabric(context: Context? = null) {
+    clearAllNodes(context)
+  }
+
   fun count(): Int = nodes.size
+
+  fun loadDefaultDemoFabric() {
+    loadDefaultSmartHomeFabric()
+  }
+
+  fun loadDefaultDemoNodes() {
+    loadDefaultSmartHomeFabric()
+  }
 
   /**
    * Returns all unique server cluster IDs across all commissioned nodes in this fabric.

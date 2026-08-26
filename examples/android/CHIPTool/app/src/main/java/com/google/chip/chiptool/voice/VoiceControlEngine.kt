@@ -90,20 +90,13 @@ class VoiceControlEngine private constructor(
     fun getInstance(nodeRegistry: CommissionedNodeRegistry = CommissionedNodeRegistry()): VoiceControlEngine {
       return instance ?: synchronized(this) {
         instance ?: VoiceControlEngine(nodeRegistry).also {
-          if (it.nodeRegistry.count() == 0) {
-            it.nodeRegistry.loadDefaultSmartHomeFabric()
-          }
           instance = it
         }
       }
     }
 
     fun getInstance(context: Context): VoiceControlEngine {
-      val reg = CommissionedNodeRegistry()
-      reg.loadFabricFromPreferences(context)
-      if (reg.count() == 0) {
-        reg.loadDefaultSmartHomeFabric()
-      }
+      val reg = CommissionedNodeRegistry(context)
       return getInstance(reg)
     }
   }

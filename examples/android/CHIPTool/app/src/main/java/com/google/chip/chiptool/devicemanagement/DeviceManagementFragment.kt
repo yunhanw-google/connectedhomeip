@@ -68,11 +68,7 @@ class DeviceManagementFragment : Fragment() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    registry = CommissionedNodeRegistry()
-    context?.let { registry.loadFabricFromPreferences(it) }
-    if (registry.count() == 0) {
-      registry.loadDefaultSmartHomeFabric()
-    }
+    registry = CommissionedNodeRegistry(context)
     synchronizer = MatterStateSynchronizer.getInstance(registry)
     dispatcher = UniversalMatterDispatcher(registry)
     viewModel = DeviceManagementViewModel(registry, synchronizer, dispatcher)
@@ -91,6 +87,7 @@ class DeviceManagementFragment : Fragment() {
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
 
+    setupToolbarMenu()
     setupSearchAndFilters()
     setupVoiceActions()
     setupEmptyStateActions()
@@ -142,6 +139,29 @@ class DeviceManagementFragment : Fragment() {
     }
   }
 
+  private fun setupToolbarMenu() {
+    binding.topAppBar.inflateMenu(R.menu.menu_device_management)
+    binding.topAppBar.setOnMenuItemClickListener { menuItem ->
+      when (menuItem.itemId) {
+        R.id.action_load_demo -> {
+          registry.loadDefaultDemoFabric()
+          context?.let { ctx -> registry.saveFabricToPreferences(ctx) }
+          viewModel.refreshFabric()
+          context?.let { ctx -> viewModel.subscribeToAllFabricNodes(ctx) }
+          Toast.makeText(requireContext(), "Loaded demo Matter smart home fabric", Toast.LENGTH_SHORT).show()
+          true
+        }
+        R.id.action_clear_all -> {
+          registry.clearAllNodes(requireContext())
+          viewModel.refreshFabric()
+          Toast.makeText(requireContext(), "Cleared all devices", Toast.LENGTH_SHORT).show()
+          true
+        }
+        else -> false
+      }
+    }
+  }
+
   private fun setupVoiceActions() {
     binding.voiceSearchBtn.setOnClickListener { promptVoiceCommandDialog() }
     binding.voiceAiFab.setOnClickListener { promptVoiceCommandDialog() }
@@ -157,7 +177,7 @@ class DeviceManagementFragment : Fragment() {
     }
 
     binding.loadDemoDevicesBtn.setOnClickListener {
-      registry.loadDefaultSmartHomeFabric()
+      registry.loadDefaultDemoFabric()
       context?.let { ctx -> registry.saveFabricToPreferences(ctx) }
       viewModel.refreshFabric()
       context?.let { ctx -> viewModel.subscribeToAllFabricNodes(ctx) }

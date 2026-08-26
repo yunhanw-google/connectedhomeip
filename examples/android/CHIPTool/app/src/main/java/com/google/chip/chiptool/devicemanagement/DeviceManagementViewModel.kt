@@ -132,6 +132,15 @@ class DeviceManagementViewModel(
     _allNodes.value = nodeRegistry.getAllNodes()
   }
 
+  fun clearAllNodes(context: Context? = null) {
+    nodeRegistry.clearAllNodes(context)
+    _allNodes.value = nodeRegistry.getAllNodes()
+  }
+
+  fun resetFabric(context: Context? = null) {
+    clearAllNodes(context)
+  }
+
   fun setRoomFilter(roomName: String?) {
     _selectedRoomFilter.value = roomName
   }
