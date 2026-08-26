@@ -37,6 +37,8 @@ import com.google.chip.chiptool.provisioning.ProvisionNetworkType
 import com.google.chip.chiptool.provisioning.UnpairDeviceFragment
 import com.google.chip.chiptool.setuppayloadscanner.BarcodeFragment
 import com.google.chip.chiptool.util.FragmentUtil
+import com.google.chip.chiptool.voice.VoiceControlFragment
+
 
 /** Fragment to select from various options to interact with a CHIP device. */
 class SelectActionFragment : Fragment() {
@@ -62,6 +64,7 @@ class SelectActionFragment : Fragment() {
     }
 
     binding.scanQrBtn.setOnClickListener { handleScanQrCodeClicked() }
+    binding.deviceManagementBtn.setOnClickListener { handleDeviceManagementClicked() }
     binding.onOffClusterBtn.setOnClickListener { handleOnOffClicked() }
     binding.sensorClustersBtn.setOnClickListener { handleSensorClicked() }
     binding.multiAdminClusterBtn.setOnClickListener { handleMultiAdminClicked() }
@@ -77,8 +80,10 @@ class SelectActionFragment : Fragment() {
     binding.otaProviderBtn.setOnClickListener { handleOTAProviderClicked() }
     binding.icdBtn.setOnClickListener { handleICDClicked() }
     binding.modeSelectBtn.setOnClickListener { handleModeSelectClicked() }
+    binding.voiceControlBtn.setOnClickListener { handleVoiceControlClicked() }
 
     return binding.root
+
   }
 
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -178,6 +183,11 @@ class SelectActionFragment : Fragment() {
     showFragment(BarcodeFragment.newInstance())
   }
 
+  /** Notifies listener of Modern Room-Centric Device Hub button click. */
+  private fun handleDeviceManagementClicked() {
+    showFragment(com.google.chip.chiptool.devicemanagement.DeviceManagementFragment.newInstance())
+  }
+
   /** Notifies listener of Light On/Off & Level Cluster button click. */
   private fun handleOnOffClicked() {
     showFragment(OnOffClientFragment.newInstance())
@@ -260,7 +270,12 @@ class SelectActionFragment : Fragment() {
     showFragment(ModeSelectClientFragment.newInstance())
   }
 
+  private fun handleVoiceControlClicked() {
+    showFragment(VoiceControlFragment.newInstance())
+  }
+
   companion object {
+
 
     @JvmStatic fun newInstance() = SelectActionFragment()
   }

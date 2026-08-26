@@ -314,4 +314,14 @@
 
     <string name="icd_btn_text">Intermittently Connected Device</string>
     <string name="icd_registration_completed">ICD device registration completed, How to trigger to switch to Active Mode : %1$s</string>
+
+    <!-- Universal Voice Control -->
+    <string name="voice_control_btn_text">Universal Voice Control (Gemini Nano)</string>
+    <string name="voice_control_title">Matter Voice Control</string>
+    <string name="voice_control_hold_to_speak">Hold to Speak</string>
+    <string name="voice_control_listening">Listening...</string>
+    <string name="voice_control_processing">Compiling Intent (Nano)...</string>
+    <string name="voice_control_executing">Dispatching Matter Frame...</string>
+    <string name="voice_control_hint">"Turn on bedroom lamp" / "Set AC to 21 C"</string>
 </resources>
+

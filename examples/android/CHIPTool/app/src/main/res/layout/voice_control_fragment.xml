@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#F8F9FA">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/voiceTitleTv"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Universal Matter Voice Control"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="#1A73E8"
+            android:gravity="center"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/voiceSubtitleTv"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="On-Device Gemini Nano Engine • 7 Cluster Families"
+            android:textSize="12sp"
+            android:textColor="#5F6368"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Status Indicator Card -->
+        <LinearLayout
+            android:id="@+id/statusCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="16dp"
+            android:elevation="2dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <View
+                    android:id="@+id/statusIndicatorDot"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:background="#34A853"
+                    android:layout_marginEnd="8dp" />
+
+                <TextView
+                    android:id="@+id/statusStateTv"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="IDLE • Ready for speech or text"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="#3C4043" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/transcriptionTv"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="&quot;Turn on bedroom lamp&quot; or &quot;Set AC to 21 Celsius&quot;"
+                android:textSize="16sp"
+                android:textStyle="italic"
+                android:textColor="#202124" />
+
+
+            <TextView
+                android:id="@+id/voiceResponseTv"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Voice feedback will appear here."
+                android:textSize="14sp"
+                android:textColor="#1A73E8"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Push-to-talk Control -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginBottom="16dp">
+
+            <Button
+                android:id="@+id/holdToSpeakBtn"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:text="🎤  Hold to Speak"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:backgroundTint="#1A73E8"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Press and hold button while speaking prompt"
+                android:textSize="12sp"
+                android:textColor="#70757A"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
+
+        <!-- Direct Text Prompt Input (Testing / Manual Fallback) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+
+            <EditText
+                android:id="@+id/textPromptEd"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Type voice prompt..."
+                android:textSize="14sp"
+                android:inputType="text"
+                android:imeOptions="actionSend"
+                android:maxLines="2" />
+
+            <Button
+                android:id="@+id/sendPromptBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Send"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Fabric Topology & Node Summary -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:elevation="1dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Fabric Nodes Topology"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="#5F6368"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/fabricNodesTv"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Loading commissioned nodes..."
+                android:textSize="12sp"
+                android:textColor="#3C4043"
+                android:fontFamily="monospace" />
+        </LinearLayout>
+
+        <!-- Execution & Dispatch Log Console -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#202124"
+            android:padding="12dp"
+            android:elevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Matter Engine Dispatch Console"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="#8AB4F8" />
+
+                <Button
+                    android:id="@+id/clearLogsBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:text="Clear"
+                    android:textSize="10sp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingHorizontal="8dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/consoleLogsTv"
+                android:layout_width="match_parent"
+                android:layout_height="180dp"
+                android:text="[Engine Ready] Initialized 7 Matter cluster families.\n[Nano Schema] Compiled tool definitions.\n"
+                android:textSize="11sp"
+                android:textColor="#81C995"
+                android:fontFamily="monospace"
+                android:scrollbars="vertical" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

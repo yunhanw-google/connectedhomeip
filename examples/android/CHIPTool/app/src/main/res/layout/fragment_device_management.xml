@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~   Copyright (c) 2024 Project CHIP Authors
+  ~   All rights reserved.
+  ~
+  ~   Licensed under the Apache License, Version 2.0 (the "License");
+  ~   you may not use this file except in compliance with the License.
+  ~   You may obtain a copy of the License at
+  ~
+  ~       http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~   Unless required by applicable law or agreed to in writing, software
+  ~   distributed under the License is distributed on an "AS IS" BASIS,
+  ~   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~   See the License for the specific language governing permissions and
+  ~   limitations under the License.
+  -->
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
+
+  <com.google.android.material.appbar.AppBarLayout
+      android:id="@+id/appBarLayout"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:background="@android:color/transparent"
+      app:elevation="0dp">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/topAppBar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:title="Matter Device Hub"
+        app:titleCentered="false" />
+
+    <!-- Search Bar with Voice Assist action -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/searchCard"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="8dp"
+        app:cardCornerRadius="24dp"
+        app:cardElevation="2dp"
+        app:strokeWidth="0dp">
+
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:orientation="horizontal"
+          android:gravity="center_vertical"
+          android:paddingStart="16dp"
+          android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@android:drawable/ic_menu_search"
+            android:contentDescription="Search" />
+
+        <EditText
+            android:id="@+id/searchEditText"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="8dp"
+            android:background="@null"
+            android:hint="Search rooms, devices, aliases..."
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:textSize="14sp" />
+
+        <ImageButton
+            android:id="@+id/voiceSearchBtn"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_btn_speak_now"
+            android:contentDescription="Voice Command (Gemini Nano)" />
+      </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Horizontal Room Filter Chips -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp">
+
+      <com.google.android.material.chip.ChipGroup
+          android:id="@+id/roomChipGroup"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          app:singleSelection="true"
+          app:selectionRequired="false">
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipAllRooms"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="All Rooms" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipLivingRoom"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Living Room" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipKitchen"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kitchen" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipEntryway"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Entryway" />
+      </com.google.android.material.chip.ChipGroup>
+    </HorizontalScrollView>
+  </com.google.android.material.appbar.AppBarLayout>
+
+  <!-- Nested Room & Device Hierarchy RecyclerView -->
+  <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/roomHierarchyRecyclerView"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:clipToPadding="false"
+      android:paddingBottom="88dp"
+      app:layout_behavior="@string/appbar_scrolling_view_behavior"
+      tools:listitem="@layout/item_room_section" />
+
+  <!-- FAB for Dynamic Voice AI & Commissioning -->
+  <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+      android:id="@+id/voiceAiFab"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_gravity="bottom|end"
+      android:layout_margin="16dp"
+      android:text="Voice Control"
+      app:icon="@android:drawable/ic_btn_speak_now" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
