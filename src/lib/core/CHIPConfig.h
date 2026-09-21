@@ -1757,6 +1757,19 @@ extern const char CHIP_NON_PRODUCTION_MARKER[];
 #endif
 
 /**
+ * @def CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC
+ *
+ * @brief Default delay, in seconds, that an ICD waits after its Thread network has attached and the server has reported
+ *        DNS-SD readiness before flushing the ActiveMode and Check-In actions it deferred while the network was down.
+ *
+ * The delay gives the operational records of the registered clients time to be published and become resolvable, so that
+ * the flushed Check-In messages can actually reach them. Setting this to 0 flushes immediately.
+ */
+#ifndef CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC
+#define CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC 60
+#endif
+
+/**
  * @def CHIP_CONFIG_ICD_CLIENTS_SUPPORTED_PER_FABRIC
  *
  * @brief Default value for the ICD Management cluster ClientsSupportedPerFabric attribute

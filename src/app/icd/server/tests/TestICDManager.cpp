@@ -117,7 +117,7 @@ class TestSubscriptionsInfoProvider : public SubscriptionsInfoProvider
 {
 public:
     TestSubscriptionsInfoProvider() = default;
-    ~TestSubscriptionsInfoProvider(){};
+    ~TestSubscriptionsInfoProvider() {};
 
     void SetHasActiveSubscription(bool value) { mHasActiveSubscription = value; };
     void SetHasPersistedSubscription(bool value) { mHasPersistedSubscription = value; };
@@ -211,6 +211,15 @@ public:
             .SetICDCheckInBackOffStrategy(&mStrategy);
 #endif // CHIP_CONFIG_ENABLE_ICD_CIP
         mICDManager.Init();
+
+#if CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
+        // The scenario tests below model an already-booted device whose Matter server finished
+        // initializing. Replay the one-shot readiness signal and zero the settle timer so basic
+        // deferral tests do not have to wait it out; the cold-boot ordering and the settle timer
+        // itself are covered explicitly by TestScenario15_* and TestScenario17_*.
+        mICDManager.SetNetworkAttachSettleDelay(System::Clock::kZero);
+        SignalServerReady();
+#endif // CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
     }
 
     // Performs teardown for each individual test in the test suite
@@ -261,6 +270,12 @@ public:
     }
 #endif // CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
     void HandlePlatformEvent(const DeviceLayer::ChipDeviceEvent * event) { mICDManager.HandlePlatformEvent(event); }
+
+    void SignalServerReady()
+    {
+        DeviceLayer::ChipDeviceEvent event{ .Type = DeviceLayer::DeviceEventType::kServerReady };
+        mICDManager.HandlePlatformEvent(&event);
+    }
 #endif // CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
 
     TestSessionKeystoreImpl mKeystore;
@@ -1834,8 +1849,9 @@ TEST_F(TestICDManager, TestScenario14_DeviceShutdown_LifecycleReset)
 
 TEST_F(TestICDManager, TestScenario15_DeviceReboot_ColdBoot_DeferredIfDetached)
 {
-    // Step 1: Simulate cold boot / reboot initialization (Shutdown -> Init)
+    // Step 1: Simulate cold boot / reboot initialization (Shutdown -> Init resets the settle delay to its default)
     mICDManager.Shutdown();
+    mICDManager.RegisterObserver(&mICDStateObserver);
 #if CHIP_CONFIG_ENABLE_ICD_CIP
     mICDManager.SetPersistentStorageDelegate(&testStorage)
         .SetFabricTable(&GetFabricTable())
@@ -1845,6 +1861,11 @@ TEST_F(TestICDManager, TestScenario15_DeviceReboot_ColdBoot_DeferredIfDetached)
         .SetICDCheckInBackOffStrategy(&mStrategy);
 #endif // CHIP_CONFIG_ENABLE_ICD_CIP
     mICDManager.Init();
+    mICDStateObserver.ResetAll();
+    EXPECT_EQ(mICDManager.GetNetworkAttachSettleDelay(), ICDManager::kDefaultNetworkAttachSettleDelay);
+
+    // Pin the settle delay so the 44s/45s timeline below does not silently track the compiled-in default.
+    mICDManager.SetNetworkAttachSettleDelay(Seconds32(45));
     EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
 
     // Step 2: Thread is unattached on cold boot
@@ -1857,20 +1878,193 @@ TEST_F(TestICDManager, TestScenario15_DeviceReboot_ColdBoot_DeferredIfDetached)
     EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
     EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
 
-    // Step 5: OpenThread finishes MLE attach in background -> kConnectivity_Established fires
+    // Step 5: OpenThread finishes MLE attach in background -> kConnectivity_Established fires.
+    // On a cold boot this happens BEFORE DNS-SD is up, so the deferred state must be preserved:
+    // sending a Check-In now cannot resolve any registered client and would be lost.
     SetThreadConnectivityState(true /* enabled */, true /* attached */);
     DeviceLayer::ChipDeviceEvent event{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
                                         .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Established } };
     HandlePlatformEvent(&event);
-    AdvanceClockAndRunEventLoop(100_ms);
+    AdvanceClockAndRunEventLoop(Seconds32(45));
 
-    // Step 6: Verify device enters ActiveMode and flushes the deferred bootup Check-In
+    // Step 6: Verify the device is still deferring and has NOT burned the pending Check-In
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 7: The Matter server finishes initializing DNS-SD -> schedules 45s settle timer
+    SignalServerReady();
+    AdvanceClockAndRunEventLoop(Seconds32(44));
+
+    // Still in IdleMode at 44s (before 45s settle timer expires)
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 8: Verify that if Thread detaches before the 45s timer expires, the timer is cancelled
+    // and does not fire while detached.
+    SetThreadConnectivityState(true /* enabled */, false /* attached */);
+    DeviceLayer::ChipDeviceEvent detachEvent{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
+                                              .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Lost } };
+    HandlePlatformEvent(&detachEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(10));
+
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 9: Thread re-attaches -> restarts 45s settle timer; at 44s still IdleMode, at 45s flushes to ActiveMode
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+    HandlePlatformEvent(&event);
+    AdvanceClockAndRunEventLoop(Seconds32(44));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    AdvanceClockAndRunEventLoop(Seconds32(1));
     EXPECT_FALSE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(mICDStateObserver.mOnEnterActiveModeCalled);
     EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::ActiveMode);
 
-    // Step 7: ActiveMode completes -> returns to IdleMode
+    // Step 10: ActiveMode completes -> returns to IdleMode
     AdvanceClockAndRunEventLoop(ICDConfigurationData::GetInstance().GetActiveModeDuration() + 1_ms32);
     EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+}
+
+TEST_F(TestICDManager, TestNetworkAttachSettleTimer_LatchesActiveModeIntentAcrossActiveModeExpiry)
+{
+    // The settle delay outlives the ActiveMode window, so an attach that is only pending because the device
+    // happens to be in ActiveMode must latch that intent when the timer is armed. Otherwise the flush observes
+    // no remaining pending reason and silently drops the deferred actions.
+    mICDManager.SetNetworkAttachSettleDelay(Seconds32(45));
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+
+    // Step 1: Network activity while Thread is attached enters ActiveMode without deferring anything.
+    ICDNotifier::GetInstance().NotifyNetworkActivityNotification();
+    EXPECT_FALSE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::ActiveMode);
+    mICDStateObserver.ResetAll();
+
+    // Step 2: A Thread attachment edge arms the settle timer; ActiveMode is the only pending reason.
+    DeviceLayer::ChipDeviceEvent attachEvent{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
+                                              .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Established } };
+    HandlePlatformEvent(&attachEvent);
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+
+    // Step 3: ActiveMode expires long before the 45s settle delay elapses.
+    AdvanceClockAndRunEventLoop(ICDConfigurationData::GetInstance().GetActiveModeDuration() + 1_ms32);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    mICDStateObserver.ResetAll();
+
+    // Step 4: The settle timer fires and re-enters ActiveMode instead of silently doing nothing.
+    AdvanceClockAndRunEventLoop(Seconds32(45));
+    EXPECT_FALSE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::ActiveMode);
+}
+
+TEST_F(TestICDManager, TestNetworkAttachSettleTimer_RoleChangeWhileAttachedDoesNotArm)
+{
+    // Arming is keyed to the Thread attachment edge alone. A kThreadStateChange that reports a role change
+    // without changing the attachment state is not an attachment edge and must not arm the settle timer.
+    mICDManager.SetNetworkAttachSettleDelay(Seconds32(45));
+
+    // Step 1: Network activity while Thread is detached defers ActiveMode.
+    SetThreadConnectivityState(true /* enabled */, false /* attached */);
+    ICDNotifier::GetInstance().NotifyNetworkActivityNotification();
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+    mICDStateObserver.ResetAll();
+
+    // Step 2: A role change while the device is attached arms nothing, so nothing flushes even well past the
+    // settle delay.
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+    DeviceLayer::ChipDeviceEvent roleChangeEvent{ .Type              = DeviceLayer::DeviceEventType::kThreadStateChange,
+                                                  .ThreadStateChange = { .RoleChanged = true } };
+    HandlePlatformEvent(&roleChangeEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(46));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 3: The attachment edge still arms the timer and the flush happens on schedule.
+    DeviceLayer::ChipDeviceEvent attachEvent{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
+                                              .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Established } };
+    HandlePlatformEvent(&attachEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(45));
+    EXPECT_FALSE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::ActiveMode);
+}
+
+TEST_F(TestICDManager, TestNetworkAttachSettleTimer_ReattachRestartsSettleDelay)
+{
+    // The settle window exists to let the hub's advertisement come up after the network is ready, so it is
+    // anchored to the most recent attachment. A detach inside the window cancels the pending timer, and the
+    // re-attach starts a fresh full delay rather than honouring the stale deadline.
+    mICDManager.SetNetworkAttachSettleDelay(Seconds32(45));
+
+    // Step 1: Network activity while Thread is detached defers ActiveMode.
+    SetThreadConnectivityState(true /* enabled */, false /* attached */);
+    ICDNotifier::GetInstance().NotifyNetworkActivityNotification();
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+    mICDStateObserver.ResetAll();
+
+    // Step 2: Thread attaches -> arms the 45s settle timer.
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+    DeviceLayer::ChipDeviceEvent attachEvent{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
+                                              .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Established } };
+    HandlePlatformEvent(&attachEvent);
+
+    // Step 3: A detach 10s into the window cancels the pending timer. Nothing has flushed.
+    AdvanceClockAndRunEventLoop(Seconds32(10));
+    SetThreadConnectivityState(true /* enabled */, false /* attached */);
+    DeviceLayer::ChipDeviceEvent detachEvent{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
+                                              .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Lost } };
+    HandlePlatformEvent(&detachEvent);
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 4: Re-attaching arms a fresh settle window.
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+    HandlePlatformEvent(&attachEvent);
+
+    // Step 5: 44s after the re-attach, which is past the deadline the first attach had set, nothing has
+    // flushed. The first deadline was cancelled and the second has not elapsed.
+    AdvanceClockAndRunEventLoop(Seconds32(44));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 6: The flush lands a full 45s after the re-attach.
+    AdvanceClockAndRunEventLoop(Seconds32(1));
+    EXPECT_FALSE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::ActiveMode);
+}
+
+TEST_F(TestICDManager, TestNetworkAttachSettleTimer_DefaultComesFromConfiguration)
+{
+    // The fixture zeroes the settle delay for the deferral tests, so re-initialize to observe the value the
+    // ICDManager actually starts with. This pins CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC to the member,
+    // so a rename or a configuration header that stops reaching ICDManager.h does not go unnoticed.
+    mICDManager.Shutdown();
+    mICDManager.RegisterObserver(&mICDStateObserver);
+#if CHIP_CONFIG_ENABLE_ICD_CIP
+    mICDManager.SetPersistentStorageDelegate(&testStorage)
+        .SetFabricTable(&GetFabricTable())
+        .SetSymmetricKeyStore(&mKeystore)
+        .SetExchangeManager(&GetExchangeManager())
+        .SetSubscriptionsInfoProvider(&mSubInfoProvider)
+        .SetICDCheckInBackOffStrategy(&mStrategy);
+#endif // CHIP_CONFIG_ENABLE_ICD_CIP
+    mICDManager.Init();
+
+    EXPECT_EQ(mICDManager.GetNetworkAttachSettleDelay(), Seconds32(CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC));
+    EXPECT_EQ(ICDManager::kDefaultNetworkAttachSettleDelay, Seconds32(CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC));
 }
 
 #if CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
@@ -1913,6 +2107,117 @@ TEST_F(TestICDManager, TestScenario16_PendingSubjectsOverflow_UpgradesToBroadcas
 
     EXPECT_FALSE(IsPendingCheckInOnNetworkAttach());
     EXPECT_FALSE(IsPendingBroadcastCheckInOnNetworkAttach());
+}
+
+TEST_F(TestICDManager, TestScenario17_ColdBootOfflineHub_ReplayWaitsForServerReady)
+{
+    // Step 1: Cold boot with hub powered off (Shutdown -> Init resets mIsServerReady to false and the settle delay to
+    // its default)
+    mICDManager.Shutdown();
+    mICDManager.RegisterObserver(&mICDStateObserver);
+    mICDManager.SetPersistentStorageDelegate(&testStorage)
+        .SetFabricTable(&GetFabricTable())
+        .SetSymmetricKeyStore(&mKeystore)
+        .SetExchangeManager(&GetExchangeManager())
+        .SetSubscriptionsInfoProvider(&mSubInfoProvider)
+        .SetICDCheckInBackOffStrategy(&mStrategy);
+    mICDManager.Init();
+    mICDStateObserver.ResetAll();
+    SetThreadConnectivityState(true /* enabled */, false /* attached */);
+    EXPECT_EQ(mICDManager.GetNetworkAttachSettleDelay(), ICDManager::kDefaultNetworkAttachSettleDelay);
+
+    // Pin the settle delay so the 44s/45s timeline below does not silently track the compiled-in default.
+    mICDManager.SetNetworkAttachSettleDelay(Seconds32(45));
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 2: Sensor button pressed after 3 minutes while hub is still offline -> defers ActiveMode and broadcast Check-In
+    ICDNotifier::GetInstance().NotifyNetworkActivityNotification();
+    ICDNotifier::GetInstance().NotifySendCheckIn(NullOptional);
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 3: Hub is re-powered; Thread attaches (kThreadStateChange / kThreadConnectivityChange) BEFORE the server is ready.
+    // Verify that the deferred Check-In is held and NOT prematurely burned before DNS-SD is ready.
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+    DeviceLayer::ChipDeviceEvent attachEvent{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
+                                              .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Established } };
+    HandlePlatformEvent(&attachEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(45));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // kDnssdInitialized on its own is not a readiness signal for the ICDManager: the server always follows it
+    // with kServerReady, which is the only event that unblocks the deferral.
+    DeviceLayer::ChipDeviceEvent dnssdEvent{ .Type = DeviceLayer::DeviceEventType::kDnssdInitialized };
+    HandlePlatformEvent(&dnssdEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(45));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Step 4: SRP update succeeds and the server reports readiness -> starts 45s settle timer
+    DeviceLayer::ChipDeviceEvent serverReadyEvent{ .Type = DeviceLayer::DeviceEventType::kServerReady };
+    HandlePlatformEvent(&serverReadyEvent);
+
+    // At 44s, deferred ActiveMode and Check-In have NOT fired yet (0 Check-Ins sent)
+    AdvanceClockAndRunEventLoop(Seconds32(44));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Verify that if Thread detaches before the 45s timer expires, the timer is cancelled and does not fire while detached
+    SetThreadConnectivityState(true /* enabled */, false /* attached */);
+    DeviceLayer::ChipDeviceEvent detachEvent{ .Type                     = DeviceLayer::DeviceEventType::kThreadConnectivityChange,
+                                              .ThreadConnectivityChange = { .Result = DeviceLayer::kConnectivity_Lost } };
+    HandlePlatformEvent(&detachEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(10));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Thread re-attaches -> restarts 45s settle timer
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+    HandlePlatformEvent(&attachEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(44));
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    // Advancing the remaining 1s reaches 45s -> transitions to ActiveMode and flushes Check-In
+    AdvanceClockAndRunEventLoop(Seconds32(1));
+    EXPECT_FALSE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_FALSE(IsPendingCheckInOnNetworkAttach());
+    EXPECT_TRUE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::ActiveMode);
+
+    // Step 5: Return to IdleMode, then verify a warm detach + re-attach also waits for the 45s settle timer
+    // after attach (with mIsServerReady remaining latched across warm Thread reconnects).
+    AdvanceClockAndRunEventLoop(ICDConfigurationData::GetInstance().GetActiveModeDuration() + 1_ms32);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+    mICDStateObserver.ResetAll();
+
+    SetThreadConnectivityState(true /* enabled */, false /* attached */);
+    ICDNotifier::GetInstance().NotifySendCheckIn(NullOptional);
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+
+    SetThreadConnectivityState(true /* enabled */, true /* attached */);
+    HandlePlatformEvent(&attachEvent);
+    AdvanceClockAndRunEventLoop(Seconds32(44));
+    EXPECT_TRUE(IsPendingBroadcastCheckInOnNetworkAttach());
+    EXPECT_FALSE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+
+    AdvanceClockAndRunEventLoop(Seconds32(1));
+    EXPECT_FALSE(IsPendingCheckInOnNetworkAttach());
+    EXPECT_TRUE(mICDStateObserver.mOnEnterActiveModeCalled);
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::ActiveMode);
 }
 #endif // CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
 

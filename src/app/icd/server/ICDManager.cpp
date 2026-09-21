@@ -98,6 +98,7 @@ void ICDManager::Shutdown()
 {
 #if CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
     DeviceLayer::PlatformMgr().RemoveEventHandler(OnPlatformEvent, reinterpret_cast<intptr_t>(this));
+    DeviceLayer::SystemLayer().CancelTimer(OnNetworkAttachSettleTimerDone, this);
 #endif // CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
     ICDNotifier::GetInstance().Unsubscribe(this);
 
@@ -110,6 +111,8 @@ void ICDManager::Shutdown()
     mOperationalState = OperationalState::ActiveMode;
 #if CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
     mPendingActiveModeOnNetworkAttach = false;
+    mIsServerReady                    = false;
+    mNetworkAttachSettleDelay         = kDefaultNetworkAttachSettleDelay;
 #if CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
     mPendingCheckInType          = PendingCheckInType::kNone;
     mPendingCheckInSubjectsCount = 0;
@@ -798,19 +801,97 @@ void ICDManager::OnPlatformEvent(const DeviceLayer::ChipDeviceEvent * event, int
 
 void ICDManager::HandlePlatformEvent(const DeviceLayer::ChipDeviceEvent * event)
 {
+    // kServerReady is posted only once DNS-SD is initialized (Server::CheckServerReadyEvent gates on
+    // mIsDnssdReady), so it is the single authoritative readiness signal. Latch it, because a Thread
+    // re-attachment happening minutes later will never see it again.
+    const bool serverBecameReady = (event->Type == DeviceLayer::DeviceEventType::kServerReady);
+    if (serverBecameReady)
+    {
+        mIsServerReady = true;
+    }
+
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
-    const bool threadNewConnectionEstablished = (event->Type == DeviceLayer::DeviceEventType::kThreadConnectivityChange &&
-                                                 event->ThreadConnectivityChange.Result == DeviceLayer::kConnectivity_Established);
-    const bool threadRoleChanged =
-        (event->Type == DeviceLayer::DeviceEventType::kThreadStateChange && event->ThreadStateChange.RoleChanged);
-    const bool threadEstablished =
-        (threadNewConnectionEstablished || threadRoleChanged) && DeviceLayer::ConnectivityMgr().IsThreadAttached();
+    const bool threadAttached = DeviceLayer::ConnectivityMgr().IsThreadAttached();
+    if ((event->Type == DeviceLayer::DeviceEventType::kThreadConnectivityChange ||
+         event->Type == DeviceLayer::DeviceEventType::kThreadStateChange) &&
+        !threadAttached)
+    {
+        DeviceLayer::SystemLayer().CancelTimer(OnNetworkAttachSettleTimerDone, this);
+    }
+    // Arming keys off the attachment edge alone. The platform synthesizes kThreadConnectivityChange from a
+    // kThreadStateChange whose RoleChanged flag is set AND whose resulting role flips the attachment state, so
+    // kThreadConnectivityChange already implies a role change; also accepting kThreadStateChange would be
+    // redundant. The only transitions it would add are role changes that leave the device attached
+    // (Child<->Router, Router->Leader), which are not attachment edges and cannot occur on an ICD anyway: an
+    // ICD is rx-off-when-idle, OpenThread rejects any link mode that is rx-off-when-idle and full-thread-device
+    // at once, and the router role requires a full thread device.
+    // kThreadConnectivityChange is queued, so re-validate live attachment here in case a detach landed between
+    // the event being posted and being dispatched.
+    const bool threadEstablished = (event->Type == DeviceLayer::DeviceEventType::kThreadConnectivityChange &&
+                                    event->ThreadConnectivityChange.Result == DeviceLayer::kConnectivity_Established) &&
+        threadAttached;
 #else
+    const bool threadAttached    = false;
     const bool threadEstablished = false;
 #endif
 
-    // Early return if Thread connectivity is not established
-    VerifyOrReturn(threadEstablished);
+    // Two events can unblock the deferred state: Thread coming up, or the server becoming ready
+    // while Thread is already attached. Any other event must not extend ActiveMode.
+    VerifyOrReturn(threadEstablished || (serverBecameReady && threadAttached));
+
+    // Sending a Check-In requires operational discovery of the registered clients, which is only
+    // possible once DNS-SD is up. On a cold boot with no Thread network the attach event precedes
+    // DNS-SD initialization, so hold the deferred state instead of spending it on a send that is
+    // guaranteed to fail. The kServerReady event flushes it moments later.
+    VerifyOrReturn(mIsServerReady);
+
+#if !(CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT)
+    const bool hasPendingAction = (mPendingActiveModeOnNetworkAttach || mOperationalState == OperationalState::ActiveMode);
+#else
+    const bool hasPendingAction = (mPendingActiveModeOnNetworkAttach || mOperationalState == OperationalState::ActiveMode ||
+                                   mPendingCheckInType != PendingCheckInType::kNone);
+#endif
+    VerifyOrReturn(hasPendingAction);
+
+    // Latch the intent now. The settle delay can outlast the current ActiveMode window, in which case
+    // FlushPendingNetworkAttachActions() would otherwise observe no remaining pending reason and silently
+    // drop the deferred work. The flush clears this flag, so the immediate-flush branch below is unaffected.
+    mPendingActiveModeOnNetworkAttach = mPendingActiveModeOnNetworkAttach || (mOperationalState == OperationalState::ActiveMode);
+
+    if (mNetworkAttachSettleDelay > System::Clock::Milliseconds32(0))
+    {
+        // StartTimer() cancels any timer registered with the same callback and context, so a fresh qualifying
+        // event restarts the settle window. That is intended: the window must be anchored to the most recent
+        // attachment, not to a stale one.
+        ChipLogProgress(AppServer, "ICDManager: Scheduling deferred network attach actions in %" PRIu32 " ms.",
+                        mNetworkAttachSettleDelay.count());
+        auto timerResult = DeviceLayer::SystemLayer().StartTimer(mNetworkAttachSettleDelay, OnNetworkAttachSettleTimerDone, this);
+        if (!timerResult.Handle([](CHIP_ERROR err) {
+                ChipLogError(AppServer, "ICDManager: Failed to schedule deferred network attach actions: %" CHIP_ERROR_FORMAT,
+                             err.Format());
+            }))
+        {
+            // No timer will fire, so consume the pending state now instead of stranding it forever.
+            FlushPendingNetworkAttachActions();
+        }
+    }
+    else
+    {
+        FlushPendingNetworkAttachActions();
+    }
+}
+
+void ICDManager::OnNetworkAttachSettleTimerDone(System::Layer * aLayer, void * appState)
+{
+    reinterpret_cast<ICDManager *>(appState)->FlushPendingNetworkAttachActions();
+}
+
+void ICDManager::FlushPendingNetworkAttachActions()
+{
+    VerifyOrReturn(mIsServerReady);
+#if CHIP_DEVICE_CONFIG_ENABLE_THREAD
+    VerifyOrReturn(DeviceLayer::ConnectivityMgr().IsThreadAttached());
+#endif
 
     const bool wasPendingActiveMode   = mPendingActiveModeOnNetworkAttach;
     mPendingActiveModeOnNetworkAttach = false;

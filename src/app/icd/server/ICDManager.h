@@ -105,8 +105,14 @@ public:
         ICDModeChange,
     };
 
-#if CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH && CHIP_CONFIG_ENABLE_ICD_CIP &&                                         \
-    CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
+#if CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
+    static constexpr System::Clock::Milliseconds32 kDefaultNetworkAttachSettleDelay =
+        System::Clock::Seconds32(CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC);
+
+    void SetNetworkAttachSettleDelay(System::Clock::Milliseconds32 delay) { mNetworkAttachSettleDelay = delay; }
+    System::Clock::Milliseconds32 GetNetworkAttachSettleDelay() const { return mNetworkAttachSettleDelay; }
+
+#if CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
     enum class PendingCheckInType : uint8_t
     {
         kNone,
@@ -114,8 +120,8 @@ public:
         kBroadcast,
     };
     static constexpr size_t kMaxPendingCheckInSubjects = CHIP_CONFIG_ICD_CLIENTS_SUPPORTED_PER_FABRIC * CHIP_CONFIG_MAX_FABRICS;
-#endif // CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH && CHIP_CONFIG_ENABLE_ICD_CIP &&
-       // CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
+#endif // CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
+#endif // CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
 
     /**
      * @brief Verifier template function
@@ -396,6 +402,12 @@ private:
     bool mTransitionToIdleCalled       = false;
 #if CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
     bool mPendingActiveModeOnNetworkAttach = false;
+    // Latched once the Matter server signals that DNS-SD is up (kServerReady).
+    // That event is emitted a single time at boot, so the state has to be remembered for every
+    // subsequent Thread re-attachment.
+    bool mIsServerReady                                     = false;
+    System::Clock::Milliseconds32 mNetworkAttachSettleDelay = kDefaultNetworkAttachSettleDelay;
+
 #if CHIP_CONFIG_ENABLE_ICD_CIP && CHIP_CONFIG_ENABLE_ICD_CHECK_IN_ON_REPORT_TIMEOUT
     PendingCheckInType mPendingCheckInType = PendingCheckInType::kNone;
     std::array<Access::SubjectDescriptor, kMaxPendingCheckInSubjects> mPendingCheckInSubjects;
@@ -414,6 +426,8 @@ private:
      */
     static void OnPlatformEvent(const DeviceLayer::ChipDeviceEvent * event, intptr_t arg);
     void HandlePlatformEvent(const DeviceLayer::ChipDeviceEvent * event);
+    static void OnNetworkAttachSettleTimerDone(System::Layer * aLayer, void * appState);
+    void FlushPendingNetworkAttachActions();
 #endif // CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH
 
 #if CHIP_CONFIG_ENABLE_ICD_DSLS
