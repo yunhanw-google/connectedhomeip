@@ -882,8 +882,13 @@ void ICDManager::HandlePlatformEvent(const DeviceLayer::ChipDeviceEvent * event)
         // subscription re-establishment since ICD_CheckIn is an unacknowledged one-way UDP message.
         ChipLogProgress(AppServer, "ICDManager: Scheduling deferred network attach actions in %" PRIu32 " ms.",
                         mNetworkAttachSettleDelay.count());
-        TEMPORARY_RETURN_IGNORED DeviceLayer::SystemLayer().StartTimer(mNetworkAttachSettleDelay, OnNetworkAttachSettleTimerDone,
-                                                                       this);
+        CHIP_ERROR err = DeviceLayer::SystemLayer().StartTimer(mNetworkAttachSettleDelay, OnNetworkAttachSettleTimerDone, this);
+        if (err != CHIP_NO_ERROR)
+        {
+            ChipLogError(AppServer, "ICDManager: Failed to schedule deferred network attach actions: %" CHIP_ERROR_FORMAT,
+                         err.Format());
+            FlushPendingNetworkAttachActions();
+        }
     }
     else
     {

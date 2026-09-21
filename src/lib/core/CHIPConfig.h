@@ -1762,8 +1762,9 @@ extern const char CHIP_NON_PRODUCTION_MARKER[];
  * @brief Default delay, in seconds, that an ICD waits after its Thread network has attached and the server has reported
  *        DNS-SD readiness before flushing the ActiveMode and Check-In actions it deferred while the network was down.
  *
- * The delay gives the operational records of the registered clients time to be published and become resolvable, so that
- * the flushed Check-In messages can actually reach them. Setting this to 0 flushes immediately.
+ * The delay gives the operational DNS-SD records of registered ICD clients (checkInNodeID) time to be published over
+ * mDNS/SRP and become resolvable after a Thread Border Router or Matter controller reboot (which can take 1 to 40+ seconds
+ * after Thread link attachment), so that flushed Check-In messages can reach the client. Setting this to 0 flushes immediately.
  */
 #ifndef CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC
 #define CHIP_CONFIG_ICD_NETWORK_ATTACH_SETTLE_DELAY_SEC 60
