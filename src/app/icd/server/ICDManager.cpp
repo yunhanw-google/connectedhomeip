@@ -388,6 +388,17 @@ void ICDManager::TriggerCheckInMessages(const std::function<ShouldCheckInMsgsBeS
 
     // If we don't have any Check-In messages to send, do nothing
     VerifyOrReturn(CheckInMessagesWouldBeSent(verifier));
+
+#if CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH && CHIP_DEVICE_CONFIG_ENABLE_THREAD
+    if (DeviceLayer::ConnectivityMgr().IsThreadEnabled() && !DeviceLayer::ConnectivityMgr().IsThreadAttached())
+    {
+        ChipLogProgress(AppServer,
+                        "ICDManager: Thread network not attached on TriggerCheckInMessages. Deferring ActiveMode until attached.");
+        mPendingActiveModeOnNetworkAttach = true;
+        return;
+    }
+#endif // CHIP_CONFIG_ENABLE_ICD_DEFER_ACTIVEMODE_THREAD_ATTACH && CHIP_DEVICE_CONFIG_ENABLE_THREAD
+
     UpdateOperationState(OperationalState::ActiveMode);
 }
 #endif // CHIP_CONFIG_ENABLE_ICD_CIP
@@ -863,17 +874,16 @@ void ICDManager::HandlePlatformEvent(const DeviceLayer::ChipDeviceEvent * event)
         // StartTimer() cancels any timer registered with the same callback and context, so a fresh qualifying
         // event restarts the settle window. That is intended: the window must be anchored to the most recent
         // attachment, not to a stale one.
+        //
+        // Note: In the future, this fixed settle delay could be replaced by an adaptive retry/backoff algorithm
+        // (e.g., 10s, 30s, 60s). Doing so requires per-(FabricIndex, monitoredSubject) retry state across
+        // multi-admin fabrics, shorter per-attempt mDNS lookup timeouts (default LookupNode holds
+        // KeepActiveFlag::kCheckInInProgress and fast-polling ActiveMode for 45s per attempt), and tracking
+        // subscription re-establishment since ICD_CheckIn is an unacknowledged one-way UDP message.
         ChipLogProgress(AppServer, "ICDManager: Scheduling deferred network attach actions in %" PRIu32 " ms.",
                         mNetworkAttachSettleDelay.count());
-        auto timerResult = DeviceLayer::SystemLayer().StartTimer(mNetworkAttachSettleDelay, OnNetworkAttachSettleTimerDone, this);
-        if (!timerResult.Handle([](CHIP_ERROR err) {
-                ChipLogError(AppServer, "ICDManager: Failed to schedule deferred network attach actions: %" CHIP_ERROR_FORMAT,
-                             err.Format());
-            }))
-        {
-            // No timer will fire, so consume the pending state now instead of stranding it forever.
-            FlushPendingNetworkAttachActions();
-        }
+        TEMPORARY_RETURN_IGNORED DeviceLayer::SystemLayer().StartTimer(mNetworkAttachSettleDelay, OnNetworkAttachSettleTimerDone,
+                                                                       this);
     }
     else
     {

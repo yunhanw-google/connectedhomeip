@@ -1871,8 +1871,27 @@ TEST_F(TestICDManager, TestScenario15_DeviceReboot_ColdBoot_DeferredIfDetached)
     // Step 2: Thread is unattached on cold boot
     SetThreadConnectivityState(true /* enabled */, false /* attached */);
 
-    // Step 3: At bootup (kServerReady), TriggerCheckInMessages / network activity is triggered
+    // Step 3: At bootup (kServerReady), TriggerCheckInMessages is invoked while Thread is unattached
+#if CHIP_CONFIG_ENABLE_ICD_CIP
+    ICDConfigurationDataTestAccess privateIcdConfigData(&ICDConfigurationData::GetInstance());
+    BitFlags<Clusters::IcdManagement::Feature> featureMap;
+    featureMap.Set(Clusters::IcdManagement::Feature::kCheckInProtocolSupport);
+    privateIcdConfigData.SetFeatureMap(featureMap);
+
+    ICDMonitoringTable table(testStorage, kTestFabricIndex1, kMaxTestClients, &(mKeystore));
+    ICDMonitoringEntry entry(&(mKeystore));
+    entry.checkInNodeID    = kClientNodeId11;
+    entry.monitoredSubject = kClientNodeId11;
+    EXPECT_EQ(CHIP_NO_ERROR, entry.SetKey(ByteSpan(kKeyBuffer1a)));
+    EXPECT_EQ(CHIP_NO_ERROR, table.Set(0, entry));
+
+    mICDManager.TriggerCheckInMessages([](FabricIndex, NodeId) { return true; });
+    EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
+    EXPECT_EQ(mICDManager.GetOperaionalState(), ICDManager::OperationalState::IdleMode);
+    EXPECT_EQ(CHIP_NO_ERROR, table.Remove(0));
+#else
     ICDNotifier::GetInstance().NotifyNetworkActivityNotification();
+#endif // CHIP_CONFIG_ENABLE_ICD_CIP
 
     // Step 4: Verify the device stays in low-power IdleMode (deep sleep) while Thread is attaching
     EXPECT_TRUE(IsPendingActiveModeOnNetworkAttach());
