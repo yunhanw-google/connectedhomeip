@@ -149,7 +149,7 @@ class TestCommissioner(CHIPVirtualHome):
                 'CHIPCirqueDaemon.py -- run gdb -return-child-result -q '
                 '-ex "set pagination off" -ex run -ex "bt 25" '
                 f'--args {CHIP_ALL_CLUSTERS_APP_ESC} --thread '
-                f'--ble-device {ble_id} --discriminator {disc}')
+                f'--ble-controller {ble_id} --discriminator {disc}')
 
         self.reset_thread_devices([server['id'] for server in servers])
 
