@@ -5,9 +5,20 @@ apply plugin: 'kotlin-parcelize'
 android {
     namespace 'com.google.chip.chiptool'
     compileSdkVersion 34
-    ndkPath System.getenv("ANDROID_NDK_HOME")
-
-    ndkVersion "29.0.13846066"
+    def ndkHome = System.getenv("ANDROID_NDK_HOME")
+    def resolvedNdkVersion = "29.0.13846066"
+    if (ndkHome != null && !ndkHome.isEmpty()) {
+        def sourcePropsFile = new File(ndkHome, "source.properties")
+        if (sourcePropsFile.exists()) {
+            ndkPath ndkHome
+            def props = new Properties()
+            sourcePropsFile.withInputStream { props.load(it) }
+            if (props.getProperty("Pkg.Revision") != null) {
+                resolvedNdkVersion = props.getProperty("Pkg.Revision").trim()
+            }
+        }
+    }
+    ndkVersion resolvedNdkVersion
 
     defaultConfig {
         applicationId "com.google.chip.chiptool"
@@ -68,10 +79,13 @@ android {
     }
 
     if (matterSdkSourceBuild.toBoolean() && !matterBuildSrcDir.isEmpty()) {
+        def sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+        def cmake322 = sdkRoot ? new File(sdkRoot, "cmake/3.22.1") : null
+        def resolvedCmakeVersion = (cmake322 == null || cmake322.exists()) ? '3.22.1' : '3.10.2'
         externalNativeBuild {
             cmake {
                 path file(matterBuildSrcDir + '/CMakeLists.txt')
-                version '3.10.2'
+                version resolvedCmakeVersion
             }
         }
     } else {

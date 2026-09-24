@@ -47,6 +47,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
   override fun setCompletionListener(listener: MatterController.CompletionListener?) =
     deviceController.setCompletionListener(CompletionListenerAdapter.from(listener))
 
+  @Suppress("DEPRECATION")
   override fun pairDevice(
     nodeId: Long,
     address: String,
@@ -55,7 +56,14 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     pinCode: Long,
   ) {
     this.nodeId = nodeId
-    deviceController.pairDeviceWithAddress(nodeId, address, port, discriminator, pinCode, null as ByteArray?)
+    deviceController.pairDeviceWithAddress(
+      nodeId,
+      address,
+      port,
+      discriminator,
+      pinCode,
+      null as ByteArray?,
+    )
   }
 
   override fun unpairDevice(nodeId: Long) {
@@ -67,7 +75,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     nodeId: Long,
     address: String,
     port: Int,
-    setupPincode: Long
+    setupPincode: Long,
   ) {
     deviceController.establishPaseConnection(nodeId, address, port, setupPincode)
   }
@@ -92,7 +100,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
             logger.log(
               Level.SEVERE,
               "Error sending SubscriptionCompletedNotification to subscriber: %s",
-              ex
+              ex,
             )
           }
         }
@@ -102,7 +110,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
             logger.log(
               Level.WARNING,
               "ResubscriptionAttempt terminationCause:${terminationCause}, " +
-                "nextResubscribeIntervalMsec:${nextResubscribeIntervalMsec}"
+                "nextResubscribeIntervalMsec:${nextResubscribeIntervalMsec}",
             )
 
             trySendBlocking(
@@ -112,7 +120,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
                 logger.log(
                   Level.SEVERE,
                   "Error sending ResubscriptionNotification to subscriber: %s",
-                  ex
+                  ex,
                 )
               }
           }
@@ -149,7 +157,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
                           eventNumber = event.eventNumber.toULong(),
                           priorityLevel = event.priorityLevel.toUByte(),
                           timeStamp = timestamp,
-                          data = event.tlvValue
+                          data = event.tlvValue,
                         )
                       successes.add(readData)
                     }
@@ -165,7 +173,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
             override fun onError(
               attributePath: AttributePath?,
               eventPath: EventPath?,
-              e: Exception
+              e: Exception,
             ) {
               attributePath?.let {
                 logger.log(Level.INFO, "Report error for attributePath:%s", it.toString())
@@ -187,7 +195,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
                     logger.log(
                       Level.SEVERE,
                       "Error sending SubscriptionErrorNotification to subscriber: %s",
-                      exception
+                      exception,
                     )
                   }
               }
@@ -202,7 +210,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
           ReportCallbackJni(
             subscriptionEstablishedHandler,
             reportHandler,
-            resubscriptionAttemptHandler
+            resubscriptionAttemptHandler,
           )
 
         val fabricIndex = getFabricIndex(devicePtr)
@@ -218,7 +226,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
           request.keepSubscriptions,
           request.fabricFiltered,
           CHIP_IM_TIMEOUT_MS,
-          MatterICDClientImpl.isPeerICDClient(fabricIndex, deviceId)
+          MatterICDClientImpl.isPeerICDClient(fabricIndex, deviceId),
         )
 
         awaitClose { logger.log(Level.FINE, "Closing flow") }
@@ -237,7 +245,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     keepSubscriptions: Boolean,
     isFabricFiltered: Boolean,
     imTimeoutMs: Int,
-    isPeerLIT: Boolean
+    isPeerLIT: Boolean,
   )
 
   override suspend fun read(request: ReadRequest): ReadResponse {
@@ -283,7 +291,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
                         eventNumber = event.eventNumber.toULong(),
                         priorityLevel = event.priorityLevel.toUByte(),
                         timeStamp = timestamp,
-                        data = event.tlvValue
+                        data = event.tlvValue,
                       )
                     successes.add(readData)
                   }
@@ -318,7 +326,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
         request.attributePaths,
         request.eventPaths,
         false,
-        CHIP_IM_TIMEOUT_MS
+        CHIP_IM_TIMEOUT_MS,
       )
     }
   }
@@ -330,7 +338,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     attributePathList: List<AttributePath>,
     eventPathList: List<EventPath>,
     isFabricFiltered: Boolean,
-    imTimeoutMs: Int
+    imTimeoutMs: Int,
   )
 
   override suspend fun write(writeRequests: WriteRequests): WriteResponse {
@@ -349,7 +357,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
           override fun onResponse(attributePath: AttributePath, status: Status) {
             logger.log(
               Level.INFO,
-              "Receive write response for attributePath: ${attributePath} and status ${status}"
+              "Receive write response for attributePath: ${attributePath} and status ${status}",
             )
           }
 
@@ -357,7 +365,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
             logger.log(
               Level.SEVERE,
               "Failed to write attribute at path: %s",
-              attributePath.toString()
+              attributePath.toString(),
             )
 
             if (attributePath == null) {
@@ -401,7 +409,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     devicePtr: Long,
     writeRequestList: List<WriteRequest>,
     timedRequestTimeoutMs: Int,
-    imTimeoutMs: Int
+    imTimeoutMs: Int,
   )
 
   override suspend fun invoke(request: InvokeRequest): InvokeResponse {
@@ -441,7 +449,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
         devicePtr,
         request,
         request.timedRequest?.toMillis()?.toInt() ?: 0,
-        CHIP_IM_TIMEOUT_MS
+        CHIP_IM_TIMEOUT_MS,
       )
     }
   }
@@ -452,7 +460,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
     devicePtr: Long,
     invokeRequest: InvokeRequest,
     timedRequestTimeoutMs: Int,
-    imTimeoutMs: Int
+    imTimeoutMs: Int,
   )
 
   external fun getRemoteDeviceId(devicePtr: Long): Long
@@ -481,7 +489,7 @@ class MatterControllerImpl(params: ControllerParams) : MatterController {
               Exception("Failed to establish CASE session for device %016X".format(nodeId))
             )
           }
-        }
+        },
       )
     }
   }

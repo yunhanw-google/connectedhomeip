@@ -190,7 +190,8 @@ from `src/controller/java`, or other Matter C++ code within Android Studio.
 This option allows Android Studio to build the core Matter code from source,
 which enables directly editing core Matter C++ and Java/Kotlin code in-IDE.
 
-1. Set up required environment variables (`ANDROID_HOME`, `ANDROID_NDK_HOME`, and `TARGET_CPU`):
+1. Set up required environment variables (`ANDROID_HOME`, `ANDROID_NDK_HOME`,
+   and `TARGET_CPU`):
 
     ```shell
     export ANDROID_HOME=~/Android/Sdk
@@ -206,14 +207,18 @@ which enables directly editing core Matter C++ and Java/Kotlin code in-IDE.
     ./scripts/examples/android_app_ide.sh
     ```
 
-    This will run GN generation and produce `CMakeLists.txt` inside `out/android_$TARGET_CPU/`.
+    This will run GN generation and produce `CMakeLists.txt` inside
+    `out/android_$TARGET_CPU/`.
 
-3. Modify [examples/android/CHIPTool/gradle.properties](https://github.com/project-chip/connectedhomeip/blob/master/examples/android/CHIPTool/gradle.properties):
+3. Modify `examples/android/CHIPTool/gradle.properties`:
     - Set `matterSdkSourceBuild=true`
-    - Set `matterBuildSrcDir=../../../../out/android_arm64` (matching your `TARGET_CPU` directory)
-    - Set `matterSourceBuildAbiFilters=arm64-v8a` (matching your `TARGET_CPU` architecture)
+    - Set `matterBuildSrcDir=../../../../out/android_arm64` (matching your
+      `TARGET_CPU` directory)
+    - Set `matterSourceBuildAbiFilters=arm64-v8a` (matching your `TARGET_CPU`
+      architecture)
 
-4. Open `examples/android/CHIPTool` in Android Studio and run **File -> Sync Project with Gradle Files**.
+4. Open `examples/android/CHIPTool` in Android Studio and run **File -> Sync
+   Project with Gradle Files**.
 
 5. Build the Android package:
     - Click **Make Project** or **Run** in Android Studio.
@@ -225,7 +230,8 @@ which enables directly editing core Matter C++ and Java/Kotlin code in-IDE.
         ```
 
 The debug Android package `app-debug.apk` will be generated at
-`examples/android/CHIPTool/app/build/outputs/apk/debug/app-debug.apk`, and can be installed with:
+`examples/android/CHIPTool/app/build/outputs/apk/debug/app-debug.apk`, and can
+be installed with:
 
 ```shell
 adb install examples/android/CHIPTool/app/build/outputs/apk/debug/app-debug.apk

@@ -480,6 +480,14 @@ class AndroidBuilder(Builder):
                 gn_gen += [f"--root={self.root}/examples/{exampleName}/android/"]
 
             if self.board.IsIde():
+                deps_script = (
+                    f"{self.root}/third_party/android_deps/"
+                    "set_up_android_deps.py"
+                )
+                self._Execute(
+                    ["python3", deps_script],
+                    title="Setting up Android deps for " + self.identifier,
+                )
                 gn_gen += [
                     "--ide=json",
                     "--json-ide-script=//scripts/examples/gn_to_cmakelists.py",
@@ -517,7 +525,7 @@ class AndroidBuilder(Builder):
                     f"{self.root}/examples/android/{self.app.AppName()}/gradlew",
                     "-p",
                     f"{self.root}/examples/android/{self.app.AppName()}",
-                    f"-PmatterBuildSrcDir={self.output_dir}",
+                    f"-PmatterBuildSrcDir={os.path.abspath(self.output_dir)}",
                     "-PmatterSdkSourceBuild=true",
                     f"-PmatterSourceBuildAbiFilters={self.board.AbiName()}",
                     "assembleDebug",

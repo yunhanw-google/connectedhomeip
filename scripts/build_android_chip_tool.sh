@@ -1,81 +1,84 @@
 #!/usr/bin/env bash
 #
-# Build script for Matter SDK (connectedhomeip) Android CHIPTool
+# Copyright (c) 2026 Project CHIP Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 
 set -e
 
-REPO_DIR="/usr/local/google/home/yunhanw/connectedhomeip"
-
-echo "=== 1. Checking Repository & Submodules ==="
-if [ ! -d "$REPO_DIR" ]; then
-  echo "Cloning connectedhomeip repository..."
-  git clone --depth 1 https://github.com/project-chip/connectedhomeip.git "$REPO_DIR"
-fi
-
+REPO_DIR="${CHIP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$REPO_DIR"
 
-echo "Checking out Android submodules..."
-python3 scripts/checkout_submodules.py --allow-changing-global-git-config --platform android --recursive
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"
+export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/29.0.13846066}"
+export TARGET_CPU="${TARGET_CPU:-arm64}"
+export PW_PROJECT_ROOT="$REPO_DIR"
+export ZAP_INSTALL_PATH="${ZAP_INSTALL_PATH:-$REPO_DIR/.environment/cipd/packages/zap}"
+export PATH="/usr/lib/kotlinc/bin:$JAVA_HOME/bin:$ZAP_INSTALL_PATH:$REPO_DIR/.environment/cipd/packages/pigweed:$REPO_DIR/.environment/pigweed-venv/bin:$PATH"
 
-echo "=== 2. Applying Python 3.13 & Environment Patches ==="
-# Patch constraints.txt for Python 3.13 pip/setuptools/wheel issues
-sed -i 's/^pip==/# pip==/g' scripts/setup/constraints.txt 2>/dev/null || true
-sed -i 's/^setuptools==/# setuptools==/g' scripts/setup/constraints.txt 2>/dev/null || true
-sed -i 's/^wheel==/# wheel==/g' scripts/setup/constraints.txt 2>/dev/null || true
+OUT_DIR="${OUT_DIR:-$REPO_DIR/out/android_$TARGET_CPU}"
 
-# Patch gn_run_binary.py to fallback to sys.executable/python3 if python is missing
-if ! grep -q "shutil.which" build/gn_run_binary.py; then
-  sed -i 's/import subprocess/import shutil\nimport subprocess/g' build/gn_run_binary.py
-  sed -i 's/args = sys.argv\[1:\]/args = sys.argv[1:]\nif args and args[0] == "python":\n    args[0] = shutil.which("python") or sys.executable or "python3"/g' build/gn_run_binary.py
+if [ ! -f "$REPO_DIR/.environment/activate.sh" ]; then
+    echo "=== 1. Checking Out Android Submodules & Bootstrapping ==="
+    python3 scripts/checkout_submodules.py --allow-changing-global-git-config --platform android --recursive
+    PIP_INDEX_URL=https://pypi.org/simple bash -c "source scripts/bootstrap.sh"
 fi
 
-echo "=== 3. Bootstrapping Environment ==="
-PIP_INDEX_URL=https://pypi.org/simple bash -c "source scripts/bootstrap.sh"
+if [ -x "$REPO_DIR/.environment/cipd/cipd" ] && [ -f "$REPO_DIR/scripts/setup/zap.json" ]; then
+    ZAP_TAG=$(python3 -c 'import json; print(json.load(open("scripts/setup/zap.json"))["packages"][0]["tags"][0])' 2>/dev/null || true)
+    if [ -n "$ZAP_TAG" ]; then
+        "$REPO_DIR/.environment/cipd/cipd" ensure -ensure-file <(printf '$VerifiedPlatform linux-amd64\n@Subdir packages/zap\nexperimental/matter/zap/${platform} %s\n' "$ZAP_TAG") -root "$REPO_DIR/.environment/cipd" >/dev/null 2>&1 || true
+    fi
+fi
 
-# Install setuptools<70 into pigweed-venv for pkg_resources compatibility
-"$REPO_DIR/.environment/pigweed-venv/bin/python" -m pip install --index-url https://pypi.org/simple "setuptools<70" toml click 2>/dev/null || true
+if [ -x "$REPO_DIR/.environment/pigweed-venv/bin/python" ]; then
+    "$REPO_DIR/.environment/pigweed-venv/bin/python" -m pip install --index-url https://pypi.org/simple "setuptools<70" toml click 2>/dev/null || true
+fi
 
-echo "=== 4. Setting Up Build Variables ==="
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export PATH="/usr/lib/kotlinc/bin:$JAVA_HOME/bin:$REPO_DIR/.environment/cipd/packages/pigweed:$REPO_DIR/.environment/pigweed-venv/bin:$PATH"
-export ANDROID_HOME=/usr/local/google/home/yunhanw/Android/Sdk
-export ANDROID_NDK_HOME=/usr/local/google/home/yunhanw/Android/Sdk/ndk/29.0.13846066
-export TARGET_CPU=arm64
-export PW_PROJECT_ROOT="$REPO_DIR"
+echo "=== 2. Running Android IDE Setup (GN/CMake) ==="
+"$REPO_DIR/scripts/run_in_build_env.sh" \
+    "export JAVA_HOME=$JAVA_HOME; export ZAP_INSTALL_PATH=$ZAP_INSTALL_PATH; export PATH=/usr/lib/kotlinc/bin:$JAVA_HOME/bin:$ZAP_INSTALL_PATH:\$PATH; export ANDROID_HOME=$ANDROID_HOME; export ANDROID_NDK_HOME=$ANDROID_NDK_HOME; export TARGET_CPU=$TARGET_CPU; export PW_PROJECT_ROOT=$PW_PROJECT_ROOT; ./scripts/examples/android_app_ide.sh"
 
-echo "=== 5. Running Android IDE Setup (GN/CMake) ==="
-"$REPO_DIR/scripts/run_in_build_env.sh" "export JAVA_HOME=$JAVA_HOME; export PATH=$PATH; export ANDROID_HOME=$ANDROID_HOME; export ANDROID_NDK_HOME=$ANDROID_NDK_HOME; export TARGET_CPU=$TARGET_CPU; export PW_PROJECT_ROOT=$PW_PROJECT_ROOT; ./scripts/examples/android_app_ide.sh"
+echo "=== 3. Compiling Native C++ JNI & Java/Kotlin Targets ==="
+"$REPO_DIR/scripts/run_in_build_env.sh" \
+    "export JAVA_HOME=$JAVA_HOME; export ZAP_INSTALL_PATH=$ZAP_INSTALL_PATH; export PATH=/usr/lib/kotlinc/bin:$JAVA_HOME/bin:$ZAP_INSTALL_PATH:\$PATH; ninja -C $OUT_DIR src/controller/java:android src/controller/java:java src/controller/java:jsontlv src/controller/java:kotlin_matter_controller src/controller/java:onboarding_payload src/platform/android:java src/app/server/java:java"
 
-echo "=== 6. Compiling Native C++ JNI & Java/Kotlin Targets ==="
-"$REPO_DIR/scripts/run_in_build_env.sh" "export JAVA_HOME=$JAVA_HOME; export PATH=$PATH; ninja -C $REPO_DIR/out/android-arm64-chip-tool src/controller/java:android src/controller/java:java src/platform/android:java src/app/server/java:java"
-
-echo "=== 7. Packaging JNI Libraries & Matter SDK Jar ==="
+echo "=== 4. Packaging JNI Libraries & Matter SDK Jar ==="
 mkdir -p "$REPO_DIR/examples/android/CHIPTool/app/libs/jniLibs/arm64-v8a"
 
 jar cf "$REPO_DIR/examples/android/CHIPTool/app/libs/chip-sdk.jar" \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/app/server/java/java/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/android_chip_im/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/chipcluster/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/chipclusterID/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/java/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/jsontlv/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/kotlin_matter_controller/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/onboarding_payload/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/controller/java/tlv/classes" . \
-  -C "$REPO_DIR/out/android-arm64-chip-tool/obj/src/platform/android/java/classes" .
+    -C "$OUT_DIR/obj/src/app/server/java/java/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/android_chip_im/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/chipcluster/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/chipclusterID/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/java/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/jsontlv/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/kotlin_matter_controller/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/onboarding_payload/classes" . \
+    -C "$OUT_DIR/obj/src/controller/java/tlv/classes" . \
+    -C "$OUT_DIR/obj/src/platform/android/java/classes" .
 
-cp "$REPO_DIR/out/android-arm64-chip-tool/lib/jni/arm64-v8a/"*.so "$REPO_DIR/examples/android/CHIPTool/app/libs/jniLibs/arm64-v8a/"
+cp "$OUT_DIR/lib/jni/arm64-v8a/"*.so "$REPO_DIR/examples/android/CHIPTool/app/libs/jniLibs/arm64-v8a/"
 
-# Clean up duplicate standalone jars
-rm -f "$REPO_DIR/examples/android/CHIPTool/app/libs/CHIPClusterID.jar" "$REPO_DIR/examples/android/CHIPTool/app/libs/libMatterTlv.jar" "$REPO_DIR/examples/android/CHIPTool/app/libs/"*android.jar
+rm -f "$REPO_DIR/examples/android/CHIPTool/app/libs/CHIPClusterID.jar" \
+    "$REPO_DIR/examples/android/CHIPTool/app/libs/libMatterTlv.jar" \
+    "$REPO_DIR/examples/android/CHIPTool/app/libs/"*android.jar
 
-echo "=== 8. Configuring Gradle & Building APK ==="
-sed -i 's/matterSdkSourceBuild=true/matterSdkSourceBuild=false/g' "$REPO_DIR/examples/android/CHIPTool/gradle.properties" 2>/dev/null || true
-sed -i 's/ndkVersion "28.2.13676358"/ndkVersion "29.0.13846066"/g' "$REPO_DIR/examples/android/CHIPTool/app/build.gradle" 2>/dev/null || true
-
+echo "=== 5. Building Android CHIPTool APK via Gradle ==="
 cd "$REPO_DIR/examples/android/CHIPTool"
-./gradlew assembleDebug
+./gradlew -PmatterSdkSourceBuild=false assembleDebug
 
 echo "=== BUILD COMPLETE! ==="
 echo "APK location: $REPO_DIR/examples/android/CHIPTool/app/build/outputs/apk/debug/app-debug.apk"

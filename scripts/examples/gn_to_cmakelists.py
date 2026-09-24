@@ -34,6 +34,7 @@
 
 
 import functools
+import hashlib
 import itertools
 import json
 import os
@@ -72,7 +73,11 @@ def CMakeTargetEscape(a):
         if c in string.ascii_letters or c in string.digits or c in '_.+-':
             return c
         return '__'
-    return ''.join(map(Escape, a))
+    escaped = ''.join(map(Escape, a))
+    if len(escaped) > 150:
+        digest = hashlib.sha256(escaped.encode('utf-8')).hexdigest()[:16]
+        return f'{escaped[:130]}_{digest}'
+    return escaped
 
 
 def RemoveByPrefix(str_list, prefixs):
@@ -197,6 +202,8 @@ class Project:
         build_settings = project_json['build_settings']
         self.root_path = build_settings['root_path']
         self.build_path = self.GetAbsolutePath(build_settings['build_dir'])
+        self._obj_source_deps_cache = {}
+        self._obj_lib_deps_cache = {}
 
     def GetAbsolutePath(self, path):
         if path.startswith('//'):
@@ -205,24 +212,54 @@ class Project:
 
     def GetObjectSourceDependencies(self, gn_target_name, object_dependencies):
         """All OBJECT libraries whose sources have not been absorbed."""
-        dependencies = self.targets[gn_target_name].get('deps', [])
-        for dependency in dependencies:
+        cached = self._obj_source_deps_cache.get(gn_target_name)
+        if cached is not None:
+            object_dependencies.update(cached)
+            return
+        deps_set = set()
+        visited = set()
+        stack = list(self.targets[gn_target_name].get('deps', []))
+        while stack:
+            dependency = stack.pop()
+            if dependency in visited:
+                continue
+            visited.add(dependency)
             dependency_type = self.targets[dependency].get('type', None)
             if dependency_type == 'source_set':
-                object_dependencies.add(dependency)
-            if dependency_type not in gn_target_types_that_absorb_objects:
-                self.GetObjectSourceDependencies(
-                    dependency, object_dependencies)
+                deps_set.add(dependency)
+            if dependency_type in gn_target_types_that_absorb_objects:
+                continue
+            if dependency in self._obj_source_deps_cache:
+                deps_set.update(self._obj_source_deps_cache[dependency])
+                continue
+            stack.extend(self.targets[dependency].get('deps', []))
+        self._obj_source_deps_cache[gn_target_name] = deps_set
+        object_dependencies.update(deps_set)
 
     def GetObjectLibraryDependencies(self, gn_target_name, object_dependencies):
         """All OBJECT libraries whose libraries have not been absorbed."""
-        dependencies = self.targets[gn_target_name].get('deps', [])
-        for dependency in dependencies:
+        cached = self._obj_lib_deps_cache.get(gn_target_name)
+        if cached is not None:
+            object_dependencies.update(cached)
+            return
+        deps_set = set()
+        visited = set()
+        stack = list(self.targets[gn_target_name].get('deps', []))
+        while stack:
+            dependency = stack.pop()
+            if dependency in visited:
+                continue
+            visited.add(dependency)
             dependency_type = self.targets[dependency].get('type', None)
-            if dependency_type == 'source_set':
-                object_dependencies.add(dependency)
-                self.GetObjectLibraryDependencies(
-                    dependency, object_dependencies)
+            if dependency_type != 'source_set':
+                continue
+            deps_set.add(dependency)
+            if dependency in self._obj_lib_deps_cache:
+                deps_set.update(self._obj_lib_deps_cache[dependency])
+                continue
+            stack.extend(self.targets[dependency].get('deps', []))
+        self._obj_lib_deps_cache[gn_target_name] = deps_set
+        object_dependencies.update(deps_set)
 
     def GetCMakeTargetName(self, gn_target_name):
         # See <chromium>/src/tools/gn/label.cc#Resolve
@@ -581,14 +618,19 @@ def WriteSourceVariables(out, target, project):
         all_sources.append(posixpath.join(project.build_path, 'empty.cpp'))
 
     # TODO .def files on Windows
+    is_custom = target.cmake_type.command == 'add_custom_target'
     for source in all_sources:
         _, ext = posixpath.splitext(source)
         source_abs_path = project.GetAbsolutePath(source)
+        if is_custom and not os.path.exists(source_abs_path):
+            continue
         source_types[source_file_types.get(
             ext, 'other')].append(source_abs_path)
 
     for input_path in target.properties.get('inputs', []):
         input_abs_path = project.GetAbsolutePath(input_path)
+        if is_custom and not os.path.exists(input_abs_path):
+            continue
         source_types['input'].append(input_abs_path)
 
     # OBJECT library dependencies need to be listed as sources.
@@ -651,8 +693,12 @@ def WriteTarget(out, target, project):
 
     if 'obj_target' in sources:
         object_dependencies = set()
-        project.GetObjectSourceDependencies(target.gn_name, object_dependencies)
-        obj_target_sources = ['$<TARGET_OBJECTS:' + project.GetCMakeTargetName(dep) + '>' for dep in object_dependencies]
+        project.GetObjectSourceDependencies(
+            target.gn_name, object_dependencies)
+        obj_target_sources = [
+            '$<TARGET_OBJECTS:' + project.GetCMakeTargetName(dep) + '>'
+            for dep in object_dependencies
+        ]
         CHUNK_SIZE = 50
         for i in range(0, len(obj_target_sources), CHUNK_SIZE):
             chunk = obj_target_sources[i:i + CHUNK_SIZE]
@@ -681,7 +727,8 @@ def WriteTarget(out, target, project):
     for dependency in dependencies:
         gn_dependency_type = project.targets.get(
             dependency, {}).get('type', None)
-        cmake_dependency_type = cmake_target_types.get(gn_dependency_type, CMakeTargetType.custom)
+        cmake_dependency_type = cmake_target_types.get(
+            gn_dependency_type, CMakeTargetType.custom)
         cmake_dependency_name = project.GetCMakeTargetName(dependency)
 
         if cmake_dependency_type.command != 'add_library':
@@ -757,7 +804,7 @@ def WriteTarget(out, target, project):
 def WriteProject(project):
     with open(posixpath.join(project.build_path, "CMakeLists.txt"), "w+") as out:
         out.write('# Generated by gn_to_cmake.py.\n')
-        out.write('cmake_minimum_required(VERSION 3.20 FATAL_ERROR)\n')
+        out.write('cmake_minimum_required(VERSION 3.10.2 FATAL_ERROR)\n')
         out.write('cmake_policy(VERSION 3.7)\n')
         out.write('project(MatterAndroid)\n\n')
 

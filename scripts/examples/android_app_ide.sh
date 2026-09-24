@@ -35,10 +35,13 @@ if [ -z "$TARGET_CPU" ]; then
     exit 1
 fi
 
-source scripts/activate.sh
+if [ -z "$PW_PROJECT_ROOT" ]; then
+    source "$(dirname "$0")/../../scripts/activate.sh"
+fi
 
 # Set up JARs
 python3 third_party/android_deps/set_up_android_deps.py
+third_party/java_deps/set_up_java_deps.sh
 
 # Build CMake for Android Studio
 echo "build ide"
