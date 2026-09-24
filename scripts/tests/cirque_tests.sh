@@ -57,6 +57,7 @@ CIRQUE_TESTS=(
     "SubscriptionResumptionTest"
     "SubscriptionResumptionCapacityTest"
     "SubscriptionResumptionTimeoutTest"
+    "BleMobileDeviceTest"
     "VirtualBluetoothTest"
 )
 

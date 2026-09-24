@@ -47,7 +47,7 @@ DEVICE_CONFIG = {
     'device0': {
         'type': 'MobileDevice',
         'base_image': '@default',
-        'capability': ['TrafficControl', 'Mount', 'Bluetooth'],
+        'capability': ['TrafficControl', 'Mount'],
         'rcp_mode': True,
         'docker_network': 'Ipv6',
         'traffic_control': {'latencyMs': 100},
@@ -56,7 +56,7 @@ DEVICE_CONFIG = {
     'device1': {
         'type': 'CHIPEndDevice',
         'base_image': '@default',
-        'capability': ['Thread', 'TrafficControl', 'Mount', 'Bluetooth'],
+        'capability': ['Thread', 'TrafficControl', 'Mount'],
         'rcp_mode': True,
         'docker_network': 'Ipv6',
         'traffic_control': {'latencyMs': 100},
@@ -65,7 +65,7 @@ DEVICE_CONFIG = {
     'device2': {
         'type': 'CHIPEndDevice',
         'base_image': '@default',
-        'capability': ['Thread', 'TrafficControl', 'Mount', 'Bluetooth'],
+        'capability': ['Thread', 'TrafficControl', 'Mount'],
         'rcp_mode': True,
         'docker_network': 'Ipv6',
         'traffic_control': {'latencyMs': 100},
@@ -74,7 +74,7 @@ DEVICE_CONFIG = {
     'device3': {
         'type': 'CHIPEndDevice',
         'base_image': '@default',
-        'capability': ['Thread', 'TrafficControl', 'Mount', 'Bluetooth'],
+        'capability': ['Thread', 'TrafficControl', 'Mount'],
         'rcp_mode': True,
         'docker_network': 'Ipv6',
         'traffic_control': {'latencyMs': 100},
@@ -83,7 +83,7 @@ DEVICE_CONFIG = {
     'device4': {
         'type': 'CHIPEndDevice',
         'base_image': '@default',
-        'capability': ['Thread', 'TrafficControl', 'Mount', 'Bluetooth'],
+        'capability': ['Thread', 'TrafficControl', 'Mount'],
         'rcp_mode': True,
         'docker_network': 'Ipv6',
         'traffic_control': {'latencyMs': 100},
@@ -104,17 +104,11 @@ class TestCommissioner(CHIPVirtualHome):
         self.run_controller_test()
 
     def run_controller_test(self):
-        end_devices = [
-            d for d in self.non_ap_devices if d['type'] == 'CHIPEndDevice'
-        ]
         servers = [{
             "ip": device['description']['ipv6_addr'],
-            "id": device['id'],
-            "ble_adapt": device['description'].get(
-                'ble_adapt', f"hci{idx + 1}"),
-            "ble_adapt_id": device['description'].get(
-                'ble_adapt_id', idx + 1),
-        } for idx, device in enumerate(end_devices)]
+            "id": device['id']
+        } for device in self.non_ap_devices
+            if device['type'] == 'CHIPEndDevice']
         req_ids = [device['id'] for device in self.non_ap_devices
                    if device['type'] == 'MobileDevice']
 
@@ -127,31 +121,15 @@ class TestCommissioner(CHIPVirtualHome):
         servers[3]['discriminator'] = TEST_DISCRIMINATOR4
         servers[3]['nodeid'] = 4
 
-        req_device_id = req_ids[0]
-
-        # Verify virtual HCI interface is visible inside MobileDevice container
-        hci_ret = self.execute_device_cmd(req_device_id, "hciconfig")
-        self.assertEqual(
-            hci_ret['return_code'], '0',
-            "Virtual HCI interface not visible inside MobileDevice container")
-
         for server in servers:
-            adapt = server['ble_adapt']
-            server_hci = self.execute_device_cmd(
-                server['id'], f"hciconfig {adapt}")
-            self.assertEqual(
-                server_hci['return_code'], '0',
-                f"Virtual HCI {adapt} not visible inside container")
-            ble_id = server['ble_adapt_id']
-            disc = server['discriminator']
             self.execute_device_cmd(
                 server['id'],
-                'CHIPCirqueDaemon.py -- run gdb -return-child-result -q '
-                '-ex "set pagination off" -ex run -ex "bt 25" '
-                f'--args {CHIP_ALL_CLUSTERS_APP_ESC} --thread '
-                f'--ble-controller {ble_id} --discriminator {disc}')
+                'CHIPCirqueDaemon.py -- run gdb -return-child-result -q -ex "set pagination off" -ex run -ex "bt 25" '
+                f'--args {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {server["discriminator"]}')
 
         self.reset_thread_devices([server['id'] for server in servers])
+
+        req_device_id = req_ids[0]
 
         self.execute_device_cmd(req_device_id, MATTER_CONTROLLER_INSTALL_WHEELS)
 
