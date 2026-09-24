@@ -48,10 +48,13 @@ Run with:
 """
 
 
+import shutil
 import subprocess
 import sys
 
 args = sys.argv[1:]
+if args and args[0] == 'python':
+    args[0] = shutil.which('python') or sys.executable or 'python3'
 
 ret = subprocess.call(args)
 if ret != 0:

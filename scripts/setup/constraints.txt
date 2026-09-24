@@ -229,18 +229,18 @@ websockets==10.4
     # via matter-yamltests
 west==1.2.0
     # via -r requirements.zephyr.txt
-wheel==0.38.4 ; sys_platform == "linux"
+# wheel==0.38.4 ; sys_platform == "linux"
     # via
     #   -r requirements.all.txt
     #   pip-tools
 
 # The following packages are considered to be unsafe in a requirements file:
-pip==23.2.1
+# pip==23.2.1
     # via
     #   fastcore
     #   ghapi
     #   pip-tools
-setuptools==68.0.0
+# setuptools==68.0.0
     # via
     #   pip-tools
     #   west
