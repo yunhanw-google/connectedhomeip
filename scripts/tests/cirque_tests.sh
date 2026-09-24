@@ -58,6 +58,7 @@ CIRQUE_TESTS=(
     "SubscriptionResumptionCapacityTest"
     "SubscriptionResumptionTimeoutTest"
     "BleMobileDeviceTest"
+    "BleWiFiMobileDeviceTest"
 )
 
 BOLD_GREEN_TEXT="\033[1;32m"
