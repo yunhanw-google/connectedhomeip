@@ -143,7 +143,18 @@ function cirquetest_run_test() {
     shift
     mkdir -p "$DEVICE_LOG_DIR"
     __cirquetest_start_flask
-    sleep 5
+    # Wait for Flask service to be ready (poll up to 10s instead of hard sleep)
+    local flask_ready=0
+    for _ in $(seq 1 50); do
+        if curl -s -f http://127.0.0.1:5000/get_homes >/dev/null 2>&1; then
+            flask_ready=1
+            break
+        fi
+        sleep 0.2
+    done
+    if [[ "$flask_ready" -ne 1 ]]; then
+        echo "Warning: Flask server did not respond to /get_homes within 10 seconds"
+    fi
     CHIP_CIRQUE_BASE_IMAGE="ghcr.io/project-chip/chip-cirque-device-base" "$TEST_DIR/$CURRENT_TEST.py" "$@"
     exitcode=$?
     __cirquetest_clean_flask

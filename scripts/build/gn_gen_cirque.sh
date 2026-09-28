@@ -19,18 +19,12 @@
 set -e
 
 CHIP_ROOT="$(dirname "$0")/../.."
-if [[ -z "${CHIP_ROOT_PATH}" ]]; then
-    CHIP_ROOT_PATH=""
-fi
 
 set -x
 
 env
 
-cd "$ROOT_PATH"
-
-echo "Ensure submodules for Linux builds are checked out"
-./scripts/checkout_submodules.py --allow-changing-global-git-config --shallow --platform linux
+cd "$CHIP_ROOT"
 
 echo "Setup build environment"
 source "./scripts/activate.sh"
@@ -38,8 +32,16 @@ source "./scripts/activate.sh"
 echo "Build: GN configure"
 gn --root="$CHIP_ROOT" gen --check --fail-on-unused-args out/debug --args='target_os="all" chip_logging_backend="stdio" chip_build_tests=false chip_enable_wifi=false chip_enable_ble=true chip_config_network_layer_ble=true chip_im_force_fabric_quota_check=true enable_default_builds=false enable_host_gcc_build=true enable_standalone_chip_tool_build=true enable_linux_lit_icd_app_build=true chip_device_config_enable_joint_fabric=true'
 
-echo "Build: Ninja build"
-time ninja -C out/debug all check
+echo "Build: Ninja build (only the targets needed for Cirque tests)"
+time ninja -C out/debug \
+    host_gcc/chip-echo-requester \
+    host_gcc/chip-echo-responder \
+    host_gcc/chip-im-initiator \
+    host_gcc/chip-im-responder \
+    host_gcc/obj/src/controller/python/matter-controller-wheels \
+    standalone_chip_tool \
+    linux_lit_icd_app
 
 echo "Build: Build all-clusters-app which has different configs than some other samples above."
 ./scripts/examples/gn_build_example.sh examples/all-clusters-app/linux/ out/debug/standalone chip_inet_config_enable_ipv4=false 'chip_logging_backend="stdio"' 'chip_enable_wifi=true' 'chip_enable_ble=true' 'chip_config_network_layer_ble=true' 'chip_build_tests=false' 'chip_im_force_fabric_quota_check=true' 'chip_support_thread_meshcop=false'
+

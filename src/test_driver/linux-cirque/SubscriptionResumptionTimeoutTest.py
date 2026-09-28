@@ -108,15 +108,23 @@ class TestSubscriptionResumptionTimeout(CHIPVirtualHome):
         self.assertEqual(ret['return_code'], '0',
                          "Test failed: non-zero return code")
 
-        # Wait for some time so that the sever will try to resume the subscription for several times
-        time.sleep(120)
-
-        # Check the device can resume subscriptions
-        self.logger.info("checking device log for %s", self.get_device_pretty_id(server_device_id))
-        self.assertTrue(self.sequenceMatch(self.get_device_log(server_device_id).decode('utf-8'), [
+        # Wait for the server to try resuming the subscription (poll up to 60s instead of fixed 120s sleep)
+        self.logger.info("waiting for subscription resumption retries in device log: %s", self.get_device_pretty_id(server_device_id))
+        expected_patterns = [
             "Schedule subscription resumption when failing to establish session, Retries: 1",
-            "Schedule subscription resumption when failing to establish session, Retries: 2"]),
-            f"SubscriptionResumption test failed: cannot find matching string from device {server_device_id}")
+            "Schedule subscription resumption when failing to establish session, Retries: 2",
+        ]
+        resumption_matched = False
+        start_wait = time.time()
+        timeout = 60
+        while time.time() - start_wait < timeout:
+            if self.sequenceMatch(self.get_device_log(server_device_id).decode('utf-8', errors='ignore'), expected_patterns):
+                resumption_matched = True
+                break
+            time.sleep(2)
+
+        self.assertTrue(resumption_matched,
+                        f"SubscriptionResumption test failed: cannot find matching retry strings from device {server_device_id} within {timeout}s")
 
 
 if __name__ == "__main__":
