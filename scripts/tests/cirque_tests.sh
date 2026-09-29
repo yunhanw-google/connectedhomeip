@@ -167,7 +167,7 @@ function cirquetest_run_test() {
         echo "Do docker container and network prune"
         # TODO: Filter cirque containers ?
         if ! grep docker.sock /proc/1/mountinfo; then
-            docker ps -aq | xargs docker stop >/dev/null 2>&1
+            docker ps -aq | xargs -r docker stop -t 0 >/dev/null 2>&1
         fi
         docker container prune -f >/dev/null 2>&1
         docker network prune -f >/dev/null 2>&1
@@ -176,9 +176,27 @@ function cirquetest_run_test() {
     return "$exitcode"
 }
 
+function prewarm_cirque_device_base_wheels() {
+    local base_image="${CHIP_CIRQUE_BASE_IMAGE:-"ghcr.io/project-chip/chip-cirque-device-base"}"
+    local wheel_dir="$REPO_DIR/out/debug/linux_x64_gcc/obj/src/controller/python/matter-controller-wheels"
+    if [[ -d "$wheel_dir" ]] && command -v docker >/dev/null 2>&1; then
+        echo "Pre-warming $base_image with matter_clusters and matter_core wheels..."
+        local prewarm_container
+        prewarm_container=$(docker run -d -v "$REPO_DIR:$REPO_DIR" "$base_image:latest" bash -c \
+            "pip3 install --break-system-packages --no-cache-dir --find-links '$wheel_dir' matter_clusters matter_core") || true
+        if [[ -n "$prewarm_container" ]]; then
+            docker wait "$prewarm_container" >/dev/null 2>&1 || true
+            docker commit "$prewarm_container" "$base_image:latest" >/dev/null 2>&1 || true
+            docker rm -f "$prewarm_container" >/dev/null 2>&1 || true
+            echo "Pre-warming completed."
+        fi
+    fi
+}
+
 function cirquetest_run_all_tests() {
     # shellharden requires quotes around variables, which will break for-each loops
     # This is the workaround
+    prewarm_cirque_device_base_wheels
     echo "Logs will be stored at $LOG_DIR"
     test_pass=1
     mkdir -p "$LOG_DIR"

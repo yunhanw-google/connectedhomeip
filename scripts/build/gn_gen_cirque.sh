@@ -34,11 +34,11 @@ gn --root="$CHIP_ROOT" gen --check --fail-on-unused-args out/debug --args='targe
 
 echo "Build: Ninja build (only the targets needed for Cirque tests)"
 time ninja -C out/debug \
-    host_gcc/chip-echo-requester \
-    host_gcc/chip-echo-responder \
-    host_gcc/chip-im-initiator \
-    host_gcc/chip-im-responder \
-    host_gcc/obj/src/controller/python/matter-controller-wheels \
+    linux_x64_gcc/chip-echo-requester \
+    linux_x64_gcc/chip-echo-responder \
+    linux_x64_gcc/chip-im-initiator \
+    linux_x64_gcc/chip-im-responder \
+    linux_x64_gcc/gen/src/controller/python/matter-controller-wheels.pw_pystamp \
     standalone_chip_tool \
     linux_lit_icd_app
 

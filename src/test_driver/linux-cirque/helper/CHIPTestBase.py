@@ -275,7 +275,7 @@ class CHIPVirtualHome:
             if self.sequenceMatch(self.get_device_log(device_id).decode(), [pattern]):
                 return True
             if time.time() < due:
-                time.sleep(1)
+                time.sleep(0.2)
             else:
                 break
         return False
