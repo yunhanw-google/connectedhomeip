@@ -1,0 +1,268 @@
+"""
+Copyright (c) 2026 Project CHIP Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+_CUR_DIR = Path(__file__).resolve().parent
+if str(_CUR_DIR) not in sys.path:
+    sys.path.insert(0, str(_CUR_DIR))
+
+from helper.coverage_report import (
+    parse_lcov_info,
+    compute_metrics,
+    generate_markdown_summary,
+    SUBSYSTEMS,
+)
+
+SAMPLE_LCOV_DATA = """TN:
+SF:/home/user/connectedhomeip/src/app/CommandSender.cpp
+FN:10,CommandSender::Init
+FN:25,CommandSender::SendCommand
+FNDA:1,CommandSender::Init
+FNDA:0,CommandSender::SendCommand
+FNF:2
+FNH:1
+DA:10,1
+DA:11,1
+DA:12,1
+DA:25,0
+DA:26,0
+LF:5
+LH:3
+end_of_record
+SF:/home/user/connectedhomeip/src/transport/SessionManager.cpp
+FN:15,SessionManager::Init
+FNDA:1,SessionManager::Init
+FNF:1
+FNH:1
+DA:15,2
+DA:16,2
+LF:2
+LH:2
+end_of_record
+SF:/home/user/connectedhomeip/examples/platform/linux/AppMain.cpp
+FN:50,main
+FNDA:1,main
+FNF:1
+FNH:1
+DA:50,1
+DA:51,0
+LF:2
+LH:1
+end_of_record
+"""
+
+
+class TestCoverageReport(unittest.TestCase):
+
+    def test_parse_lcov_info(self):
+        stats = parse_lcov_info(SAMPLE_LCOV_DATA)
+        self.assertEqual(len(stats), 3)
+
+        app_stats = stats["/home/user/connectedhomeip/src/app/CommandSender.cpp"]
+        self.assertEqual(app_stats["lines_found"], 5)
+        self.assertEqual(app_stats["lines_hit"], 3)
+        self.assertEqual(app_stats["functions_found"], 2)
+        self.assertEqual(app_stats["functions_hit"], 1)
+
+        transport_stats = stats["/home/user/connectedhomeip/src/transport/SessionManager.cpp"]
+        self.assertEqual(transport_stats["lines_found"], 2)
+        self.assertEqual(transport_stats["lines_hit"], 2)
+
+    def test_compute_metrics(self):
+        stats = parse_lcov_info(SAMPLE_LCOV_DATA)
+        chip_root = Path("/home/user/connectedhomeip")
+        metrics = compute_metrics(stats, chip_root=chip_root)
+
+        overall = metrics["overall"]
+        self.assertEqual(overall["total_files"], 3)
+        self.assertEqual(overall["lines_found"], 9)
+        self.assertEqual(overall["lines_hit"], 6)
+        self.assertAlmostEqual(overall["line_coverage_pct"], 66.67, places=2)
+        self.assertEqual(overall["functions_found"], 4)
+        self.assertEqual(overall["functions_hit"], 3)
+        self.assertAlmostEqual(overall["function_coverage_pct"], 75.0, places=2)
+
+        subsystems = metrics["subsystems"]
+        self.assertIn("src/app", subsystems)
+        self.assertEqual(subsystems["src/app"]["file_count"], 1)
+        self.assertEqual(subsystems["src/app"]["lines_found"], 5)
+        self.assertEqual(subsystems["src/app"]["lines_hit"], 3)
+        self.assertAlmostEqual(subsystems["src/app"]["line_coverage_pct"], 60.0, places=2)
+
+        self.assertIn("src/transport", subsystems)
+        self.assertEqual(subsystems["src/transport"]["lines_found"], 2)
+        self.assertEqual(subsystems["src/transport"]["lines_hit"], 2)
+        self.assertAlmostEqual(subsystems["src/transport"]["line_coverage_pct"], 100.0, places=2)
+
+        self.assertIn("examples", subsystems)
+        self.assertEqual(subsystems["examples"]["lines_found"], 2)
+        self.assertEqual(subsystems["examples"]["lines_hit"], 1)
+        self.assertAlmostEqual(subsystems["examples"]["line_coverage_pct"], 50.0, places=2)
+
+    def test_generate_markdown_summary(self):
+        stats = parse_lcov_info(SAMPLE_LCOV_DATA)
+        metrics = compute_metrics(stats, chip_root=Path("/home/user/connectedhomeip"))
+        md = generate_markdown_summary(metrics, title="Test Report")
+
+        self.assertIn("# Test Report", md)
+        self.assertIn("66.67%", md)
+        self.assertIn("`src/app`", md)
+        self.assertIn("`src/transport`", md)
+        self.assertIn("`examples`", md)
+
+    def test_compute_metrics_relative_and_unnormalized(self):
+        # Test with unnormalized paths (e.g. scripts/tests/../..)
+        chip_root = Path("/home/user/connectedhomeip")
+        unnormalized_stats = {
+            "/home/user/connectedhomeip/scripts/tests/../../"
+            "src/app/Server.cpp": {
+                "lines_found": 10,
+                "lines_hit": 5,
+                "functions_found": 2,
+                "functions_hit": 1,
+            },
+            "/home/user/connectedhomeip/src/transport/Session.cpp": {
+                "lines_found": 8,
+                "lines_hit": 4,
+                "functions_found": 1,
+                "functions_hit": 1,
+            },
+        }
+        # Normalize keys as coverage_report would
+        normalized_stats = {
+            os.path.normpath(k): v for k, v in unnormalized_stats.items()
+        }
+        metrics = compute_metrics(normalized_stats, chip_root=chip_root)
+        self.assertEqual(metrics["overall"]["total_files"], 2)
+        self.assertEqual(metrics["subsystems"]["src/app"]["file_count"], 1)
+        self.assertEqual(metrics["subsystems"]["src/app"]["lines_found"], 10)
+        self.assertEqual(
+            metrics["subsystems"]["src/transport"]["file_count"], 1
+        )
+
+    def test_zero_instrumented_files_warning(self):
+        empty_stats = {}
+        metrics = compute_metrics(
+            empty_stats, chip_root=Path("/home/user/connectedhomeip")
+        )
+        self.assertEqual(metrics["overall"]["total_files"], 0)
+        self.assertEqual(metrics["overall"]["lines_found"], 0)
+        self.assertEqual(metrics["overall"]["line_coverage_pct"], 0.0)
+
+    def test_detect_gcov_tool(self):
+        from helper.coverage_report import detect_gcov_tool
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            # Create a mock gcno file with GCC 13 header (oncg + *33B)
+            gcno_file = tmppath / "test.gcno"
+            with open(gcno_file, "wb") as f:
+                f.write(b"oncg*33Bextra_data")
+            tool = detect_gcov_tool(tmppath)
+            self.assertTrue(tool.endswith("gcov-13") or tool.endswith("gcov"))
+
+
+def _write_fake_lcov(bin_dir: Path, version_line: str) -> None:
+    """Writes an `lcov` executable that only answers --version."""
+    script = bin_dir / "lcov"
+    script.write_text(f"#!/bin/sh\necho '{version_line}'\n")
+    script.chmod(0o755)
+
+
+class TestLcovParallelDetection(unittest.TestCase):
+    """Verifies lcov --parallel feature detection and overrides."""
+
+    def setUp(self):
+        self._saved_env = {k: os.environ.get(k) for k in ("PATH", "CIRQUE_COVERAGE_JOBS")}
+        self._tmp = tempfile.TemporaryDirectory()
+        self.bin_dir = Path(self._tmp.name)
+        os.environ["PATH"] = f"{self.bin_dir}{os.pathsep}{self._saved_env['PATH'] or ''}"
+        os.environ.pop("CIRQUE_COVERAGE_JOBS", None)
+
+    def tearDown(self):
+        for key, value in self._saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        self._tmp.cleanup()
+
+    def test_lcov_1x_disables_parallel(self):
+        from helper.coverage_report import detect_lcov_parallel_jobs
+        _write_fake_lcov(self.bin_dir, "lcov: LCOV version 1.16")
+        self.assertEqual(detect_lcov_parallel_jobs(), 0)
+
+    def test_lcov_2x_enables_parallel_with_cpu_count(self):
+        from helper.coverage_report import detect_lcov_parallel_jobs
+        _write_fake_lcov(self.bin_dir, "lcov: LCOV version 2.0-1")
+        expected = os.cpu_count() or 1
+        self.assertEqual(detect_lcov_parallel_jobs(), expected if expected > 1 else 0)
+
+    def test_override_jobs(self):
+        from helper.coverage_report import detect_lcov_parallel_jobs
+        _write_fake_lcov(self.bin_dir, "lcov: LCOV version 2.0-1")
+        os.environ["CIRQUE_COVERAGE_JOBS"] = "4"
+        self.assertEqual(detect_lcov_parallel_jobs(), 4)
+        os.environ["CIRQUE_COVERAGE_JOBS"] = "1"
+        self.assertEqual(detect_lcov_parallel_jobs(), 0)
+
+    def test_override_ignored_on_lcov_1x(self):
+        from helper.coverage_report import detect_lcov_parallel_jobs
+        _write_fake_lcov(self.bin_dir, "lcov: LCOV version 1.14")
+        os.environ["CIRQUE_COVERAGE_JOBS"] = "8"
+        self.assertEqual(detect_lcov_parallel_jobs(), 0)
+
+
+@unittest.skipUnless(shutil.which("lcov") and shutil.which("gcc") and shutil.which("gcov"),
+                     "requires real lcov, gcc and gcov")
+class TestGenerateCoverageReportRealLcov(unittest.TestCase):
+    """Runs the real lcov pipeline on a tiny instrumented C program."""
+
+    def test_real_capture_produces_tracefile(self):
+        from helper.coverage_report import generate_coverage_report
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            build = root / "out"
+            build.mkdir()
+            src = root / "src" / "app" / "hello.c"
+            src.parent.mkdir(parents=True)
+            src.write_text("int f(int x) { if (x) return 1; return 0; }\n"
+                           "int main(void) { return f(0); }\n")
+            exe = build / "hello"
+            subprocess.run(["gcc", "--coverage", "-O0", "-o", str(exe), str(src)],
+                           cwd=build, check=True)
+            subprocess.run([str(exe)], cwd=build, check=False)
+            os.environ["CIRQUE_GCOV_TOOL"] = "gcov"
+            try:
+                json_path, _ = generate_coverage_report(
+                    build, root / "cov", root, skip_genhtml=True)
+            finally:
+                os.environ.pop("CIRQUE_GCOV_TOOL", None)
+            metrics = json.loads(Path(json_path).read_text())
+            self.assertGreaterEqual(metrics["overall"]["total_files"], 1)
+            self.assertGreater(metrics["overall"]["lines_hit"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

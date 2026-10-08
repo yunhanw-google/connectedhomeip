@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 import logging
+import os
 import shlex
 import sys
 import time
@@ -89,10 +90,12 @@ class TestSubscriptionResumptionTimeout(CHIPVirtualHome):
                    if device['type'] == 'MobileDevice']
 
         server_device_id = server_ids[0]
+        gdb_wrapper = 'gdb -batch -return-child-result -q -ex "set pagination off" -ex run -ex "thread apply all bt" --args'
+        if os.environ.get("CIRQUE_COVERAGE") == "1":
+            gdb_wrapper = ""
         self.execute_device_cmd(
             server_device_id,
-            'CHIPCirqueDaemon.py -- run gdb -batch -return-child-result -q -ex "set pagination off" -ex run '
-            f'-ex "thread apply all bt" --args {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {TEST_DISCRIMINATOR} '
+            f'CHIPCirqueDaemon.py -- run {gdb_wrapper} {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {TEST_DISCRIMINATOR} '
             '--subscription-resumption-retry-interval 5')
 
         self.reset_thread_devices(server_ids)
@@ -108,15 +111,35 @@ class TestSubscriptionResumptionTimeout(CHIPVirtualHome):
         self.assertEqual(ret['return_code'], '0',
                          "Test failed: non-zero return code")
 
-        # Wait for some time so that the sever will try to resume the subscription for several times
-        time.sleep(120)
+        # Wait for the server to try resuming the subscription (poll up to
+        # 60s instead of fixed 120s sleep).
+        self.logger.info(
+            "waiting for subscription resumption retries in device log: %s",
+            self.get_device_pretty_id(server_device_id),
+        )
+        expected_patterns = [
+            "Schedule subscription resumption when failing to establish"
+            " session, Retries: 1",
+            "Schedule subscription resumption when failing to establish"
+            " session, Retries: 2",
+        ]
+        resumption_matched = False
+        start_wait = time.time()
+        timeout = 120
+        for _ in range(60):
+            device_log = self.get_device_log(server_device_id).decode(
+                'utf-8', errors='ignore'
+            )
+            if self.sequenceMatch(device_log, expected_patterns):
+                resumption_matched = True
+                break
+            time.sleep(2)
 
-        # Check the device can resume subscriptions
-        self.logger.info("checking device log for %s", self.get_device_pretty_id(server_device_id))
-        self.assertTrue(self.sequenceMatch(self.get_device_log(server_device_id).decode('utf-8'), [
-            "Schedule subscription resumption when failing to establish session, Retries: 1",
-            "Schedule subscription resumption when failing to establish session, Retries: 2"]),
-            f"SubscriptionResumption test failed: cannot find matching string from device {server_device_id}")
+        self.assertTrue(
+            resumption_matched,
+            "SubscriptionResumption test failed: cannot find matching retry"
+            f" strings from device {server_device_id} within {timeout}s",
+        )
 
 
 if __name__ == "__main__":

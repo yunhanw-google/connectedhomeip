@@ -74,6 +74,81 @@ class CHIPToolActivity :
     if (Intent.ACTION_VIEW == intent?.action) {
       onReturnIntent(intent)
     }
+
+    if (intent?.action == ACTION_COMMISSION_BLE_WIFI) {
+      onCommissionBleWifiIntent(intent)
+    }
+
+    if (intent?.action == ACTION_COMMISSION_BLE_THREAD) {
+      onCommissionBleThreadIntent(intent)
+    }
+  }
+
+  private fun onCommissionBleWifiIntent(intent: Intent) {
+    val discriminator = intent.getIntExtra(EXTRA_DISCRIMINATOR, 3840)
+    val setupPinCode = intent.getLongExtra(EXTRA_SETUP_PIN_CODE, 20202021L)
+    val ssid = intent.getStringExtra(EXTRA_WIFI_SSID)
+    val psk = intent.getStringExtra(EXTRA_WIFI_PASSWORD)
+    val devInfo = CHIPDeviceInfo(discriminator = discriminator, setupPinCode = setupPinCode)
+    this.deviceInfo = devInfo
+    val networkCreds =
+      NetworkCredentialsParcelable.forWiFi(NetworkCredentialsParcelable.WiFiCredentials(ssid, psk))
+    showFragment(DeviceProvisioningFragment.newInstance(devInfo, networkCreds), false)
+  }
+
+  private fun onCommissionBleThreadIntent(intent: Intent) {
+    val discriminator = intent.getIntExtra(EXTRA_DISCRIMINATOR, 3840)
+    val setupPinCode = intent.getLongExtra(EXTRA_SETUP_PIN_CODE, 20202021L)
+    val devInfo = CHIPDeviceInfo(discriminator = discriminator, setupPinCode = setupPinCode)
+    this.deviceInfo = devInfo
+
+    val rawDatasetHex = intent.getStringExtra(EXTRA_THREAD_OPERATIONAL_DATASET)
+    val datasetBytes =
+      if (!rawDatasetHex.isNullOrBlank()) {
+        rawDatasetHex
+          .filterNot { it == ':' || it == ' ' }
+          .chunked(2)
+          .map { it.toUByte(16).toByte() }
+          .toByteArray()
+      } else {
+        val channel = intent.getIntExtra(EXTRA_THREAD_CHANNEL, 15)
+        val panId = intent.getIntExtra(EXTRA_THREAD_PAN_ID, 0x1234)
+        val xpanIdStr =
+          (intent.getStringExtra(EXTRA_THREAD_XPAN_ID) ?: "11:11:11:11:22:22:22:22").filterNot {
+            it == ':' || it == ' '
+          }
+        val masterKeyStr =
+          (intent.getStringExtra(EXTRA_THREAD_MASTER_KEY)
+              ?: "00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF")
+            .filterNot { it == ':' || it == ' ' }
+        val xpanIdBytes = xpanIdStr.chunked(2).map { it.toUByte(16).toByte() }.toByteArray()
+        val masterKeyBytes = masterKeyStr.chunked(2).map { it.toUByte(16).toByte() }.toByteArray()
+
+        var dataset =
+          byteArrayOf(
+            0.toByte(),
+            3.toByte(),
+            0.toByte(),
+            (channel.shr(8) and 0xFF).toByte(),
+            (channel and 0xFF).toByte()
+          )
+        dataset +=
+          byteArrayOf(
+            1.toByte(),
+            2.toByte(),
+            (panId.shr(8) and 0xFF).toByte(),
+            (panId and 0xFF).toByte()
+          )
+        dataset += byteArrayOf(2.toByte(), 8.toByte()) + xpanIdBytes
+        dataset += byteArrayOf(5.toByte(), 16.toByte()) + masterKeyBytes
+        dataset
+      }
+
+    val networkCreds =
+      NetworkCredentialsParcelable.forThread(
+        NetworkCredentialsParcelable.ThreadCredentials(datasetBytes)
+      )
+    showFragment(DeviceProvisioningFragment.newInstance(devInfo, networkCreds), false)
   }
 
   override fun onSaveInstanceState(outState: Bundle) {
@@ -252,5 +327,17 @@ class CHIPToolActivity :
     private const val TAG = "CHIPToolActivity"
     private const val ADDRESS_COMMISSIONING_FRAGMENT_TAG = "address_commissioning_fragment"
     private const val ARG_PROVISION_NETWORK_TYPE = "provision_network_type"
+
+    const val ACTION_COMMISSION_BLE_WIFI = "com.google.chip.chiptool.action.COMMISSION_BLE_WIFI"
+    const val EXTRA_DISCRIMINATOR = "discriminator"
+    const val EXTRA_SETUP_PIN_CODE = "setupPinCode"
+    const val EXTRA_WIFI_SSID = "wifiSsid"
+    const val EXTRA_WIFI_PASSWORD = "wifiPassword"
+    const val ACTION_COMMISSION_BLE_THREAD = "com.google.chip.chiptool.action.COMMISSION_BLE_THREAD"
+    const val EXTRA_THREAD_OPERATIONAL_DATASET = "threadOperationalDataset"
+    const val EXTRA_THREAD_CHANNEL = "threadChannel"
+    const val EXTRA_THREAD_PAN_ID = "threadPanId"
+    const val EXTRA_THREAD_XPAN_ID = "threadXpanId"
+    const val EXTRA_THREAD_MASTER_KEY = "threadMasterKey"
   }
 }

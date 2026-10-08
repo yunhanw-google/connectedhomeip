@@ -53,6 +53,24 @@ logs).
 > Note: The container (as well as the networks) will be preserved for debugging.
 > You may need to clean it by yourself.
 
+### Android emulator tests
+
+Android emulator integration tests (`AndroidBleWiFiMobileDeviceTest`,
+`AndroidBleThreadMobileDeviceTest`) require KVM hardware acceleration
+(`/dev/kvm`) and the `cirque-android-runner:latest` container image.
+
+They are opt-in and excluded from `run_all_tests` by default. To include them:
+
+```bash
+CIRQUE_ENABLE_ANDROID_TESTS=1 scripts/tests/cirque_tests.sh run_all_tests
+```
+
+You can also run them individually by name:
+
+```bash
+scripts/tests/cirque_tests.sh run_test AndroidBleWiFiMobileDeviceTest
+```
+
 ## Run specific test
 
 You can run a single cirque test by:

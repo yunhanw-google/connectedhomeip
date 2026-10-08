@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 import logging
+import os
 import shlex
 import sys
 
@@ -91,10 +92,12 @@ class TestSubscriptionResumption(CHIPVirtualHome):
         server_device_id = server_ids[0]
         # Start SSH server
         self.execute_device_cmd(server_device_id, "service ssh start")
+        gdb_wrapper = 'gdb -batch -return-child-result -q -ex "set pagination off" -ex run -ex "thread apply all bt" --args'
+        if os.environ.get("CIRQUE_COVERAGE") == "1":
+            gdb_wrapper = ""
         self.execute_device_cmd(
             server_device_id,
-            'CHIPCirqueDaemon.py -- run gdb -batch -return-child-result -q -ex "set pagination off" -ex run '
-            f'-ex "thread apply all bt" --args {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {TEST_DISCRIMINATOR}')
+            f'CHIPCirqueDaemon.py -- run {gdb_wrapper} {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {TEST_DISCRIMINATOR}')
 
         self.reset_thread_devices(server_ids)
 

@@ -98,22 +98,27 @@ class BarcodeFragment : Fragment() {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(requireActivity())
     cameraProviderFuture.addListener(
       {
+        val currentBinding = _binding
+        if (currentBinding == null || !isAdded) {
+          return@addListener
+        }
         val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-        val metrics = DisplayMetrics().also { binding.cameraView.display?.getRealMetrics(it) }
+        val display = currentBinding.cameraView.display ?: return@addListener
+        val metrics = DisplayMetrics().also { display.getRealMetrics(it) }
         val screenAspectRatio = aspectRatio(metrics.widthPixels, metrics.heightPixels)
         // Preview
         val preview: Preview =
           Preview.Builder()
             .setTargetAspectRatio(screenAspectRatio)
-            .setTargetRotation(binding.cameraView.display.rotation)
+            .setTargetRotation(display.rotation)
             .build()
-        preview.setSurfaceProvider(binding.cameraView.surfaceProvider)
+        preview.setSurfaceProvider(currentBinding.cameraView.surfaceProvider)
 
         // Setup barcode scanner
         val imageAnalysis =
           ImageAnalysis.Builder()
             .setTargetAspectRatio(screenAspectRatio)
-            .setTargetRotation(binding.cameraView.display.rotation)
+            .setTargetRotation(display.rotation)
             .build()
         val cameraExecutor = Executors.newSingleThreadExecutor()
         val barcodeScanner: BarcodeScanner = BarcodeScanning.getClient()
