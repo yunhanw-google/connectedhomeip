@@ -30,16 +30,35 @@ env
 cd "$ROOT_PATH"
 
 echo "Ensure submodules for Linux builds are checked out"
-./scripts/checkout_submodules.py --allow-changing-global-git-config --shallow --platform linux
+if [ "${GITHUB_ACTION_RUN:-0}" != "1" ]; then
+    ./scripts/checkout_submodules.py --allow-changing-global-git-config --shallow --platform linux
+fi
 
 echo "Setup build environment"
 source "./scripts/activate.sh"
 
-echo "Build: GN configure"
-gn --root="$CHIP_ROOT" gen --check --fail-on-unused-args out/debug --args='target_os="all" chip_logging_backend="stdio" chip_build_tests=false chip_enable_wifi=false chip_im_force_fabric_quota_check=true enable_default_builds=false enable_host_gcc_build=true enable_standalone_chip_tool_build=true enable_linux_lit_icd_app_build=true chip_device_config_enable_joint_fabric=true'
+gn_args='target_os="all" chip_logging_backend="stdio" chip_build_tests=false chip_enable_wifi=false chip_enable_ble=true chip_config_network_layer_ble=true chip_im_force_fabric_quota_check=true enable_default_builds=false enable_host_gcc_build=true enable_standalone_chip_tool_build=false enable_linux_lit_icd_app_build=true chip_device_config_enable_joint_fabric=true'
 
-echo "Build: Ninja build"
-time ninja -C out/debug all check
+if command -v ccache >/dev/null 2>&1; then
+    export CCACHE_DIR="${CCACHE_DIR:-$CHIP_ROOT/.ccache}"
+    export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-2G}"
+    export CCACHE_COMPILERCHECK="content"
+    export CCACHE_SLOPPINESS="include_file_mtime,time_macros"
+    gn_args+=" pw_command_launcher=\"ccache\""
+fi
+
+echo "Build: GN configure"
+gn --root="$CHIP_ROOT" gen --check --fail-on-unused-args out/debug --args="$gn_args"
+
+echo "Build: Ninja build (only the targets needed for Cirque tests)"
+time ninja -C out/debug \
+    linux_x64_gcc/chip-echo-requester \
+    linux_x64_gcc/chip-echo-responder \
+    linux_x64_gcc/chip-im-initiator \
+    linux_x64_gcc/chip-im-responder \
+    linux_x64_gcc/gen/src/controller/python/matter-controller-wheels.pw_pystamp \
+    linux_lit_icd_app
 
 echo "Build: Build all-clusters-app which has different configs than some other samples above."
-./scripts/examples/gn_build_example.sh examples/all-clusters-app/linux/ out/debug/standalone chip_inet_config_enable_ipv4=false 'chip_logging_backend="stdio"' 'chip_enable_wifi=false' 'chip_build_tests=false' 'chip_im_force_fabric_quota_check=true'
+./scripts/examples/gn_build_example.sh examples/all-clusters-app/linux/ out/debug/standalone chip_inet_config_enable_ipv4=false 'chip_logging_backend="stdio"' 'chip_enable_wifi=true' 'chip_enable_ble=true' 'chip_config_network_layer_ble=true' 'chip_build_tests=false' 'chip_im_force_fabric_quota_check=true' 'chip_support_thread_meshcop=false'
+

@@ -74,6 +74,26 @@ class CHIPToolActivity :
     if (Intent.ACTION_VIEW == intent?.action) {
       onReturnIntent(intent)
     }
+
+    if (intent?.action == ACTION_COMMISSION_BLE_WIFI) {
+      onCommissionBleWifiIntent(intent)
+    }
+  }
+
+  private fun onCommissionBleWifiIntent(intent: Intent) {
+    val discriminator = intent.getIntExtra(EXTRA_DISCRIMINATOR, 3840)
+    val setupPinCode = intent.getLongExtra(EXTRA_SETUP_PIN_CODE, 20202021L)
+    val ssid = intent.getStringExtra(EXTRA_WIFI_SSID)
+    val psk = intent.getStringExtra(EXTRA_WIFI_PASSWORD)
+    val devInfo = CHIPDeviceInfo(
+      discriminator = discriminator,
+      setupPinCode = setupPinCode
+    )
+    this.deviceInfo = devInfo
+    val networkCreds = NetworkCredentialsParcelable.forWiFi(
+      NetworkCredentialsParcelable.WiFiCredentials(ssid, psk)
+    )
+    showFragment(DeviceProvisioningFragment.newInstance(devInfo, networkCreds), false)
   }
 
   override fun onSaveInstanceState(outState: Bundle) {
@@ -252,5 +272,11 @@ class CHIPToolActivity :
     private const val TAG = "CHIPToolActivity"
     private const val ADDRESS_COMMISSIONING_FRAGMENT_TAG = "address_commissioning_fragment"
     private const val ARG_PROVISION_NETWORK_TYPE = "provision_network_type"
+
+    const val ACTION_COMMISSION_BLE_WIFI = "com.google.chip.chiptool.action.COMMISSION_BLE_WIFI"
+    const val EXTRA_DISCRIMINATOR = "discriminator"
+    const val EXTRA_SETUP_PIN_CODE = "setupPinCode"
+    const val EXTRA_WIFI_SSID = "wifiSsid"
+    const val EXTRA_WIFI_PASSWORD = "wifiPassword"
   }
 }

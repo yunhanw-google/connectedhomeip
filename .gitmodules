@@ -36,8 +36,8 @@
 	platforms = linux
 [submodule "cirque"]
 	path = third_party/cirque/repo
-	url = https://github.com/openweave/cirque.git
-	branch  = master
+	url = https://github.com/yunhanw-google/cirque.git
+	branch  = feature/virtual-bt-controller-tcp
 	platforms = linux
 [submodule "nanopb"]
 	path = third_party/nanopb/repo

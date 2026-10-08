@@ -87,8 +87,13 @@ class CHIPVirtualHome:
             traceback.print_exc(file=sys.stderr)
         return test_ret
 
-    def query_api(self, end_point, args=[], binary=False):
-        ret = requests.get(self._build_request_url(end_point, args))
+    def query_api(self, end_point, args=[], binary=False, params=None):
+        if isinstance(binary, dict) and params is None:
+            params = binary
+            binary = False
+        ret = requests.get(
+            self._build_request_url(end_point, args), params=params
+        )
         if binary:
             return ret.content
         return ret.json()
@@ -275,7 +280,7 @@ class CHIPVirtualHome:
             if self.sequenceMatch(self.get_device_log(device_id).decode(), [pattern]):
                 return True
             if time.time() < due:
-                time.sleep(1)
+                time.sleep(0.2)
             else:
                 break
         return False
@@ -286,16 +291,34 @@ class CHIPVirtualHome:
         assert(Not)Equal
         python unittest style functions that raise exceptions when condition not met
         '''
-        if exp is not True:
+        if not bool(exp):
             if note:
                 self.logger.error(note)
-            raise AssertionError
+            raise AssertionError(note or "Expected True but got {}".format(exp))
 
     def assertFalse(self, exp, note=None):
-        if exp is not False:
+        if bool(exp):
             if note:
                 self.logger.error(note)
-            raise AssertionError
+            raise AssertionError(
+                note or "Expected False but got {}".format(exp)
+            )
+
+    def assertIn(self, member, container, note=None):
+        if member not in container:
+            if note:
+                self.logger.error(note)
+            raise AssertionError(
+                note or "Expected {} in {}".format(member, container)
+            )
+
+    def assertNotIn(self, member, container, note=None):
+        if member in container:
+            if note:
+                self.logger.error(note)
+            raise AssertionError(
+                note or "Expected {} not in {}".format(member, container)
+            )
 
     def assertEqual(self, val1, val2, note=None):
         if val1 != val2:
@@ -349,11 +372,20 @@ class CHIPVirtualHome:
 
         self.device_ids = list(self.device_config)
         self.non_ap_devices = [device for device in self.device_config.values()
-                               if device['type'] != 'wifi_ap']
-        self.thread_devices = [device for device in self.device_config.values()
-                               if device['capability'].get('Thread', None) is not None]
+                               if device['type'] not in ('wifi_ap', 'APWifi')]
+        self.thread_devices = [
+            device for device in self.device_config.values()
+            if (
+                isinstance(device.get('capability'), dict)
+                and device['capability'].get('Thread') is not None
+            )
+            or (
+                isinstance(device.get('capability'), (list, tuple, set))
+                and 'Thread' in device['capability']
+            )
+        ]
         self.ap_devices = [device for device in self.device_config.values()
-                           if device['type'] == 'wifi_ap']
+                           if device['type'] in ('wifi_ap', 'APWifi')]
 
     def save_device_logs(self):
         timestamp = int(time.time())

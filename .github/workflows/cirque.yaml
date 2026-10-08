@@ -55,10 +55,14 @@ jobs:
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Maximize runner disk
               uses: ./.github/actions/maximize-runner-disk
+              with:
+                # The Android emulator steps below use the runner's
+                # preinstalled SDK, NDK and cmdline-tools from ANDROID_HOME.
+                prune-android: "false"
             - name: Checkout submodules
               uses: ./.github/actions/checkout-submodules
               with:
-                platform: linux
+                platform: linux,android
 
             # TODO: Is what's being cached here actually compatible with a regular bootstrap?
             - name: Bootstrap Cache
@@ -107,6 +111,15 @@ jobs:
                   cond: ${{ github.event.pull_request.number == '' }}
                   if_true: "${{ github.sha }}"
                   if_false: "pull-${{ github.event.pull_request.number }}"
+            - name: Cirque Build Cache
+              uses: actions/cache@v4
+              with:
+                path: |
+                  .ccache
+                  .gradle-cache
+                key: cirque-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**', 'third_party/android_deps/**') }}
+                restore-keys: cirque-build-cache-${{ runner.os }}-
+
             - name: Build Binaries
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
@@ -114,15 +127,76 @@ jobs:
                        git config --global --add safe.directory '*' \
                        && scripts/build/gn_gen_cirque.sh \
                       "
+            - name: Build Android x64 CHIPTool APK
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && export CCACHE_MAXSIZE=\"2G\" \
+                       && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
+                       && if command -v ccache >/dev/null 2>&1; then \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-chip-tool build'; \
+                          else \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-chip-tool build'; \
+                          fi \
+                       && chown -R $(id -u):$(id -g) out/android-x64-chip-tool examples/android/CHIPTool \
+                      "
+            - name: Setup Android Emulator and AVD
+              run: |
+                  echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+                  echo "ANDROID_NDK_LATEST_HOME=${ANDROID_NDK_LATEST_HOME:-<unset>}"
+                  for p in "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+                           "${ANDROID_NDK_LATEST_HOME:-}"; do
+                    if [ ! -e "$p" ]; then
+                      echo "::error::Missing Android SDK/NDK path: '$p'"
+                      exit 1
+                    fi
+                  done
+                  export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-}"
+                  ./third_party/cirque/repo/cirque/virtual_bt/android/build_pty_bridge.sh
+                  docker build -t cirque-android-runner:latest \
+                    -f third_party/cirque/repo/cirque/nodes/Dockerfile.android_runner \
+                    third_party/cirque/repo/cirque/nodes
+                  if [ -e /dev/kvm ]; then
+                    rule='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
+                    echo "$rule" | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                    sudo udevadm control --reload-rules
+                    sudo udevadm trigger --name-match=kvm
+                    sudo chmod 666 /dev/kvm || true
+                  fi
+                  SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+                  AVDMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
+                  yes | "$SDKMANAGER" --licenses > /dev/null || true
+                  "$SDKMANAGER" --install "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64"
+                  # avdmanager does not take its AVD directory from $HOME;
+                  # pin it to the path the Run Tests step mounts.
+                  export ANDROID_AVD_HOME="${HOME}/.android/avd"
+                  mkdir -p "$ANDROID_AVD_HOME"
+                  echo no | "$AVDMANAGER" create avd --force --name Pixel_6_API_34 \
+                    --package "system-images;android-34;google_apis;x86_64" --device pixel_6
+                  test -f "$ANDROID_AVD_HOME/Pixel_6_API_34.ini"
+                  test -d "$ANDROID_AVD_HOME/Pixel_6_API_34.avd"
+                  "$ANDROID_HOME/emulator/emulator" -version 2>/dev/null | head -n 3 || true
+                  egrep -c '(vmx|svm)' /proc/cpuinfo || true
+                  nproc
+                  free -m
+                  egrep 'hw.cpu.ncore|hw.ramSize|hw.gpu.mode|image.sysdir' "$ANDROID_AVD_HOME/Pixel_6_API_34.avd/config.ini" || true
             - name: Run Tests
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
                      --env LOG_DIR=/tmp/cirque_test_output \
                      --env CLEANUP_DOCKER_FOR_CI=1 \
                      --env GITHUB_ACTION_RUN=1 \
+                     --env CIRQUE_ENABLE_ANDROID_TESTS=1 \
+                     --env ANDROID_HOME="${ANDROID_HOME}" \
+                     --env ANDROID_SDK_ROOT="${ANDROID_HOME}" \
+                     --env ANDROID_AVD_HOME="${HOME}/.android/avd" \
                      --privileged \
                      --volume /tmp:/tmp \
                      --volume /dev/pts:/dev/pts \
+                     --volume "${ANDROID_HOME}:${ANDROID_HOME}:ro" \
+                     --volume "${HOME}/.android/avd:${HOME}/.android/avd:rw" \
                      -- sh -c " \
                        git config --global --add safe.directory '*' \
                        && scripts/tests/cirque_tests.sh run_all_tests \
