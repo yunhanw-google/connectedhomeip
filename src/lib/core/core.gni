@@ -151,6 +151,12 @@ declare_args() {
 
   # enable UniqueID support in the descriptor cluster.
   chip_enable_endpoint_unique_id = false
+
+  # TEST-ONLY: write the keys of each established secure session (PASE and
+  # CASE) to the file named by the CHIP_SESSION_KEYLOG_FILE environment
+  # variable, so test harnesses can decrypt captured Matter messages. Never
+  # enable this in a product build. See src/transport/SessionKeylog.h.
+  chip_enable_session_keylog = false
 }
 
 if (chip_target_style == "") {

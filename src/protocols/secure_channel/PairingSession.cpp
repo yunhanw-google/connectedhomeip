@@ -25,6 +25,7 @@
 #include <lib/support/TypeTraits.h>
 #include <platform/CHIPDeviceEvent.h>
 #include <platform/PlatformManager.h>
+#include <transport/SessionKeylog.h>
 #include <transport/SessionManager.h>
 
 namespace chip {
@@ -55,6 +56,10 @@ CHIP_ERROR PairingSession::ActivateSecureSession(const Transport::PeerAddress & 
 
     ChipLogDetail(Inet, "New secure session activated for device " ChipLogFormatScopedNodeId ", LSID:%d PSID:%d!",
                   ChipLogValueScopedNodeId(GetPeer()), secureSession->GetLocalSessionId(), peerSessionId);
+
+#if CHIP_CONFIG_SESSION_KEYLOG
+    Transport::LogSessionKeys(*secureSession);
+#endif // CHIP_CONFIG_SESSION_KEYLOG
 
     return CHIP_NO_ERROR;
 }

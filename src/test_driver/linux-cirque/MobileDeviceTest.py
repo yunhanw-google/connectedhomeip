@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 import logging
+import os
 import shlex
 import sys
 
@@ -78,11 +79,14 @@ class TestPythonController(CHIPVirtualHome):
         req_ids = [device['id'] for device in self.non_ap_devices
                    if device['type'] == 'MobileDevice']
 
+        gdb_wrapper = 'gdb -batch -return-child-result -q -ex "set pagination off" -ex run -ex "thread apply all bt" --args'
+        if os.environ.get("CIRQUE_COVERAGE") == "1":
+            gdb_wrapper = ""
+
         for server in server_ids:
             self.execute_device_cmd(
                 server,
-                f'CHIPCirqueDaemon.py -- run gdb -batch -return-child-result -q -ex "set pagination off" -ex run '
-                f'-ex "thread apply all bt" --args {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {TEST_DISCRIMINATOR}')
+                f'CHIPCirqueDaemon.py -- run {gdb_wrapper} {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {TEST_DISCRIMINATOR}')
 
         self.reset_thread_devices(server_ids)
 

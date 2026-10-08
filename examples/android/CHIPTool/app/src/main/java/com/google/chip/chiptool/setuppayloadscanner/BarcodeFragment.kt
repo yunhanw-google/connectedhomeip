@@ -44,6 +44,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
@@ -56,6 +57,10 @@ class BarcodeFragment : Fragment() {
   private var _binding: BarcodeFragmentBinding? = null
   private val binding
     get() = _binding!!
+
+  private var cameraProvider: ProcessCameraProvider? = null
+  private var cameraExecutor: ExecutorService? = null
+  private var barcodeScanner: BarcodeScanner? = null
 
   private fun aspectRatio(width: Int, height: Int): Int {
     val previewRatio = max(width, height).toDouble() / min(width, height)
@@ -75,7 +80,7 @@ class BarcodeFragment : Fragment() {
   override fun onCreateView(
     inflater: LayoutInflater,
     container: ViewGroup?,
-    savedInstanceState: Bundle?
+    savedInstanceState: Bundle?,
   ): View {
     _binding = BarcodeFragmentBinding.inflate(inflater, container, false)
 
@@ -89,6 +94,12 @@ class BarcodeFragment : Fragment() {
   }
 
   override fun onDestroyView() {
+    cameraProvider?.unbindAll()
+    cameraProvider = null
+    barcodeScanner?.close()
+    barcodeScanner = null
+    cameraExecutor?.shutdownNow()
+    cameraExecutor = null
     super.onDestroyView()
     _binding = null
   }
@@ -98,41 +109,47 @@ class BarcodeFragment : Fragment() {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(requireActivity())
     cameraProviderFuture.addListener(
       {
-        val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-        val metrics = DisplayMetrics().also { binding.cameraView.display?.getRealMetrics(it) }
+        val currentBinding = _binding
+        if (currentBinding == null || !isAdded) {
+          return@addListener
+        }
+        val provider: ProcessCameraProvider = cameraProviderFuture.get()
+        cameraProvider = provider
+        val display = currentBinding.cameraView.display ?: return@addListener
+        val metrics = DisplayMetrics().also { display.getRealMetrics(it) }
         val screenAspectRatio = aspectRatio(metrics.widthPixels, metrics.heightPixels)
         // Preview
         val preview: Preview =
           Preview.Builder()
             .setTargetAspectRatio(screenAspectRatio)
-            .setTargetRotation(binding.cameraView.display.rotation)
+            .setTargetRotation(display.rotation)
             .build()
-        preview.setSurfaceProvider(binding.cameraView.surfaceProvider)
+        preview.setSurfaceProvider(currentBinding.cameraView.surfaceProvider)
 
         // Setup barcode scanner
         val imageAnalysis =
           ImageAnalysis.Builder()
             .setTargetAspectRatio(screenAspectRatio)
-            .setTargetRotation(binding.cameraView.display.rotation)
+            .setTargetRotation(display.rotation)
             .build()
-        val cameraExecutor = Executors.newSingleThreadExecutor()
-        val barcodeScanner: BarcodeScanner = BarcodeScanning.getClient()
-        imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-          processImageProxy(barcodeScanner, imageProxy)
-        }
+        val executor = Executors.newSingleThreadExecutor()
+        cameraExecutor = executor
+        val scanner: BarcodeScanner = BarcodeScanning.getClient()
+        barcodeScanner = scanner
+        imageAnalysis.setAnalyzer(executor) { imageProxy -> processImageProxy(scanner, imageProxy) }
         // Select back camera as a default
         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
         try {
           // Unbind use cases before rebinding
-          cameraProvider.unbindAll()
+          provider.unbindAll()
 
-          // Bind use cases to camera
-          cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+          // Bind use cases to viewLifecycleOwner so CameraX stops when the view is replaced
+          provider.bindToLifecycle(viewLifecycleOwner, cameraSelector, preview, imageAnalysis)
         } catch (exc: Exception) {
           Log.e(TAG, "Use case binding failed", exc)
         }
       },
-      ContextCompat.getMainExecutor(requireActivity())
+      ContextCompat.getMainExecutor(requireActivity()),
     )
 
     // workaround: can not use gms to scan the code in China, added a EditText to debug
@@ -166,7 +183,7 @@ class BarcodeFragment : Fragment() {
   override fun onRequestPermissionsResult(
     requestCode: Int,
     permissions: Array<String>,
-    grantResults: IntArray
+    grantResults: IntArray,
   ) {
     if (requestCode == REQUEST_CODE_CAMERA_PERMISSION) {
       if (grantResults.size == 1 && grantResults[0] == PackageManager.PERMISSION_DENIED) {

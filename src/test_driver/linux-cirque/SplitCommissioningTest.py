@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 import logging
+import os
 import shlex
 import sys
 
@@ -88,11 +89,15 @@ class TestSplitCommissioning(CHIPVirtualHome):
         req_ids = [device['id'] for device in self.non_ap_devices
                    if device['type'] == 'MobileDevice']
 
+        gdb_wrapper = 'gdb -return-child-result -q -ex "set pagination off" -ex run -ex "bt 25" --args'
+        if os.environ.get("CIRQUE_COVERAGE") == "1":
+            gdb_wrapper = ""
+
         for server in server_ids:
             self.execute_device_cmd(
                 server,
-                'CHIPCirqueDaemon.py -- run gdb -return-child-result -q -ex "set pagination off" -ex run -ex "bt 25" '
-                f'--args {CHIP_ALL_CLUSTERS_APP_ESC} --thread')
+                f'CHIPCirqueDaemon.py -- run {gdb_wrapper} '
+                f'{CHIP_ALL_CLUSTERS_APP_ESC} --thread')
 
         self.reset_thread_devices(server_ids)
 

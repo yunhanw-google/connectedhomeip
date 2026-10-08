@@ -26,8 +26,34 @@ CHIP_REPO_STR = str(CHIP_REPO_PATH)
 CONTROLLER_TEST_SCRIPTS_DIR_PATH = CHIP_REPO_PATH / "src/controller/python/tests/scripts"
 MATTER_DEVELOPMENT_PAA_ROOT_CERTS_ESC = shlex.quote(str(CHIP_REPO_PATH / "credentials/development/paa-root-certs"))
 
+
+def _resolve_binary_path(*candidate_rel_paths):
+    for rel_path in candidate_rel_paths:
+        candidate = CHIP_REPO_PATH / rel_path
+        if candidate.is_file():
+            return candidate
+    return CHIP_REPO_PATH / candidate_rel_paths[0]
+
+
+def _resolve_binary_esc(*candidate_rel_paths):
+    return shlex.quote(str(_resolve_binary_path(*candidate_rel_paths)))
+
+
 CHIP_ALL_CLUSTERS_APP_FRAGMENT = "standalone/chip-all-clusters-app"
 CHIP_ALL_CLUSTERS_APP_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug" / CHIP_ALL_CLUSTERS_APP_FRAGMENT))
+CHIP_ALL_CLUSTERS_APP_PATH = _resolve_binary_path(
+    "out/debug" / Path(CHIP_ALL_CLUSTERS_APP_FRAGMENT),
+    "out/linux-x64-all-clusters/chip-all-clusters-app",
+    "out/standalone/chip-all-clusters-app",
+)
+CHIP_ALL_CLUSTERS_APP_ESC = shlex.quote(str(CHIP_ALL_CLUSTERS_APP_PATH))
+CHIP_TOOL_APK_PATH = _resolve_binary_path(
+    "out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk",
+    "examples/android/CHIPTool/app/build/outputs/apk/debug/app-debug.apk",
+    "out/android-arm64-chip-tool/outputs/apk/debug/app-debug.apk",
+)
+CHIP_TOOL_APK_ESC = shlex.quote(str(CHIP_TOOL_APK_PATH))
+
 CHIP_ECHO_REQUESTER_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/linux_x64_gcc/chip-echo-requester"))
 CHIP_ECHO_RESPONDER_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/linux_x64_gcc/chip-echo-responder"))
 CHIP_IM_INITIATOR_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/linux_x64_gcc/chip-im-initiator"))
@@ -37,7 +63,12 @@ CHIP_TOOL_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/standalone/chip-tool
 LIT_ICD_APP_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/lit_icd/lit-icd-app"))
 
 MATTER_CONTROLLER_WHEEL_DIR_PATH = CHIP_REPO_PATH / "out/debug/linux_x64_gcc/obj/src/controller/python/matter-controller-wheels"
-MATTER_CONTROLLER_WHEELS = ["matter_clusters", "matter_core", "matter_repl"]
+MATTER_CONTROLLER_WHEELS = ["matter_clusters", "matter_core"]
 MATTER_CONTROLLER_INSTALL_WHEELS = (
-    f"pip3 install --break-system-packages --find-links {shlex.quote(str(MATTER_CONTROLLER_WHEEL_DIR_PATH))} "
-    f"{' '.join(MATTER_CONTROLLER_WHEELS)}")
+    'python3 -c "import matter.ChipDeviceCtrl, matter.clusters" 2>/dev/null || '
+    'pip3 install --break-system-packages --no-cache-dir --find-links '
+    f"{shlex.quote(str(MATTER_CONTROLLER_WHEEL_DIR_PATH))} "
+    f"{' '.join(MATTER_CONTROLLER_WHEELS)}"
+)
+
+

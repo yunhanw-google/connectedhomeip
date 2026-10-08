@@ -15,6 +15,8 @@
 # limitations under the License.
 
 import logging
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -50,6 +52,41 @@ class CommandResponse:
     error_message: str = ""
 
 
+# Global registry of spawned child processes for graceful termination
+_SPAWNED_CHILDREN: list[subprocess.Popen] = []
+
+
+def _cleanup_children(signum=None, frame=None):
+    """Gracefully forwards SIGTERM to all child processes and waits for exit."""
+    log.info("CHIPCirqueDaemon terminating; forwarding SIGTERM to %d children...", len(_SPAWNED_CHILDREN))
+    alive = []
+    for proc in _SPAWNED_CHILDREN:
+        if proc.poll() is None:
+            alive.append(proc)
+            try:
+                proc.terminate()
+            except Exception as ex:
+                log.debug("Error sending SIGTERM to child %s: %s", proc.pid, ex)
+
+    # Wait up to 5 seconds for children to flush .gcda and exit cleanly
+    deadline = time.time() + 5.0
+    while alive and time.time() < deadline:
+        alive = [p for p in alive if p.poll() is None]
+        if alive:
+            time.sleep(0.1)
+
+    # Fallback: SIGKILL any remaining children that didn't terminate
+    for proc in alive:
+        try:
+            log.warning("Child PID %s did not terminate in time; killing", proc.pid)
+            proc.kill()
+        except Exception:
+            pass
+
+    if signum is not None:
+        sys.exit(0)
+
+
 class ShellCommand:
     def __init__(self, args=None):
         self._args = args
@@ -59,9 +96,10 @@ class ShellCommand:
             return CommandResponse(CommandStatus.INVALID_ARGUMENT, "Cannot spwan background process")
         log.info("Will run command: %s", self._args)
         try:
-            # As the command will be execued in background, we won't return the exit code of the program.
-            subprocess.Popen(
+            # As the command will be execued in background, we track the child so we can forward SIGTERM.
+            proc = subprocess.Popen(
                 self._args, stdout=sys.stdout, stderr=sys.stderr)
+            _SPAWNED_CHILDREN.append(proc)
             return CommandResponse(CommandStatus.SUCCESS)
         except Exception as ex:
             return CommandResponse(CommandStatus.FAILURE, f"Failed to run command: {ex}")
@@ -89,21 +127,27 @@ def CommandFactory(args):
 
 
 def ServerMain(args):
+    signal.signal(signal.SIGTERM, _cleanup_children)
+    signal.signal(signal.SIGINT, _cleanup_children)
+
     extraOptions = {
         "otbr-agent": ShellCommand(["otbr-agent", "-I", "wpan0", "-B", "eth0", "spinel+hdlc+uart:///dev/ttyUSB0"])
     }
 
-    with Listener(SERVER_ADDRESS) as listener:
-        log.info("Server running on %s", SERVER_ADDRESS)
-        for extraOption in args:
-            cmd = extraOptions.get(extraOption, InvalidCommand())
-            cmd()
+    try:
+        with Listener(SERVER_ADDRESS) as listener:
+            log.info("Server running on %s", SERVER_ADDRESS)
+            for extraOption in args:
+                cmd = extraOptions.get(extraOption, InvalidCommand())
+                cmd()
 
-        while True:
-            with listener.accept() as conn:
-                log.info("Received connection")
-                cmd = CommandFactory(conn.recv())
-                conn.send(cmd())
+            while True:
+                with listener.accept() as conn:
+                    log.info("Received connection")
+                    cmd = CommandFactory(conn.recv())
+                    conn.send(cmd())
+    finally:
+        _cleanup_children()
 
 
 def ClientMain(args):

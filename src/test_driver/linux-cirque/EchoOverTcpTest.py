@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 import logging
+import os
 import sys
 
 from helper.CHIPTestBase import CHIPVirtualHome
@@ -78,10 +79,14 @@ class TestEchoOverTCP(CHIPVirtualHome):
 
         req_device_id = req_ids[0]
 
+        gdb_wrapper = "gdb -batch -return-child-result -q -ex run -ex bt --args"
+        if os.environ.get("CIRQUE_COVERAGE") == "1":
+            gdb_wrapper = ""
+
         for _id in resp_ids:
             self.execute_device_cmd(
                 _id,
-                f"CHIPCirqueDaemon.py -- run gdb -batch -return-child-result -q -ex run -ex bt --args {CHIP_ECHO_RESPONDER_ESC} --tcp")
+                f"CHIPCirqueDaemon.py -- run {gdb_wrapper} {CHIP_ECHO_RESPONDER_ESC} --tcp".strip())
 
         command = f"gdb -return-child-result -q -ex run -ex bt --args {CHIP_ECHO_REQUESTER_ESC} {{}} --tcp"
 
