@@ -317,4 +317,21 @@
 
     <string name="icd_btn_text">Intermittently Connected Device</string>
     <string name="icd_registration_completed">ICD device registration completed, How to trigger to switch to Active Mode : %1$s</string>
+
+    <!-- Device Hub -->
+    <string name="hub_title">Device Hub</string>
+    <string name="hub_entry_btn">Device Hub</string>
+    <string name="hub_connect_all">Connect All</string>
+    <string name="hub_cancel">Cancel</string>
+    <string name="hub_connect">Connect</string>
+    <string name="hub_status_live">Live</string>
+    <string name="hub_status_connecting">Connecting…</string>
+    <string name="hub_status_recovering">Still trying…</string>
+    <string name="hub_status_not_connected">Not connected</string>
+    <string name="hub_voice_hint">Ask or tell your home…</string>
+    <string name="hub_voice_send">Send</string>
+    <string name="hub_ask_room">Ask</string>
+    <string name="hub_all_off">All off</string>
+    <string name="hub_confirm_body">Voice asked for a sensitive action.</string>
 </resources>
+

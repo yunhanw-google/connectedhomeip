@@ -62,6 +62,7 @@ object ChipClient {
             .setEnableServerInteractions(true)
             .build()
         )
+      dnssdStarted = true
 
       // Set delegate for attestation trust store for device attestation verifier.
       // It will replace the default attestation trust store.
@@ -103,16 +104,18 @@ object ChipClient {
           PreferencesConfigurationManager(context),
           NsdManagerServiceResolver(
             context,
-            NsdManagerServiceResolver.NsdManagerResolverAvailState()
+            NsdManagerServiceResolver.NsdManagerResolverAvailState(),
           ),
           NsdManagerServiceBrowser(context),
           ChipMdnsCallbackImpl(),
-          DiagnosticDataProviderImpl(context)
+          DiagnosticDataProviderImpl(context),
         )
     }
 
     return androidPlatform
   }
+
+  @Volatile private var dnssdStarted = false
 
   fun setICDCheckInCallback(callback: ICDCheckInCallback) {
     icdCheckInCallback = callback
@@ -121,8 +124,9 @@ object ChipClient {
   fun startDnssd(context: Context) {
     if (!this::chipDeviceController.isInitialized) {
       getDeviceController(context)
-    } else {
+    } else if (!dnssdStarted) {
       chipDeviceController.startDnssd()
+      dnssdStarted = true
     }
   }
 
@@ -131,6 +135,7 @@ object ChipClient {
       getDeviceController(context)
     }
     chipDeviceController.stopDnssd()
+    dnssdStarted = false
   }
 
   /**
@@ -145,22 +150,26 @@ object ChipClient {
     // to be
     // worse than the memory leak that was introduced.
     return suspendCancellableCoroutine { continuation ->
-      getDeviceController(context)
-        .getConnectedDevicePointer(
-          nodeId,
-          object : GetConnectedDeviceCallback {
-            override fun onDeviceConnected(devicePointer: Long) {
-              Log.d(TAG, "Got connected device pointer")
-              continuation.resume(devicePointer)
-            }
-
-            override fun onConnectionFailure(nodeId: Long, error: Exception) {
-              val errorMessage = "Unable to get connected device with nodeId $nodeId"
-              Log.e(TAG, errorMessage, error)
-              continuation.resumeWithException(IllegalStateException(errorMessage))
-            }
+      val controller = getDeviceController(context)
+      if (!dnssdStarted) {
+        controller.startDnssd()
+        dnssdStarted = true
+      }
+      controller.getConnectedDevicePointer(
+        nodeId,
+        object : GetConnectedDeviceCallback {
+          override fun onDeviceConnected(devicePointer: Long) {
+            Log.d(TAG, "Got connected device pointer")
+            continuation.resume(devicePointer)
           }
-        )
+
+          override fun onConnectionFailure(nodeId: Long, error: Exception) {
+            val errorMessage = "Unable to get connected device with nodeId $nodeId"
+            Log.e(TAG, errorMessage, error)
+            continuation.resumeWithException(IllegalStateException(errorMessage))
+          }
+        },
+      )
     }
   }
 }

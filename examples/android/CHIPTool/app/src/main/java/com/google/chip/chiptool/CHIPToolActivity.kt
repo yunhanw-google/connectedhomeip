@@ -28,6 +28,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import com.google.chip.chiptool.devicemanagement.DeviceHubFragment
+import com.google.chip.chiptool.devicemanagement.PostCommissioningDialogHelper
 import com.google.chip.chiptool.provisioning.AddressCommissioningFragment
 import com.google.chip.chiptool.provisioning.DeviceProvisioningFragment
 import com.google.chip.chiptool.provisioning.EnterNetworkFragment
@@ -37,6 +39,7 @@ import com.google.chip.chiptool.setuppayloadscanner.CHIPDeviceDetailsFragment
 import com.google.chip.chiptool.setuppayloadscanner.CHIPDeviceInfo
 import com.google.chip.chiptool.setuppayloadscanner.CHIPLedgerDetailsFragment
 import com.google.chip.chiptool.util.DeviceIdUtil
+import com.google.chip.chiptool.voice.HubConnectionManager
 import matter.onboardingpayload.OnboardingPayload
 import matter.onboardingpayload.OnboardingPayloadParser
 import matter.onboardingpayload.UnrecognizedQrCodeException
@@ -56,10 +59,22 @@ class CHIPToolActivity :
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+      setShowWhenLocked(true)
+      setTurnScreenOn(true)
+    }
+    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     setContentView(R.layout.top_activity)
 
+    ChipClient.startDnssd(this)
+
     if (savedInstanceState == null) {
-      val fragment = SelectActionFragment.newInstance()
+      val fragment =
+        if (intent?.getBooleanExtra("open_scan", false) == true) {
+          BarcodeFragment.newInstance()
+        } else {
+          SelectActionFragment.newInstance()
+        }
       supportFragmentManager
         .beginTransaction()
         .add(R.id.nav_host_fragment, fragment, fragment.javaClass.simpleName)
@@ -73,6 +88,14 @@ class CHIPToolActivity :
 
     if (Intent.ACTION_VIEW == intent?.action) {
       onReturnIntent(intent)
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    if (intent.getBooleanExtra("open_scan", false)) {
+      showFragment(BarcodeFragment.newInstance(), false)
     }
   }
 
@@ -96,13 +119,42 @@ class CHIPToolActivity :
   }
 
   override fun onCommissioningComplete(code: Long, nodeId: Long) {
-    runOnUiThread {
-      Toast.makeText(this, getString(R.string.commissioning_completed, code), Toast.LENGTH_SHORT)
-        .show()
-    }
     DeviceIdUtil.setCommissionedNodeId(this, nodeId)
     ChipClient.getDeviceController(this).close()
-    showFragment(SelectActionFragment.newInstance(), false)
+
+    if (code == 0L && nodeId > 0L) {
+      val registry =
+        HubConnectionManager.registry(this).also { reg ->
+          reg.autoRegisterCommissionedNode(nodeId)
+          reg.saveFabricToPreferences(this)
+        }
+      HubConnectionManager.onNodeCommissioned(nodeId)
+      runOnUiThread {
+        Toast.makeText(this, getString(R.string.commissioning_completed, code), Toast.LENGTH_SHORT)
+          .show()
+        if (!isFinishing && !isDestroyed) {
+          PostCommissioningDialogHelper.showPostCommissioningDialog(
+            activity = this,
+            nodeId = nodeId,
+            registry = registry,
+            deviceInfo = deviceInfo,
+            onComplete = {
+              if (!isFinishing && !isDestroyed) {
+                showFragment(DeviceHubFragment.newInstance(), false)
+              }
+            },
+          )
+        }
+      }
+    } else {
+      runOnUiThread {
+        Toast.makeText(this, getString(R.string.commissioning_completed, code), Toast.LENGTH_SHORT)
+          .show()
+        if (!isFinishing && !isDestroyed) {
+          showFragment(SelectActionFragment.newInstance(), false)
+        }
+      }
+    }
   }
 
   override fun onShowDeviceAddressInput() {
@@ -166,7 +218,7 @@ class CHIPToolActivity :
       arrayOf(
         getString(R.string.nfc_tag_action_show),
         getString(R.string.nfc_tag_action_wifi),
-        getString(R.string.nfc_tag_action_thread)
+        getString(R.string.nfc_tag_action_thread),
       )
 
     AlertDialog.Builder(this)
