@@ -375,6 +375,13 @@ jobs:
               if: ${{ always() }}
               run: |
                   sudo chmod -R a+rX /tmp/cirque_test_output || true
+                  sudo find /tmp/cirque_test_output -type f -name 'lcov_raw.info' -delete 2>/dev/null || true
+                  sudo rm -rf /tmp/cirque_test_output/coverage_report/html /tmp/cirque_test_output/coverage_report/lcov.info 2>/dev/null || true
+                  while IFS= read -r -d '' f; do
+                    sudo mv -f "$f" "${f}.txt" 2>/dev/null || true
+                  done < <(sudo find /tmp/cirque_test_output -type f \( \
+                    -iname '*.py' -o -iname '*.sh' -o -iname '*.js' \
+                    -o -iname '*.svg' -o -iname '*.xml' \) -print0 2>/dev/null)
                   find /tmp/cirque_test_output \( -name '*.pcap' -o -name 'thread_network_key.txt' \
                     -o -name 'ieee802154_keys' \) -exec ls -la {} + || true
             - name: Uploading Binaries

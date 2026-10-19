@@ -186,6 +186,10 @@ except Exception as e:
 function __cirquetest_generate_coverage_report() {
     local out_dir="$1"
     local cov_dir="$2"
+    local extra_args=()
+    if [[ "${CIRQUE_SKIP_GENHTML:-0}" = "1" ]]; then
+        extra_args+=("--skip-genhtml")
+    fi
     mkdir -p "$cov_dir"
     cd "$REPO_DIR"
     if ! grep -q 'docker\|containerd' /proc/1/cgroup 2>/dev/null && ! test -f /.dockerenv && [[ -x "$REPO_DIR/integrations/docker/images/stage-2/chip-build-cirque/run.sh" ]] && command -v docker >/dev/null 2>&1; then
@@ -196,18 +200,35 @@ function __cirquetest_generate_coverage_report() {
             -- python3 "$TEST_DIR/helper/coverage_report.py" \
                 --out-dir "$out_dir" \
                 --output-dir "$cov_dir" \
-                --chip-root "$REPO_DIR" || echo "Warning: Coverage report generation failed"
+                --chip-root "$REPO_DIR" \
+                "${extra_args[@]}" || echo "Warning: Coverage report generation failed"
     elif command -v lcov >/dev/null 2>&1; then
         python3 "$TEST_DIR/helper/coverage_report.py" \
             --out-dir "$out_dir" \
             --output-dir "$cov_dir" \
-            --chip-root "$REPO_DIR" || echo "Warning: Coverage report generation failed"
+            --chip-root "$REPO_DIR" \
+            "${extra_args[@]}" || echo "Warning: Coverage report generation failed"
     else
         python3 "$TEST_DIR/helper/coverage_report.py" \
             --out-dir "$out_dir" \
             --output-dir "$cov_dir" \
-            --chip-root "$REPO_DIR" || echo "Warning: Coverage report generation failed"
+            --chip-root "$REPO_DIR" \
+            "${extra_args[@]}" || echo "Warning: Coverage report generation failed"
     fi
+}
+
+function __cirquetest_sanitize_logs_for_ci_upload() {
+    local target_dir="${1:-$LOG_DIR}"
+    [[ -d "$target_dir" ]] || return 0
+    # Keep the uploaded zip (~20 MB, with full aggregated_coverage/html report
+    # intact) well under Chrome's 50 MB (52,428,800 bytes) ZipAnalyzer and
+    # Enterprise Connector limit so SafeBrowsing never marks the archive as
+    # ArchiveAnalysisResult::kTooLarge (INVALID_ZIP).
+    find "$target_dir" -type f -name 'lcov_raw.info' -delete 2>/dev/null || true
+    rm -rf "$target_dir/coverage_report/html" "$target_dir/coverage_report/lcov.info" 2>/dev/null || true
+    while IFS= read -r -d '' f; do
+        mv -f "$f" "${f}.txt" 2>/dev/null || true
+    done < <(find "$target_dir" -type f \( -iname '*.py' -o -iname '*.sh' \) -print0 2>/dev/null)
 }
 
 function __cirquetest_build_ot() {
@@ -442,16 +463,21 @@ function cirquetest_run_all_tests() {
     done
     unset CIRQUE_IN_RUN_ALL_TESTS
 
-    if [[ "$GITHUB_ACTION_RUN" = "1" ]]; then
-        echo -e "[$BOLD_YELLOW_TEXT""INFO""$RESET_COLOR] Logs will be uploaded to artifacts."
-    fi
-
     if [[ "${CIRQUE_COVERAGE:-0}" = "1" ]]; then
         echo -e "[$BOLD_YELLOW_TEXT""INFO""$RESET_COLOR] Generating aggregated Cirque coverage report..."
         cirquetest_coverage_report "$REPO_DIR/out/debug" "$LOG_DIR/aggregated_coverage" || true
         if [[ -d "$LOG_DIR/aggregated_coverage" ]]; then
-            cp -r "$LOG_DIR/aggregated_coverage" "$LOG_DIR/coverage_report" || true
+            mkdir -p "$LOG_DIR/coverage_report"
+            cp -f "$LOG_DIR/aggregated_coverage/coverage_summary."* "$LOG_DIR/coverage_report/" 2>/dev/null || true
+            if [[ "${GITHUB_ACTION_RUN:-0}" != "1" ]]; then
+                cp -rf "$LOG_DIR/aggregated_coverage/"* "$LOG_DIR/coverage_report/" 2>/dev/null || true
+            fi
         fi
+    fi
+
+    if [[ "$GITHUB_ACTION_RUN" = "1" ]]; then
+        echo -e "[$BOLD_YELLOW_TEXT""INFO""$RESET_COLOR] Sanitizing logs for artifact upload..."
+        __cirquetest_sanitize_logs_for_ci_upload "$LOG_DIR"
     fi
 
     if ((test_pass)); then

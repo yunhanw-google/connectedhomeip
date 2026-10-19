@@ -28,6 +28,7 @@ if str(_CUR_DIR) not in sys.path:
     sys.path.insert(0, str(_CUR_DIR))
 
 from helper.coverage_report import (
+    canonicalize_lcov_symlinks,
     parse_lcov_info,
     compute_metrics,
     generate_markdown_summary,
@@ -182,6 +183,36 @@ class TestCoverageReport(unittest.TestCase):
             tool = detect_gcov_tool(tmppath)
             self.assertTrue(tool.endswith("gcov-13") or tool.endswith("gcov"))
 
+    def test_canonicalize_lcov_symlinks(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chip_root = Path(tmpdir) / "connectedhomeip"
+            chip_root.mkdir()
+            raw_info = Path(tmpdir) / "lcov_raw.info"
+            raw_info.write_text(
+                "TN:\n"
+                f"SF:{chip_root}/examples/all-clusters-app/linux/third_party/"
+                "connectedhomeip/src/app/Server.cpp\n"
+                "DA:10,1\n"
+                "end_of_record\n"
+                "TN:\n"
+                f"SF:{chip_root}/examples/lighting-app/linux/third_party/"
+                "connectedhomeip/third_party/perfetto/repo/sdk/perfetto.cc\n"
+                "DA:20,1\n"
+                "end_of_record\n"
+            )
+            canonicalize_lcov_symlinks(raw_info, chip_root)
+            normalized = raw_info.read_text()
+            resolved = chip_root.resolve()
+            self.assertIn(f"SF:{resolved}/src/app/Server.cpp\n", normalized)
+            self.assertIn(
+                f"SF:{resolved}/third_party/perfetto/repo/sdk/perfetto.cc\n",
+                normalized,
+            )
+            self.assertNotIn(
+                "examples/all-clusters-app/linux/third_party/connectedhomeip",
+                normalized,
+            )
+
 
 def _write_fake_lcov(bin_dir: Path, version_line: str) -> None:
     """Writes an `lcov` executable that only answers --version."""
@@ -250,8 +281,11 @@ class TestGenerateCoverageReportRealLcov(unittest.TestCase):
             src.write_text("int f(int x) { if (x) return 1; return 0; }\n"
                            "int main(void) { return f(0); }\n")
             exe = build / "hello"
-            subprocess.run(["gcc", "--coverage", "-O0", "-o", str(exe), str(src)],
-                           cwd=build, check=True)
+            subprocess.run(
+                ["gcc", "--coverage", "-O0", "-o", str(exe), str(src)],
+                cwd=build,
+                check=True,
+            )
             subprocess.run([str(exe)], cwd=build, check=False)
             os.environ["CIRQUE_GCOV_TOOL"] = "gcov"
             try:
@@ -262,6 +296,36 @@ class TestGenerateCoverageReportRealLcov(unittest.TestCase):
             metrics = json.loads(Path(json_path).read_text())
             self.assertGreaterEqual(metrics["overall"]["total_files"], 1)
             self.assertGreater(metrics["overall"]["lines_hit"], 0)
+            self.assertTrue((root / "cov" / "lcov.info").exists())
+            self.assertFalse((root / "cov" / "lcov_raw.info").exists())
+
+    def test_cirque_skip_genhtml_env_var(self):
+        from helper.coverage_report import generate_coverage_report
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            build = root / "out"
+            build.mkdir()
+            src = root / "src" / "app" / "hello.c"
+            src.parent.mkdir(parents=True)
+            src.write_text("int f(int x) { return x + 1; }\n"
+                           "int main(void) { return f(1); }\n")
+            exe = build / "hello"
+            subprocess.run(
+                ["gcc", "--coverage", "-O0", "-o", str(exe), str(src)],
+                cwd=build,
+                check=True,
+            )
+            subprocess.run([str(exe)], cwd=build, check=False)
+            os.environ["CIRQUE_GCOV_TOOL"] = "gcov"
+            os.environ["CIRQUE_SKIP_GENHTML"] = "1"
+            try:
+                generate_coverage_report(
+                    build, root / "cov", root, skip_genhtml=False)
+            finally:
+                os.environ.pop("CIRQUE_GCOV_TOOL", None)
+                os.environ.pop("CIRQUE_SKIP_GENHTML", None)
+            self.assertFalse((root / "cov" / "html").exists())
+            self.assertFalse((root / "cov" / "lcov_raw.info").exists())
 
 
 if __name__ == "__main__":

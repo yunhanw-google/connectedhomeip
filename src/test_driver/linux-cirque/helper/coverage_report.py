@@ -316,6 +316,37 @@ def coverage_capture_timeout() -> int:
         return 1800
 
 
+def canonicalize_lcov_symlinks(raw_info: Path, chip_root: Path) -> None:
+    """Normalizes GN example symlink paths in lcov_raw.info back to chip_root.
+
+    GN builds under `examples/<app>/linux` reference the repository root via a
+    `third_party/connectedhomeip` symlink. Canonicalizing `SF:` records before
+    `lcov --remove` merges duplicate translation units and ensures
+    `third_party/*` (e.g. perfetto, jsoncpp, nlio) is matched and excluded.
+    """
+    if not raw_info.exists():
+        return
+    chip_root_str = str(chip_root.resolve())
+    symlink_re = re.compile(
+        r"^SF:"
+        + re.escape(chip_root_str)
+        + r"/examples/[^/]+/[^/]+/third_party/connectedhomeip/"
+    )
+    content = raw_info.read_text(errors="replace")
+    updated_lines = []
+    changed = False
+    for line in content.splitlines():
+        if line.startswith("SF:"):
+            new_line = symlink_re.sub(f"SF:{chip_root_str}/", line)
+            if new_line != line:
+                changed = True
+            updated_lines.append(new_line)
+        else:
+            updated_lines.append(line)
+    if changed:
+        raw_info.write_text("\n".join(updated_lines) + "\n")
+
+
 def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                              skip_genhtml: bool = False) -> Tuple[str, str]:
     """
@@ -361,10 +392,15 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
         logger.error("lcov failed to generate %s", raw_info)
         raise RuntimeError(f"Failed to generate {raw_info}")
 
+    canonicalize_lcov_symlinks(raw_info, chip_root)
+
     # Build anchored exclude patterns using chip_root to prevent false stripping
     exclude_patterns = [
         "*/zzz_generated/*",
+        "*/third_party/*",
         f"{chip_root}/third_party/*",
+        f"{chip_root}/out/*",
+        f"{out_dir}/*",
         "/usr/include/*",
         "/usr/lib/*",
         f"{chip_root}/src/app/util/mock/*",
@@ -388,6 +424,15 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
         logger.warning("lcov remove warning: %s\nStderr: %s", e, e.stderr)
         # If remove fails, fallback to raw_info
         shutil.copyfile(raw_info, filtered_info)
+
+    # Remove the large unfiltered intermediate tracefile (~31 MB) once
+    # filtered_info has been written so CI log archives stay under Chrome's
+    # 50 MB SafeBrowsing / Enterprise Connector zip inspection limit.
+    if filtered_info.exists() and filtered_info.stat().st_size > 0:
+        raw_info.unlink(missing_ok=True)
+
+    if os.environ.get("CIRQUE_SKIP_GENHTML", "0") == "1":
+        skip_genhtml = True
 
     # Step 3: Run genhtml
     if not skip_genhtml:
