@@ -59,6 +59,13 @@ CHIP_ECHO_RESPONDER_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/linux_x64_
 CHIP_IM_INITIATOR_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/linux_x64_gcc/chip-im-initiator"))
 CHIP_IM_RESPONDER_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/linux_x64_gcc/chip-im-responder"))
 CHIP_LIGHTING_APP_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/standalone/chip-lighting-app"))
+CHIP_SILABS_LIGHTING_APP_FRAGMENT = "standalone/chip-silabs-lighting-app"
+CHIP_SILABS_LIGHTING_APP_PATH = _resolve_binary_path(
+    "out/debug" / Path(CHIP_SILABS_LIGHTING_APP_FRAGMENT),
+    "out/linux-x64-silabs-lighting/chip-silabs-lighting-app",
+    "out/standalone/chip-silabs-lighting-app",
+)
+CHIP_SILABS_LIGHTING_APP_ESC = shlex.quote(str(CHIP_SILABS_LIGHTING_APP_PATH))
 CHIP_TOOL_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/standalone/chip-tool"))
 LIT_ICD_APP_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/lit_icd/lit-icd-app"))
 

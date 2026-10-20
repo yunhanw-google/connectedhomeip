@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -26,6 +27,7 @@ from helper.CHIPTestBase import CHIPVirtualHome, TestResult
 from helper.paths import (
     CHIP_ALL_CLUSTERS_APP_ESC,
     CHIP_REPO_STR,
+    CHIP_SILABS_LIGHTING_APP_ESC,
     CHIP_TOOL_APK_PATH,
 )
 from helper.android_emulator_logs import save_android_emulator_diagnostics
@@ -160,11 +162,26 @@ def _check_android_preconditions() -> bool:
 
 class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
 
-  def __init__(self, device_config=None):
+  def __init__(self, device_config=None, end_device_app=None):
     if device_config is None:
       device_config = DEVICE_CONFIG
     super().__init__(CIRQUE_URL, device_config)
     self.logger = logger
+    self.end_device_app = (
+        end_device_app
+        or os.environ.get('CIRQUE_END_DEVICE_APP', 'all-clusters')
+    )
+
+  def _is_silabs_lighting_app(self) -> bool:
+    return self.end_device_app in (
+        'silabs-lighting',
+        'chip-silabs-lighting-app',
+    )
+
+  def _get_end_device_binary_esc(self) -> str:
+    if self._is_silabs_lighting_app():
+      return CHIP_SILABS_LIGHTING_APP_ESC
+    return CHIP_ALL_CLUSTERS_APP_ESC
 
   def setup(self):
     if not _check_android_preconditions():
@@ -249,13 +266,33 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
           ' avahi-daemon -D 2>/dev/null || true"',
       )
 
+  def _ensure_host_runtime_libs(self):
+    host_libs_path = os.path.join(CHIP_REPO_STR, 'out', 'host_libs')
+    try:
+      os.makedirs(host_libs_path, exist_ok=True)
+      for lib_name in ('libcrypto.so.3', 'libstdc++.so.6'):
+        src_lib = os.path.join('/usr/lib/x86_64-linux-gnu', lib_name)
+        dst_lib = os.path.join(host_libs_path, lib_name)
+        if os.path.isfile(src_lib) and not os.path.isfile(dst_lib):
+          shutil.copy2(src_lib, dst_lib)
+    except OSError as exc:
+      self.logger.debug('Skipping host_libs population: %s', exc)
+
   def _start_wifi_end_devices(self, server_devices, host_libs_dir):
+    self._ensure_host_runtime_libs()
+    app_binary_esc = self._get_end_device_binary_esc()
+    app_label = (
+        'chip-silabs-lighting-app'
+        if self._is_silabs_lighting_app()
+        else 'chip-all-clusters-app'
+    )
     for device in server_devices:
       server_id = device['id']
       ble_adapt_id = self._extract_hci_index(device, default_index=1)
       self.logger.info(
-          'Starting chip-all-clusters-app on CHIPEndDevice %s with'
+          'Starting %s on CHIPEndDevice %s with'
           ' --wifi --ble-controller %d --discriminator %d',
+          app_label,
           self.get_device_pretty_id(server_id),
           ble_adapt_id,
           TEST_DISCRIMINATOR,
@@ -271,7 +308,7 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
           server_id,
           f'CHIPCirqueDaemon.py -- run env LD_LIBRARY_PATH={host_libs_dir}'
           f' {SESSION_KEYLOG_ENV} {gdb_wrapper}'
-          f' {CHIP_ALL_CLUSTERS_APP_ESC} --wifi --ble-controller'
+          f' {app_binary_esc} --wifi --ble-controller'
           f' {ble_adapt_id} --discriminator {TEST_DISCRIMINATOR}',
       )
 
@@ -697,31 +734,48 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
           self.get_device_pretty_id(device_id),
           end_device_log,
       )
-      self.assertTrue(
-          self.sequenceMatch(
-              end_device_log,
-              [
-                  'Got WiFi interface: wlan0',
-                  'GATT application registered successfully',
-                  'New BLE connection',
-                  'selected BTP version 4',
-                  'Receive kCHIPoBLEConnectionEstablished',
-                  'Commissioning completed session establishment step',
-                  # NetworkCommissioning AddOrUpdateWiFiNetwork
-                  (
-                      'Received command for Endpoint=0 Cluster=0x0000_0031'
-                      ' Command=0x0000_0002'
-                  ),
-                  "LinuxWiFiDriver: ConnectNetwork 'CHIP-VirtualWiFi-AP'",
-                  (
-                      'wpa_supplicant: Interface properties changed, state is'
-                      " 'completed'"
-                  ),
-                  'Toggle ep1 on/off from state 0 to 1',
-                  'Type 0001:02 (IM:ReadRequest)',
-                  'Type 0001:05 (IM:ReportData)',
-              ],
+      expected_markers = [
+          'Got WiFi interface: wlan0',
+      ]
+      if self._is_silabs_lighting_app():
+        expected_markers.extend([
+            '[SILABS] =====SL-Light starting=====',
+            '[SILABS-LIGHT] LED 1 state=OFF',
+            '[SILABS] App Task started',
+        ])
+      expected_markers.extend([
+          'GATT application registered successfully',
+          'New BLE connection',
+          'selected BTP version 4',
+          'Receive kCHIPoBLEConnectionEstablished',
+          'Commissioning completed session establishment step',
+          # NetworkCommissioning AddOrUpdateWiFiNetwork
+          (
+              'Received command for Endpoint=0 Cluster=0x0000_0031'
+              ' Command=0x0000_0002'
           ),
+          "LinuxWiFiDriver: ConnectNetwork 'CHIP-VirtualWiFi-AP'",
+          (
+              'wpa_supplicant: Interface properties changed, state is'
+              " 'completed'"
+          ),
+      ])
+      if self._is_silabs_lighting_app():
+        expected_markers.append(
+            '[SILABS] Commissioning complete event received'
+        )
+      expected_markers.append('Toggle ep1 on/off from state 0 to 1')
+      if self._is_silabs_lighting_app():
+        expected_markers.extend([
+            'Cluster callback: 0x0000_0006',
+            '[SILABS-LIGHT] LED 1 state=ON',
+        ])
+      expected_markers.extend([
+          'Type 0001:02 (IM:ReadRequest)',
+          'Type 0001:05 (IM:ReportData)',
+      ])
+      self.assertTrue(
+          self.sequenceMatch(end_device_log, expected_markers),
           'CHIPEndDevice log is missing expected BLE + wpa_supplicant + OnOff'
           ' sequence markers',
       )

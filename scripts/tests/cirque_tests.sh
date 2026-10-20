@@ -20,8 +20,9 @@
 #
 # Optional environment variables:
 #   CIRQUE_ENABLE_ANDROID_TESTS: Set to 1 (default) to include Android emulator
-#     tests (AndroidBleWiFiMobileDeviceTest, AndroidBleThreadMobileDeviceTest)
-#     in run_all_tests, or 0 to skip. Requires KVM and cirque-android-runner.
+#     tests (AndroidBleWiFiMobileDeviceTest, AndroidBleWiFiSilabsLightingTest,
+#     AndroidBleThreadMobileDeviceTest) in run_all_tests, or 0 to skip.
+#     Requires KVM and cirque-android-runner.
 
 SOURCE=${BASH_SOURCE[0]}
 SOURCE_DIR=$(cd "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)
@@ -69,6 +70,7 @@ CIRQUE_TESTS=(
 
 CIRQUE_ANDROID_TESTS=(
     "AndroidBleWiFiMobileDeviceTest"
+    "AndroidBleWiFiSilabsLightingTest"
     "AndroidBleThreadMobileDeviceTest"
 )
 

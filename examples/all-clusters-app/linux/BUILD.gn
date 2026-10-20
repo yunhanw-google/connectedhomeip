@@ -201,7 +201,10 @@ group("linux") {
   if (is_libfuzzer) {
     deps += [ ":chip-all-clusters-app-fuzzing" ]
   } else {
-    deps += [ ":chip-all-clusters-app" ]
+    deps += [
+      ":chip-all-clusters-app",
+      "${chip_root}/examples/lighting-app/silabs/linux:chip-silabs-lighting-app",
+    ]
   }
 }
 
