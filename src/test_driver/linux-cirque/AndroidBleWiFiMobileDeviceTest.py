@@ -34,6 +34,11 @@ from helper.paths import (
     QEMU_ARM_ESC,
 )
 from helper.android_emulator_logs import save_android_emulator_diagnostics
+from helper.pcap_oracles import (
+    dhcp_ack_addresses,
+    eapol_frame_count,
+    hci_le_connection_complete_handles,
+)
 from helper.session_keylog import (
     RESET_SESSION_KEYLOG_CMD,
     SESSION_KEYLOG_ENV,
@@ -314,8 +319,15 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
           bt_info = self.query_api('virtual_bt_info')
           if isinstance(bt_info, dict):
             hci_port = int(bt_info.get('hci_port', 23458) or 23458)
-        except Exception as exc:
-          self.logger.debug('virtual_bt_info lookup fallback: %s', exc)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+          # query_api raises transport-specific errors; the relay falls back
+          # to the default VirtualBluetoothServer HCI port and the BLE
+          # milestones are still asserted from the captures afterwards.
+          self.logger.warning(
+              'virtual_bt_info lookup failed (%s); using hci_port=%d',
+              exc,
+              hci_port,
+          )
         silabs_bt_prep_cmd = (
             'sh -c ": > /tmp/matter_session_keys.log;'
             ' killall -9 pty_bridge_linux 2>/dev/null || true;'
@@ -796,11 +808,18 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
               ' Command=0x0000_0002'
           ),
           "LinuxWiFiDriver: ConnectNetwork 'CHIP-VirtualWiFi-AP'",
-          (
-              'wpa_supplicant: Interface properties changed, state is'
-              " 'completed'"
-          ),
       ])
+      if self._is_silabs_lighting_app():
+        # Printed only after the shim reads State == 'completed' back from
+        # fi.w1.wpa_supplicant1; association is additionally checked against
+        # the raw EAPOL/DHCP captures in _assert_silabs_rf_captures().
+        expected_markers.append(
+            "[SILABS-WIFI] wpa_supplicant State='completed' (read over D-Bus)"
+        )
+      else:
+        expected_markers.append(
+            "wpa_supplicant: Interface properties changed, state is 'completed'"
+        )
       if self._is_silabs_lighting_app():
         expected_markers.append(
             '[SILABS] Commissioning complete event received'
@@ -913,6 +932,53 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
     #    Bluetooth emulation and Wi-Fi packet streamer and bridges guest
     #    Wi-Fi onto the tap.
     self._assert_emulator_radio_path(req_device_id)
+
+    # 5. For the Silabs app, the device log is produced by our own shim, so
+    #    back every radio milestone with frames from the raw captures.
+    if self._is_silabs_lighting_app():
+      self._assert_silabs_rf_captures(dev_ip)
+
+  def _assert_silabs_rf_captures(self, dev_ip):
+    """Asserts BLE and Wi-Fi milestones against the virtual-medium pcaps.
+
+    CIRQUE_PCAP_DIR is where VirtualBluetoothServer / VirtualWiFiServer write
+    per-frame-flushed captures (scripts/tests/cirque_tests.sh exports it).
+    """
+    pcap_dir = os.environ.get('CIRQUE_PCAP_DIR') or os.environ.get(
+        'DEVICE_LOG_DIR'
+    )
+    self.assertTrue(
+        bool(pcap_dir) and os.path.isdir(pcap_dir),
+        'CIRQUE_PCAP_DIR is not set or missing; cannot verify RF captures',
+    )
+    silabs_hci = os.path.join(pcap_dir, 'bt_hci_silabs_hci0.pcap')
+    dhcp_pcap = os.path.join(pcap_dir, 'wifi_dhcp_server.pcap')
+    ap_pcap = os.path.join(pcap_dir, 'wifi_ap.pcap')
+    for path in (silabs_hci, dhcp_pcap, ap_pcap):
+      self.assertTrue(os.path.isfile(path), f'Missing capture: {path}')
+
+    conn_handles = hci_le_connection_complete_handles(silabs_hci)
+    self.logger.info('Silabs HCI LE Connection Complete handles: %s',
+                     conn_handles)
+    self.assertTrue(
+        bool(conn_handles),
+        'bt_hci_silabs_hci0.pcap has no successful LE Connection Complete',
+    )
+
+    eapol = eapol_frame_count(ap_pcap)
+    self.logger.info('EAPOL frames in wifi_ap.pcap: %d', eapol)
+    # CHIPTestBase only provides assertTrue/False/Equal/NotEqual.
+    self.assertTrue(
+        eapol >= 4, 'wifi_ap.pcap is missing the WPA2 4-way handshake'
+    )
+
+    acks = dhcp_ack_addresses(dhcp_pcap)
+    self.logger.info('DHCPACK yiaddr in wifi_dhcp_server.pcap: %s', acks)
+    self.assertTrue(
+        dev_ip in acks,
+        f'No DHCPACK for the end-device address {dev_ip} in'
+        ' wifi_dhcp_server.pcap',
+    )
 
   def _assert_emulator_radio_path(self, req_device_id):
     ps_res = self.execute_device_cmd(req_device_id, 'ps -ef')

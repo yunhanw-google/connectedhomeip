@@ -22,6 +22,17 @@
 // queues/timers/threads, SilabsPlatform WSTK LED/button peripherals, and Silicon Labs
 // EFR32 BLEManagerImpl (sl_bt_* BGAPI over /dev/ttySilabsBT0 HCI H4 UART PTY) plus
 // GLib-free Wi-Fi station commissioning onto Linux pthreads and sockets.
+//
+// What is translated vs. emulated:
+//   - BLE: every sl_bt_* event delivered to BLEManagerImpl is derived from a real
+//     HCI event or ATT PDU read from the PTY (system_boot <- HCI_Reset Command
+//     Complete, connection_opened <- LE Connection Complete, gatt_mtu_exchanged <-
+//     ATT_EXCHANGE_MTU_REQ). The GATT database is a fixed CHIPoBLE table served
+//     by this file in place of the Silabs link-layer/GATT stack (libbluetooth.a is
+//     a Cortex-M binary blob and cannot run here).
+//   - Wi-Fi: scan and connect call fi.w1.wpa_supplicant1 over D-Bus and report
+//     only what is read back (BSS list, State). Failures are reported as failures;
+//     no SSID, BSSID, IP address, or connection state is synthesized.
 
 #include "SilabsPosixShim.h"
 
@@ -48,6 +59,7 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <cstdarg>
@@ -65,6 +77,7 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <thread>
 #include <unistd.h>
@@ -1417,18 +1430,11 @@ void HandleAttPdu(uint16_t connHandle, const uint8_t * attPdu, uint16_t attLen)
 
 void SilabsBtHciReaderLoop()
 {
-    // Reset HCI controller and notify Silabs BLEManagerImpl that stack booted
+    // Reset the HCI controller. sl_bt_evt_system_boot_id is delivered to
+    // BLEManagerImpl only after the controller answers HCI_Reset with a
+    // successful Command Complete (handled in the event loop below).
     SendHciCommand(0x0C03, nullptr, 0);
-
-    {
-        sl_bt_msg_t bootEvt{};
-        bootEvt.header                     = sl_bt_evt_system_boot_id;
-        bootEvt.data.evt_system_boot.major = 4;
-        bootEvt.data.evt_system_boot.minor = 4;
-        bootEvt.data.evt_system_boot.patch = 0;
-        bootEvt.data.evt_system_boot.build = 1;
-        sl_bt_on_event(&bootEvt);
-    }
+    bool bootDelivered = false;
 
     while (!gBtReaderStop.load())
     {
@@ -1453,7 +1459,29 @@ void SilabsBtHciReaderLoop()
                 break;
             }
 
-            if (evtCode == 0x3E && paramLen >= 1) // LE Meta Event
+            if (evtCode == 0x0E && paramLen >= 4 && !bootDelivered) // Command Complete
+            {
+                const uint16_t opcode = static_cast<uint16_t>(params[1] | (params[2] << 8));
+                if (opcode == 0x0C03)
+                {
+                    if (params[3] != 0x00)
+                    {
+                        ChipLogError(DeviceLayer, "[SILABS-BGAPI] HCI_Reset failed with status 0x%02x",
+                                     static_cast<unsigned>(params[3]));
+                        continue;
+                    }
+                    bootDelivered = true;
+                    ChipLogProgress(DeviceLayer, "[SILABS-BGAPI] HCI_Reset Command Complete; delivering system boot event");
+                    sl_bt_msg_t bootEvt{};
+                    bootEvt.header                     = sl_bt_evt_system_boot_id;
+                    bootEvt.data.evt_system_boot.major = 4;
+                    bootEvt.data.evt_system_boot.minor = 4;
+                    bootEvt.data.evt_system_boot.patch = 0;
+                    bootEvt.data.evt_system_boot.build = 1;
+                    sl_bt_on_event(&bootEvt);
+                }
+            }
+            else if (evtCode == 0x3E && paramLen >= 1) // LE Meta Event
             {
                 const uint8_t subEvt = params[0];
                 if ((subEvt == 0x01 && paramLen >= 19) || (subEvt == 0x0A && paramLen >= 31))
@@ -1463,9 +1491,10 @@ void SilabsBtHciReaderLoop()
                     {
                         gActiveHciConnHandle = static_cast<uint16_t>((params[2] | (params[3] << 8)) & 0x0FFF);
                         gCccdValue           = 0;
-                        ChipLogProgress(DeviceLayer, "%s BLE connection: conn=0x%02x", "New",
+                        ChipLogProgress(DeviceLayer, "New BLE connection: conn=0x%02x",
                                         static_cast<unsigned>(gActiveHciConnHandle));
 
+                        // BGAPI translation of HCI LE (Enhanced) Connection Complete.
                         sl_bt_msg_t openEvt{};
                         openEvt.header                                = sl_bt_evt_connection_opened_id;
                         openEvt.data.evt_connection_opened.connection = 1;
@@ -1475,12 +1504,9 @@ void SilabsBtHciReaderLoop()
                         std::memcpy(openEvt.data.evt_connection_opened.address.addr, &params[6], 6);
                         openEvt.data.evt_connection_opened.address_type = params[5];
                         sl_bt_on_event(&openEvt);
-
-                        sl_bt_msg_t mtuEvt{};
-                        mtuEvt.header                                 = sl_bt_evt_gatt_mtu_exchanged_id;
-                        mtuEvt.data.evt_gatt_mtu_exchanged.connection = 1;
-                        mtuEvt.data.evt_gatt_mtu_exchanged.mtu        = 247;
-                        sl_bt_on_event(&mtuEvt);
+                        // sl_bt_evt_gatt_mtu_exchanged_id is emitted only when the
+                        // central actually sends ATT_EXCHANGE_MTU_REQ (see HandleAttPdu);
+                        // until then BLEManagerImpl keeps the ATT default MTU of 23.
                     }
                 }
             }
@@ -1806,27 +1832,175 @@ bool GetInterfaceIPv4Address(const char * ifName, char * outIpBuf, size_t outIpB
     return found;
 }
 
-class SilabsSingleScanResponseIterator : public WiFiScanResponseIterator
+class SilabsScanResponseIterator : public WiFiScanResponseIterator
 {
 public:
-    explicit SilabsSingleScanResponseIterator(const WiFiScanResponse & item) : mItem(item) {}
-    size_t Count() override { return 1; }
+    explicit SilabsScanResponseIterator(std::vector<WiFiScanResponse> items) : mItems(std::move(items)) {}
+    size_t Count() override { return mItems.size(); }
     bool Next(WiFiScanResponse & item) override
     {
-        if (mExhausted)
+        if (mIndex >= mItems.size())
         {
             return false;
         }
-        mExhausted = true;
-        item       = mItem;
+        item = mItems[mIndex++];
         return true;
     }
     void Release() override {}
 
 private:
-    WiFiScanResponse mItem;
-    bool mExhausted = false;
+    std::vector<WiFiScanResponse> mItems;
+    size_t mIndex = 0;
 };
+
+// Helper run inside the CHIPEndDevice container. It talks to whatever owns
+// fi.w1.wpa_supplicant1 on the system bus (in Cirque: the userspace
+// WpaSupplicantDbusService backed by VirtualWiFiServer) with the same D-Bus
+// methods/properties the GLib-based Linux driver uses, and reports only what
+// it reads back. Exit status: 0 = success, non-zero = failure.
+constexpr char kWpaDbusHelperPath[]   = "/tmp/silabs_wpa_dbus_helper.py";
+constexpr char kWpaDbusHelperSource[] = R"PY(import re, subprocess, sys, time
+DEST = 'fi.w1.wpa_supplicant1'
+IFACE_PATH = '/fi/w1/wpa_supplicant1/Interfaces/0'
+IFACE = 'fi.w1.wpa_supplicant1.Interface'
+BSS = 'fi.w1.wpa_supplicant1.BSS'
+
+def call(path, method, *args, timeout=10):
+    return subprocess.check_output(
+        ['/usr/bin/gdbus', 'call', '--system', '--dest', DEST,
+         '--object-path', path, '--method', method, *args],
+        text=True, timeout=timeout)
+
+def prop(path, iface, name):
+    return call(path, 'org.freedesktop.DBus.Properties.Get', iface, name)
+
+def ay(out):
+    if 'byte' in out or '0x' in out:
+        return bytes(int(x, 16) for x in re.findall(r'0x([0-9a-fA-F]{2})', out))
+    m = re.search(r"b'((?:[^'\\]|\\.)*)'", out)
+    return m.group(1).encode().decode('unicode_escape').encode('latin-1') if m else b''
+
+def num(out):
+    m = re.search(r'(-?\d+)>', out)
+    return int(m.group(1)) if m else 0
+
+def scan():
+    call(IFACE_PATH, IFACE + '.Scan', "{'Type': <'active'>}")
+    time.sleep(1.0)
+    for path in re.findall(r"'(/fi/w1/wpa_supplicant1/Interfaces/0/BSSs/[^']+)'",
+                           prop(IFACE_PATH, IFACE, 'BSSs')):
+        ssid = ay(prop(path, BSS, 'SSID'))
+        bssid = ay(prop(path, BSS, 'BSSID'))
+        if len(bssid) != 6:
+            continue
+        print('BSS %s %s %d %d' % (ssid.hex(), bssid.hex(),
+              num(prop(path, BSS, 'Signal')), num(prop(path, BSS, 'Frequency'))))
+    return 0
+
+def connect(ssid, psk):
+    arg = "{'ssid': <%r>, 'psk': <%r>}" % (ssid, psk)
+    out = call(IFACE_PATH, IFACE + '.AddNetwork', arg)
+    m = re.search(r"'(/fi/w1/wpa_supplicant1/Interfaces/0/Networks/[^']+)'", out)
+    if not m:
+        print('ERROR AddNetwork returned no network path: %s' % out.strip())
+        return 2
+    call(IFACE_PATH, IFACE + '.SelectNetwork', m.group(1), timeout=15)
+    state = ''
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        m2 = re.search(r"'([a-z_]+)'", prop(IFACE_PATH, IFACE, 'State'))
+        state = m2.group(1) if m2 else ''
+        if state == 'completed':
+            break
+        time.sleep(0.2)
+    print('STATE %s' % state)
+    if state != 'completed':
+        return 3
+    subprocess.call(['ip', '-6', 'addr', 'flush', 'dev', 'wlan0', 'scope', 'global'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return 0
+
+if __name__ == '__main__':
+    try:
+        if sys.argv[1] == 'scan':
+            sys.exit(scan())
+        sys.exit(connect(sys.argv[2], sys.argv[3]))
+    except (subprocess.SubprocessError, OSError, IndexError) as e:
+        print('ERROR %s: %s' % (type(e).__name__, e))
+        sys.exit(1)
+)PY";
+
+bool WriteWpaDbusHelper()
+{
+    FILE * fp = std::fopen(kWpaDbusHelperPath, "w");
+    if (fp == nullptr)
+    {
+        ChipLogError(NetworkProvisioning, "[SILABS-WIFI] Cannot write %s: %s", kWpaDbusHelperPath, strerror(errno));
+        return false;
+    }
+    const bool ok = std::fputs(kWpaDbusHelperSource, fp) >= 0;
+    std::fclose(fp);
+    return ok;
+}
+
+// Runs the helper and returns its exit status (or -1 on spawn failure),
+// collecting stdout lines into `lines`.
+int RunWpaDbusHelper(const std::string & args, std::vector<std::string> & lines)
+{
+    if (!WriteWpaDbusHelper())
+    {
+        return -1;
+    }
+    const std::string cmd = std::string("/usr/bin/python3 ") + kWpaDbusHelperPath + " " + args + " 2>&1";
+    FILE * pipe           = popen(cmd.c_str(), "r");
+    if (pipe == nullptr)
+    {
+        return -1;
+    }
+    char buf[512];
+    while (std::fgets(buf, sizeof(buf), pipe) != nullptr)
+    {
+        std::string line(buf);
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+        {
+            line.pop_back();
+        }
+        lines.push_back(line);
+    }
+    const int status = pclose(pipe);
+    return (status >= 0 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
+}
+
+std::string ShellQuote(const std::string & s)
+{
+    std::string out = "'";
+    for (char c : s)
+    {
+        if (c == '\'')
+        {
+            out += "'\\''";
+        }
+        else
+        {
+            out += c;
+        }
+    }
+    return out + "'";
+}
+
+bool HexToBytes(const std::string & hex, uint8_t * out, size_t outCap, size_t & outLen)
+{
+    if (hex.size() % 2 != 0 || hex.size() / 2 > outCap)
+    {
+        return false;
+    }
+    outLen = hex.size() / 2;
+    for (size_t i = 0; i < outLen; ++i)
+    {
+        out[i] = static_cast<uint8_t>(std::stoul(hex.substr(2 * i, 2), nullptr, 16));
+    }
+    return true;
+}
 
 } // namespace
 
@@ -1837,29 +2011,56 @@ CHIP_ERROR SilabsPosixWiFiScan(ByteSpan ssid, WiFiDriver::ScanCallback * callbac
         return CHIP_ERROR_INVALID_ARGUMENT;
     }
 
-    WiFiScanResponse resp{};
-    resp.security.Set(app::Clusters::NetworkCommissioning::WiFiSecurityBitmap::kWpa2Personal);
-    resp.channel                  = 6;
-    resp.wiFiBand                 = WiFiBand::k2g4;
-    resp.signal.type              = WirelessSignalType::kdBm;
-    resp.signal.strength          = -40;
-    const uint8_t defaultBssid[6] = { 0x02, 0x00, 0x00, 0x00, 0x01, 0x01 };
-    std::memcpy(resp.bssid, defaultBssid, sizeof(defaultBssid));
-
-    if (!ssid.empty() && ssid.size() <= sizeof(resp.ssid))
+    std::vector<std::string> lines;
+    const int rc = RunWpaDbusHelper("scan", lines);
+    if (rc != 0)
     {
-        std::memcpy(resp.ssid, ssid.data(), ssid.size());
-        resp.ssidLen = static_cast<uint8_t>(ssid.size());
-    }
-    else
-    {
-        const char * defaultSsid = "TEST_WIFI";
-        resp.ssidLen             = static_cast<uint8_t>(std::strlen(defaultSsid));
-        std::memcpy(resp.ssid, defaultSsid, resp.ssidLen);
+        for (const auto & l : lines)
+        {
+            ChipLogError(NetworkProvisioning, "[SILABS-WIFI] scan helper: %s", l.c_str());
+        }
+        ChipLogError(NetworkProvisioning, "[SILABS-WIFI] wpa_supplicant D-Bus scan failed (rc=%d)", rc);
+        callback->OnFinished(Status::kUnknownError, CharSpan(), nullptr);
+        return CHIP_NO_ERROR;
     }
 
-    SilabsSingleScanResponseIterator iter(resp);
-    callback->OnFinished(Status::kSuccess, CharSpan(), &iter);
+    std::vector<WiFiScanResponse> results;
+    for (const auto & l : lines)
+    {
+        char ssidHex[68]  = { 0 }; // 32-byte SSID as hex + NUL
+        char bssidHex[16] = { 0 };
+        int signal        = 0;
+        int freq          = 0;
+        if (std::sscanf(l.c_str(), "BSS %66s %15s %d %d", ssidHex, bssidHex, &signal, &freq) != 4)
+        {
+            continue;
+        }
+        WiFiScanResponse resp{};
+        size_t ssidLen  = 0;
+        size_t bssidLen = 0;
+        if (!HexToBytes(ssidHex, resp.ssid, sizeof(resp.ssid), ssidLen) ||
+            !HexToBytes(bssidHex, resp.bssid, sizeof(resp.bssid), bssidLen) || bssidLen != 6)
+        {
+            continue;
+        }
+        resp.ssidLen = static_cast<uint8_t>(ssidLen);
+        if (!ssid.empty() && !ssid.data_equal(ByteSpan(resp.ssid, resp.ssidLen)))
+        {
+            continue;
+        }
+        resp.security.Set(app::Clusters::NetworkCommissioning::WiFiSecurityBitmap::kWpa2Personal);
+        resp.wiFiBand        = (freq >= 5000) ? WiFiBand::k5g : WiFiBand::k2g4;
+        resp.channel         = static_cast<uint16_t>((freq >= 5000) ? (freq - 5000) / 5 : (freq - 2407) / 5);
+        resp.signal.type     = WirelessSignalType::kdBm;
+        resp.signal.strength = static_cast<int8_t>(signal);
+        results.push_back(resp);
+    }
+    ChipLogProgress(NetworkProvisioning, "[SILABS-WIFI] wpa_supplicant D-Bus scan returned %u matching BSS(s)",
+                    static_cast<unsigned>(results.size()));
+
+    const Status status = (!ssid.empty() && results.empty()) ? Status::kNetworkNotFound : Status::kSuccess;
+    SilabsScanResponseIterator iter(std::move(results));
+    callback->OnFinished(status, CharSpan(), &iter);
     return CHIP_NO_ERROR;
 }
 
@@ -1871,61 +2072,51 @@ CHIP_ERROR SilabsPosixWiFiConnect(ByteSpan ssid, ByteSpan credentials, WiFiDrive
     ChipLogProgress(NetworkProvisioning, "[SILABS-WIFI] Connecting station to SSID '%s'", ssidStr.c_str());
 
     std::thread([ssidStr, pskStr, callback]() {
-        if (access("/run/dbus/system_bus_socket", F_OK) == 0)
+        std::vector<std::string> lines;
+        const int rc = RunWpaDbusHelper("connect " + ShellQuote(ssidStr) + " " + ShellQuote(pskStr), lines);
+        for (const auto & l : lines)
         {
-            FILE * fp = std::fopen("/tmp/silabs_vwifi_assoc.py", "w");
-            if (fp != nullptr)
-            {
-                std::fprintf(fp,
-                             "import os, re, subprocess\n"
-                             "ssid = os.environ.get('SILABS_WIFI_SSID', '')\n"
-                             "psk = os.environ.get('SILABS_WIFI_PSK', '')\n"
-                             "dest = 'fi.w1.' + 'wpa_supplicant1'\n"
-                             "iface = '/' + dest.replace('.', '/') + '/Interfaces/0'\n"
-                             "arg = \"{'ssid': <\" + repr(ssid) + \">, 'psk': <\" + repr(psk) + \">}\"\n"
-                             "out = subprocess.check_output([\n"
-                             "    '/usr/bin/gdbus', 'call', '--system',\n"
-                             "    '--dest', dest,\n"
-                             "    '--object-path', iface,\n"
-                             "    '--method', dest + '.Interface.AddNetwork',\n"
-                             "    arg,\n"
-                             "], text=True, timeout=10)\n"
-                             "m = re.search(r\"'(/(?:[^']+))'\", out)\n"
-                             "net_path = m.group(1) if m else (iface + '/Networks/0')\n"
-                             "subprocess.check_call([\n"
-                             "    '/usr/bin/gdbus', 'call', '--system',\n"
-                             "    '--dest', dest,\n"
-                             "    '--object-path', iface,\n"
-                             "    '--method', dest + '.Interface.SelectNetwork',\n"
-                             "    net_path,\n"
-                             "], timeout=15)\n"
-                             "subprocess.call(['ip', '-6', 'addr', 'flush', 'dev', 'wlan0', 'scope', 'global'],\n"
-                             "                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n");
-                std::fclose(fp);
-                setenv("SILABS_WIFI_SSID", ssidStr.c_str(), 1);
-                setenv("SILABS_WIFI_PSK", pskStr.c_str(), 1);
-                int rc = std::system("/usr/bin/python3 /tmp/silabs_vwifi_assoc.py");
-                ChipLogProgress(NetworkProvisioning, "[SILABS-WIFI] Virtual Wi-Fi association helper exited with rc=%d", rc);
-            }
+            ChipLogProgress(NetworkProvisioning, "[SILABS-WIFI] connect helper: %s", l.c_str());
         }
+
+        if (rc != 0)
+        {
+            ChipLogError(NetworkProvisioning, "[SILABS-WIFI] wpa_supplicant did not reach State='completed' (rc=%d)", rc);
+            gSilabsWiFiConnected.store(false);
+            DeviceLayer::SystemLayer().ScheduleLambda([callback]() {
+                if (callback != nullptr)
+                {
+                    callback->OnResult(Status::kOtherConnectionFailure, CharSpan(), 0);
+                }
+            });
+            return;
+        }
+
+        ChipLogProgress(DeviceLayer, "[SILABS-WIFI] wpa_supplicant State='completed' (read over D-Bus)");
 
         char ipBuf[Inet::IPAddress::kMaxStringLength] = { 0 };
         bool gotIp                                    = false;
-        for (int i = 0; i < 80; ++i)
+        for (int i = 0; i < 80 && !gotIp; ++i)
         {
-            if (GetInterfaceIPv4Address("wlan0", ipBuf, sizeof(ipBuf)))
+            gotIp = GetInterfaceIPv4Address("wlan0", ipBuf, sizeof(ipBuf));
+            if (!gotIp)
             {
-                gotIp = true;
-                break;
+                usleep(100000);
             }
-            usleep(100000);
+        }
+        if (gotIp)
+        {
+            ChipLogProgress(NetworkProvisioning, "[SILABS-WIFI] wlan0 DHCPv4 lease %s", ipBuf);
+        }
+        else
+        {
+            // Matter operational traffic in this build uses IPv6
+            // (chip_inet_config_enable_ipv4=false); report the missing lease
+            // instead of inventing an address.
+            ChipLogError(NetworkProvisioning, "[SILABS-WIFI] no DHCPv4 lease on wlan0 within 8s");
         }
 
         gSilabsWiFiConnected.store(true);
-        const char * resolvedIpStr = gotIp ? ipBuf : "10.0.1.2";
-        ChipLogProgress(DeviceLayer, "wpa_supplicant: Interface properties changed, state is 'completed'");
-        ChipLogProgress(NetworkProvisioning, "[SILABS-WIFI] Associated on wlan0 with IPv4 %s", resolvedIpStr);
-
         DeviceLayer::SystemLayer().ScheduleLambda([callback]() {
             if (callback != nullptr)
             {
@@ -1937,7 +2128,6 @@ CHIP_ERROR SilabsPosixWiFiConnect(ByteSpan ssid, ByteSpan credentials, WiFiDrive
             wifiEvt.WiFiConnectivityChange.Result = kConnectivity_Established;
             (void) PlatformMgr().PostEvent(&wifiEvt);
 
-            bool postedAny = false;
             for (chip::Inet::InterfaceAddressIterator it; it.HasCurrent(); it.Next())
             {
                 char ifName[Inet::InterfaceId::kMaxIfNameLength] = { 0 };
@@ -1963,16 +2153,7 @@ CHIP_ERROR SilabsPosixWiFiConnect(ByteSpan ssid, ByteSpan credentials, WiFiDrive
                         ipEvt.InternetConnectivityChange.IPv6 = kConnectivity_Established;
                     }
                     (void) PlatformMgr().PostEvent(&ipEvt);
-                    postedAny = true;
                 }
-            }
-            if (!postedAny)
-            {
-                ChipDeviceEvent ipEvt{};
-                ipEvt.Type                            = DeviceEventType::kInternetConnectivityChange;
-                ipEvt.InternetConnectivityChange.IPv4 = kConnectivity_Established;
-                ipEvt.InternetConnectivityChange.IPv6 = kConnectivity_Established;
-                (void) PlatformMgr().PostEvent(&ipEvt);
             }
 
             (void) DeviceLayer::SystemLayer().StartTimer(
