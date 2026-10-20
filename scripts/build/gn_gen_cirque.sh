@@ -91,6 +91,41 @@ time ninja -C out/debug \
 echo "Build: Build all-clusters-app which has different configs than some other samples above."
 time ninja -C out/debug/standalone
 
+ARM_SYSROOT="$CHIP_ROOT/.environment/cipd/packages/pigweed/clang_sysroot"
+if [ -d "$ARM_SYSROOT" ]; then
+    echo "Build: Cross-compile ARM32 Silicon Labs Lighting-App (out/arm-silabs/chip-silabs-lighting-app)"
+    ARM_SILABS_ARGS=(
+        'target_cpu="arm"'
+        'target_os="linux"'
+        'is_clang=true'
+        'chip_crypto="mbedtls"'
+        'chip_mdns="minimal"'
+        'chip_logging_backend="stdio"'
+        'chip_enable_wifi=true'
+        'chip_enable_ble=true'
+        'chip_config_network_layer_ble=true'
+        'chip_enable_thread=false'
+        'chip_linux_use_silabs_ble_wifi=true'
+        'chip_inet_config_enable_ipv4=false'
+        'chip_enable_session_keylog=true'
+        'chip_im_force_fabric_quota_check=true'
+        'chip_support_thread_meshcop=false'
+        'chip_build_tests=false'
+        "sysroot=\"$ARM_SYSROOT\""
+    )
+    if command -v ccache >/dev/null 2>&1; then
+        ARM_SILABS_ARGS+=('pw_command_launcher="ccache"')
+    fi
+    mkdir -p out/arm-silabs out/host_libs
+    gn --root="$CHIP_ROOT/examples/all-clusters-app/linux" gen out/arm-silabs --args="${ARM_SILABS_ARGS[*]}"
+    time ninja -C out/arm-silabs chip-silabs-lighting-app
+    cp -f out/arm-silabs/chip-silabs-lighting-app out/debug/standalone/chip-silabs-lighting-app
+    if [ -f "$CHIP_ROOT/third_party/cirque/repo/cirque/virtual_bt/android/pty_bridge.c" ]; then
+        gcc -O2 "$CHIP_ROOT/third_party/cirque/repo/cirque/virtual_bt/android/pty_bridge.c" -o out/host_libs/pty_bridge_linux -lutil
+        chmod 755 out/host_libs/pty_bridge_linux
+    fi
+fi
+
 if command -v ccache >/dev/null 2>&1; then
     ccache --show-stats || true
 fi

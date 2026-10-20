@@ -108,6 +108,12 @@ if (chip_mdns == "platform") {
   }
 }
 
+if (chip_linux_use_silabs_ble_wifi) {
+  config("silabs_ble_wifi_config") {
+    include_dirs = [ "${chip_root}/examples/lighting-app/silabs/linux/include" ]
+  }
+}
+
 static_library("Linux") {
   sources = [
     "../DeviceSafeQueue.cpp",
@@ -161,25 +167,29 @@ static_library("Linux") {
 
   if (chip_enable_ble) {
     sources += [
-      "BLEManagerImpl.cpp",
       "BLEManagerImpl.h",
       "BlePlatformConfig.h",
-      "bluez/AdapterIterator.cpp",
-      "bluez/AdapterIterator.h",
-      "bluez/BluezAdvertisement.cpp",
-      "bluez/BluezAdvertisement.h",
-      "bluez/BluezConnection.cpp",
-      "bluez/BluezConnection.h",
-      "bluez/BluezEndpoint.cpp",
-      "bluez/BluezEndpoint.h",
-      "bluez/BluezObjectIterator.h",
-      "bluez/BluezObjectList.h",
-      "bluez/BluezObjectManager.cpp",
-      "bluez/BluezObjectManager.h",
-      "bluez/ChipDeviceScanner.cpp",
-      "bluez/ChipDeviceScanner.h",
-      "bluez/Types.h",
     ]
+    if (!chip_linux_use_silabs_ble_wifi) {
+      sources += [
+        "BLEManagerImpl.cpp",
+        "bluez/AdapterIterator.cpp",
+        "bluez/AdapterIterator.h",
+        "bluez/BluezAdvertisement.cpp",
+        "bluez/BluezAdvertisement.h",
+        "bluez/BluezConnection.cpp",
+        "bluez/BluezConnection.h",
+        "bluez/BluezEndpoint.cpp",
+        "bluez/BluezEndpoint.h",
+        "bluez/BluezObjectIterator.h",
+        "bluez/BluezObjectList.h",
+        "bluez/BluezObjectManager.cpp",
+        "bluez/BluezObjectManager.h",
+        "bluez/ChipDeviceScanner.cpp",
+        "bluez/ChipDeviceScanner.h",
+        "bluez/Types.h",
+      ]
+    }
   }
 
   if (chip_with_trusty_os) {
@@ -196,6 +206,9 @@ static_library("Linux") {
   ]
 
   public_configs = []
+  if (chip_linux_use_silabs_ble_wifi) {
+    public_configs += [ ":silabs_ble_wifi_config" ]
+  }
 
   if (chip_enable_nfc_based_commissioning) {
     sources += [
@@ -272,56 +285,58 @@ static_library("Linux") {
       sources += [ "NetworkCommissioningWiFiDriver.cpp" ]
     }
 
-    defines = [
-      "CHIP_LINUX_NETWORK_MANAGER=\"${chip_linux_network_manager}\"",
-      "CHIP_LINUX_WIFI_PAF_MANAGER=\"${chip_linux_wifi_paf_manager}\"",
-    ]
-
-    if (chip_linux_network_manager == "wpa_supplicant") {
-      defines += [ "CHIP_LINUX_NETWORK_MANAGER_WPA_SUPPLICANT=1" ]
-
-      sources +=
-          [ "ConnectivityManagerImpl_NetworkManagementWpaSupplicant.cpp" ]
-    } else {
-      assert(false,
-             "Linux network manager not specified or not supported: " +
-                 chip_linux_network_manager +
-                 ". chip_linux_network_manager must be 'wpa_supplicant'.")
-    }
-
-    # If Wi-Fi is enabled, validate and setup the Wi-Fi Neighbor
-    # Awareness Networking (NAN) Unsynchronized Service Discovery
-    # (USD) / Public Action Frame (PAF) commissioning transport
-    # management sources and artifacts.
-
-    if (chip_enable_wifi) {
-      if (chip_linux_wifi_paf_manager == "") {
-        defines += [ "CHIP_LINUX_WIFI_PAF_MANAGER_WPA_SUPPLICANT=0" ]
-      } else if (chip_linux_wifi_paf_manager == "wpa_supplicant") {
-        defines += [ "CHIP_LINUX_WIFI_PAF_MANAGER_WPA_SUPPLICANT=1" ]
-
-        sources += [ "ConnectivityManagerImpl_WiFiPafWpaSupplicant.cpp" ]
-      } else {
-        assert(
-            false,
-            "Linux Wi-Fi NAN USD / PAF manager not specified or not supported: " + chip_linux_wifi_paf_manager + ". chip_linux_paf_manager must be empty or 'wpa_supplicant'.")
-      }
-    }
-
-    needs_wpa_supplicant = chip_linux_network_manager == "wpa_supplicant" ||
-                           chip_linux_wifi_paf_manager == "wpa_supplicant"
-
-    if (needs_wpa_supplicant) {
-      sources += [
-        "WpaSupplicantClient.cpp",
-        "WpaSupplicantClient.h",
+    if (!chip_linux_use_silabs_ble_wifi) {
+      defines = [
+        "CHIP_LINUX_NETWORK_MANAGER=\"${chip_linux_network_manager}\"",
+        "CHIP_LINUX_WIFI_PAF_MANAGER=\"${chip_linux_wifi_paf_manager}\"",
       ]
 
-      public_deps += [ "dbus/wpa" ]
+      if (chip_linux_network_manager == "wpa_supplicant") {
+        defines += [ "CHIP_LINUX_NETWORK_MANAGER_WPA_SUPPLICANT=1" ]
+
+        sources +=
+            [ "ConnectivityManagerImpl_NetworkManagementWpaSupplicant.cpp" ]
+      } else {
+        assert(false,
+               "Linux network manager not specified or not supported: " +
+                   chip_linux_network_manager +
+                   ". chip_linux_network_manager must be 'wpa_supplicant'.")
+      }
+
+      # If Wi-Fi is enabled, validate and setup the Wi-Fi Neighbor
+      # Awareness Networking (NAN) Unsynchronized Service Discovery
+      # (USD) / Public Action Frame (PAF) commissioning transport
+      # management sources and artifacts.
+
+      if (chip_enable_wifi) {
+        if (chip_linux_wifi_paf_manager == "") {
+          defines += [ "CHIP_LINUX_WIFI_PAF_MANAGER_WPA_SUPPLICANT=0" ]
+        } else if (chip_linux_wifi_paf_manager == "wpa_supplicant") {
+          defines += [ "CHIP_LINUX_WIFI_PAF_MANAGER_WPA_SUPPLICANT=1" ]
+
+          sources += [ "ConnectivityManagerImpl_WiFiPafWpaSupplicant.cpp" ]
+        } else {
+          assert(
+              false,
+              "Linux Wi-Fi NAN USD / PAF manager not specified or not supported: " + chip_linux_wifi_paf_manager + ". chip_linux_paf_manager must be empty or 'wpa_supplicant'.")
+        }
+      }
+
+      needs_wpa_supplicant = chip_linux_network_manager == "wpa_supplicant" ||
+                             chip_linux_wifi_paf_manager == "wpa_supplicant"
+
+      if (needs_wpa_supplicant) {
+        sources += [
+          "WpaSupplicantClient.cpp",
+          "WpaSupplicantClient.h",
+        ]
+
+        public_deps += [ "dbus/wpa" ]
+      }
     }
   }
 
-  if (chip_enable_ble) {
+  if (chip_enable_ble && !chip_linux_use_silabs_ble_wifi) {
     public_deps += [ "dbus/bluez" ]
   }
 

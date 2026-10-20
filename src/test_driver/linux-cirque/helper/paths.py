@@ -61,11 +61,26 @@ CHIP_IM_RESPONDER_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/linux_x64_gc
 CHIP_LIGHTING_APP_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/standalone/chip-lighting-app"))
 CHIP_SILABS_LIGHTING_APP_FRAGMENT = "standalone/chip-silabs-lighting-app"
 CHIP_SILABS_LIGHTING_APP_PATH = _resolve_binary_path(
+    "out/arm-silabs/chip-silabs-lighting-app",
     "out/debug" / Path(CHIP_SILABS_LIGHTING_APP_FRAGMENT),
     "out/linux-x64-silabs-lighting/chip-silabs-lighting-app",
     "out/standalone/chip-silabs-lighting-app",
 )
 CHIP_SILABS_LIGHTING_APP_ESC = shlex.quote(str(CHIP_SILABS_LIGHTING_APP_PATH))
+QEMU_ARM_PATH = _resolve_binary_path(
+    "out/host_libs/qemu-arm",
+    "out/debug/qemu-arm",
+)
+QEMU_ARM_ESC = shlex.quote(str(QEMU_ARM_PATH))
+ARM_SYSROOT_PATH = (
+    CHIP_REPO_PATH / ".environment/cipd/packages/pigweed/clang_sysroot"
+)
+ARM_SYSROOT_ESC = shlex.quote(str(ARM_SYSROOT_PATH))
+PTY_BRIDGE_LINUX_PATH = _resolve_binary_path(
+    "out/host_libs/pty_bridge_linux",
+    "out/debug/pty_bridge_linux",
+)
+PTY_BRIDGE_LINUX_ESC = shlex.quote(str(PTY_BRIDGE_LINUX_PATH))
 CHIP_TOOL_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/standalone/chip-tool"))
 LIT_ICD_APP_ESC = shlex.quote(str(CHIP_REPO_PATH / "out/debug/lit_icd/lit-icd-app"))
 

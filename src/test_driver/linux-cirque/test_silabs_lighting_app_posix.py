@@ -18,18 +18,27 @@ Unit and live binary tests for POSIX-hosted Silicon Labs Lighting-App
 """
 
 import os
+import pty
+import select
 import signal
+import struct
 import subprocess
 import tempfile
 import time
+import tty
 import unittest
 
 from AndroidBleWiFiMobileDeviceTest import TestAndroidBleWiFiMobileDevice
 from AndroidBleWiFiSilabsLightingTest import TestAndroidBleWiFiSilabsLightingDevice
 from helper.paths import (
+    ARM_SYSROOT_ESC,
+    ARM_SYSROOT_PATH,
     CHIP_ALL_CLUSTERS_APP_ESC,
     CHIP_SILABS_LIGHTING_APP_ESC,
     CHIP_SILABS_LIGHTING_APP_PATH,
+    PTY_BRIDGE_LINUX_ESC,
+    QEMU_ARM_ESC,
+    QEMU_ARM_PATH,
 )
 
 SILABS_DEVICE_LOG_LINES = [
@@ -107,9 +116,26 @@ class TestSilabsLightingAppPosix(unittest.TestCase):
         '/out/host_libs',
     )
     self.assertEqual(len(executed_cmds), 2)
+    prep_cmd = executed_cmds[0][1]
+    self.assertIn(PTY_BRIDGE_LINUX_ESC, prep_cmd)
+    self.assertIn('/dev/ttySilabsBT0', prep_cmd)
     launch_cmd = executed_cmds[1][1]
+    self.assertIn(QEMU_ARM_ESC, launch_cmd)
+    self.assertIn(ARM_SYSROOT_ESC, launch_cmd)
     self.assertIn(CHIP_SILABS_LIGHTING_APP_ESC, launch_cmd)
     self.assertIn('--wifi --ble-controller 2 --discriminator 3840', launch_cmd)
+
+  @unittest.skipUnless(
+      CHIP_SILABS_LIGHTING_APP_PATH.is_file(),
+      f'{CHIP_SILABS_LIGHTING_APP_PATH} not built',
+  )
+  def test_silabs_lighting_binary_is_32bit_arm_elf(self):
+    with open(CHIP_SILABS_LIGHTING_APP_PATH, 'rb') as f:
+      hdr = f.read(20)
+    self.assertEqual(hdr[:4], b'\x7fELF')
+    self.assertEqual(hdr[4], 1, 'Expected ELFCLASS32 (32-bit ELF)')
+    e_machine = struct.unpack('<H', hdr[18:20])[0]
+    self.assertEqual(e_machine, 40, f'Expected EM_ARM (40), got {e_machine}')
 
   def test_silabs_lighting_device_log_sequence_assertions(self):
     silabs_test = self._make_silabs_harness()
@@ -140,8 +166,8 @@ class TestSilabsLightingAppPosix(unittest.TestCase):
       silabs_test._assert_ble_wifi_device_logs(['device1'])
 
   @unittest.skipUnless(
-      CHIP_SILABS_LIGHTING_APP_PATH.is_file(),
-      f'{CHIP_SILABS_LIGHTING_APP_PATH} not built',
+      CHIP_SILABS_LIGHTING_APP_PATH.is_file() and QEMU_ARM_PATH.is_file(),
+      f'{CHIP_SILABS_LIGHTING_APP_PATH} or {QEMU_ARM_PATH} not built',
   )
   def test_live_silabs_lighting_binary_boot_and_button_toggle(self):
     with tempfile.TemporaryDirectory(prefix='silabs_posix_test_') as tmpdir:
@@ -157,13 +183,21 @@ class TestSilabsLightingAppPosix(unittest.TestCase):
         if os.path.exists(stale_ini):
           os.remove(stale_ini)
 
+      master_fd, slave_fd = pty.openpty()
+      tty.setraw(slave_fd)
+      slave_pty_path = os.ttyname(slave_fd)
+
       env = os.environ.copy()
       env['DBUS_SYSTEM_BUS_ADDRESS'] = (
           f'unix:path={os.path.join(tmpdir, "nonexistent_dbus")}'
       )
+      env['SILABS_BT_PTY_PATH'] = slave_pty_path
       with open(log_path, 'wb') as log_file:
         proc = subprocess.Popen(
             [
+                str(QEMU_ARM_PATH),
+                '-L',
+                str(ARM_SYSROOT_PATH),
                 str(CHIP_SILABS_LIGHTING_APP_PATH),
                 '--KVS',
                 kvs_path,
@@ -178,18 +212,38 @@ class TestSilabsLightingAppPosix(unittest.TestCase):
             stderr=subprocess.STDOUT,
             env=env,
         )
+        hci_rx = bytearray()
         try:
           ready = False
-          for _ in range(40):
+          for _ in range(60):
+            rlist, _, _ = select.select([master_fd], [], [], 0.05)
+            if rlist:
+              try:
+                hci_rx.extend(os.read(master_fd, 4096))
+              except OSError as exc:
+                self.assertIsNotNone(exc)
             if os.path.exists(fifo_path) and os.path.exists(log_path):
               with open(log_path, 'r', encoding='utf-8', errors='replace') as r:
-                if 'Starting event loop' in r.read():
+                txt = r.read()
+                if (
+                    'Starting event loop' in txt
+                    and 'GATT application registered successfully' in txt
+                ):
                   ready = True
                   break
-            time.sleep(0.1)
+            time.sleep(0.05)
           self.assertTrue(
               ready, 'chip-silabs-lighting-app did not enter event loop'
           )
+
+          for _ in range(10):
+            rlist, _, _ = select.select([master_fd], [], [], 0.05)
+            if not rlist:
+              break
+            try:
+              hci_rx.extend(os.read(master_fd, 4096))
+            except OSError:
+              break
 
           with open(fifo_path, 'w', encoding='utf-8') as pipe:
             pipe.write('{"Name":"Button","Button":1,"Action":1}\n')
@@ -207,6 +261,11 @@ class TestSilabsLightingAppPosix(unittest.TestCase):
           except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=5)
+          for fd in (master_fd, slave_fd):
+            try:
+              os.close(fd)
+            except OSError as exc:
+              self.assertIsNotNone(exc)
 
       with open(log_path, 'r', encoding='utf-8', errors='replace') as r:
         log_output = r.read()
@@ -215,10 +274,22 @@ class TestSilabsLightingAppPosix(unittest.TestCase):
       self.assertIn('[SILABS-LIGHT] WSTK LEDs initialized', log_output)
       self.assertIn('[SILABS-LIGHT] LED 1 state=OFF', log_output)
       self.assertIn('[SILABS] App Task started', log_output)
+      self.assertIn('[SILABS-BGAPI] Opened HCI H4 UART PTY', log_output)
+      self.assertIn('GATT application registered successfully', log_output)
       self.assertIn('Toggle ep1 on/off from state 0 to 1', log_output)
       self.assertIn('Cluster callback: 0x0000_0006', log_output)
       self.assertIn('[SILABS-LIGHT] LED 1 state=ON', log_output)
       self.assertIn('Toggle ep1 on/off from state 1 to 0', log_output)
+      # Verify real HCI H4 commands from sl_bt_* over the PTY:
+      # 0x0C03 (HCI_Reset), 0x2005 (LE_Set_Random_Address),
+      # 0x2008 (LE_Set_Adv_Data), 0x2009 (LE_Set_Scan_Rsp_Data),
+      # 0x2006 (LE_Set_Adv_Params), 0x200A (LE_Set_Adv_Enable)
+      self.assertIn(b'\x01\x03\x0c\x00', bytes(hci_rx))
+      self.assertIn(b'\x01\x05\x20\x06', bytes(hci_rx))
+      self.assertIn(b'\x01\x08\x20\x20', bytes(hci_rx))
+      self.assertIn(b'\x01\x09\x20\x20', bytes(hci_rx))
+      self.assertIn(b'\x01\x06\x20\x0f', bytes(hci_rx))
+      self.assertIn(b'\x01\x0a\x20\x01\x01', bytes(hci_rx))
 
 
 if __name__ == '__main__':

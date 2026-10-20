@@ -20,8 +20,15 @@ import("${chip_root}/src/platform/device.gni")
 
 config("silabs-posix-cflags") {
   # Upstream examples/platform/silabs/rgb_led/RGBLEDWidget.cpp re-declares
-  # constexpr kMaxChromaticity / kMaxBrightnessLevel inside XYToRgb().
-  cflags = [ "-Wno-shadow" ]
+  # constexpr kMaxChromaticity / kMaxBrightnessLevel inside XYToRgb(), and
+  # examples/lighting-app/silabs/src/AppTask.cpp only reads sCurrentLevel
+  # when DISPLAY_ENABLED is set.
+  cflags = [
+    "-Wno-shadow",
+    "-Wno-unused-but-set-global",
+    "-Wno-unused-but-set-variable",
+    "-Wno-unused-const-variable",
+  ]
 }
 
 executable("chip-silabs-lighting-app") {
@@ -41,6 +48,10 @@ executable("chip-silabs-lighting-app") {
     "main.cpp",
   ]
 
+  if (chip_linux_use_silabs_ble_wifi) {
+    sources += [ "${chip_root}/src/platform/silabs/efr32/BLEManagerImpl.cpp" ]
+  }
+
   include_dirs = [
     "${chip_root}/config/standalone",
     "include",
@@ -56,6 +67,7 @@ executable("chip-silabs-lighting-app") {
     "SL_MATTER_DISPLAY_ENABLED=0",
     "SL_MATTER_QR_CODE_ENABLED=0",
     "SL_MATTER_RGB_LED_ENABLED=1",
+    "SL_MATTER_PROVISION_CHANNEL_ENABLED=0",
     "ENABLE_WSTK_LEDS=1",
     "SL_CATALOG_SIMPLE_LED_LED1_PRESENT=1",
     "SL_CATALOG_SIMPLE_BUTTON_PRESENT=1",

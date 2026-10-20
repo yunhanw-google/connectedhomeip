@@ -56,7 +56,7 @@ private:
     std::vector<T> * mpScanResponse;
 };
 
-#if CHIP_DEVICE_CONFIG_ENABLE_WPA
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA || (defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI)
 class LinuxWiFiDriver final : public WiFiDriver
 {
 public:
@@ -153,7 +153,7 @@ private:
     // Whether 5GHz band is supported, as claimed by callers (`Set5gSupport()`) rather than syscalls.
     bool mIs5gSupported = false;
 };
-#endif // CHIP_DEVICE_CONFIG_ENABLE_WPA
+#endif // CHIP_DEVICE_CONFIG_ENABLE_WPA || CHIP_LINUX_USE_SILABS_BLE_WIFI
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 class LinuxThreadDriver final : public ThreadDriver

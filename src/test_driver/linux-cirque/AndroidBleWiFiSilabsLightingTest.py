@@ -21,12 +21,14 @@ from AndroidBleWiFiMobileDeviceTest import (
     TestAndroidBleWiFiMobileDevice,
 )
 
-# SIMULATION-DISCLOSURE: Executes the Silicon Labs Lighting-App
+# SIMULATION-DISCLOSURE: Executes the ARM32 Silicon Labs Lighting-App
 # (examples/lighting-app/silabs/src/AppTask.cpp, CustomerAppTask.cpp,
-# LEDWidget.cpp, RGBLEDWidget.cpp, and lighting-wifi-app.zap) compiled for
-# Linux POSIX (chip-silabs-lighting-app) inside a Cirque CHIPEndDevice Docker
-# container over BlueZ BLE + wpa_supplicant Wi-Fi, commissioned and controlled
-# end-to-end by Android CHIPTool (cirque-android-runner).
+# LEDWidget.cpp, RGBLEDWidget.cpp, src/platform/silabs/efr32/BLEManagerImpl.cpp,
+# and lighting-wifi-app.zap) under qemu-arm inside a Cirque CHIPEndDevice Docker
+# container over userspace Virtual Bluetooth (pty_bridge_linux +
+# VirtualBluetoothServer) and userspace Virtual Wi-Fi (VirtualWiFiServer +
+# WpaSupplicantDbusService), commissioned and controlled end-to-end by Android
+# CHIPTool (cirque-android-runner).
 
 
 class TestAndroidBleWiFiSilabsLightingDevice(TestAndroidBleWiFiMobileDevice):

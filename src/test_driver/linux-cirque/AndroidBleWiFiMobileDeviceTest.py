@@ -25,10 +25,13 @@ import time
 
 from helper.CHIPTestBase import CHIPVirtualHome, TestResult
 from helper.paths import (
+    ARM_SYSROOT_ESC,
     CHIP_ALL_CLUSTERS_APP_ESC,
     CHIP_REPO_STR,
     CHIP_SILABS_LIGHTING_APP_ESC,
     CHIP_TOOL_APK_PATH,
+    PTY_BRIDGE_LINUX_ESC,
+    QEMU_ARM_ESC,
 )
 from helper.android_emulator_logs import save_android_emulator_diagnostics
 from helper.session_keylog import (
@@ -255,16 +258,24 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
           ' ip -6 addr flush dev wlan0 scope global 2>/dev/null || true;'
           ' sleep 0.3; done\' >/dev/null 2>&1 &"',
       )
-      self.execute_device_cmd(
-          server_id,
-          'sh -c "sed -i'
-          ' \'s/.*allow-interfaces=.*/allow-interfaces=wlan0/;'
-          ' s/.*use-ipv6=.*/use-ipv6=no/\''
-          ' /etc/avahi/avahi-daemon.conf 2>/dev/null || true;'
-          ' service dbus start 2>/dev/null || true;'
-          ' service avahi-daemon restart 2>/dev/null ||'
-          ' avahi-daemon -D 2>/dev/null || true"',
-      )
+      if self._is_silabs_lighting_app():
+        self.execute_device_cmd(
+            server_id,
+            'sh -c "service dbus start 2>/dev/null || true;'
+            ' service avahi-daemon stop 2>/dev/null || true;'
+            ' killall -9 avahi-daemon 2>/dev/null || true"',
+        )
+      else:
+        self.execute_device_cmd(
+            server_id,
+            'sh -c "sed -i'
+            ' \'s/.*allow-interfaces=.*/allow-interfaces=wlan0/;'
+            ' s/.*use-ipv6=.*/use-ipv6=no/\''
+            ' /etc/avahi/avahi-daemon.conf 2>/dev/null || true;'
+            ' service dbus start 2>/dev/null || true;'
+            ' service avahi-daemon restart 2>/dev/null ||'
+            ' avahi-daemon -D 2>/dev/null || true"',
+        )
 
   def _ensure_host_runtime_libs(self):
     host_libs_path = os.path.join(CHIP_REPO_STR, 'out', 'host_libs')
@@ -297,20 +308,50 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
           ble_adapt_id,
           TEST_DISCRIMINATOR,
       )
-      self.execute_device_cmd(server_id, RESET_SESSION_KEYLOG_CMD)
-      gdb_wrapper = (
-          'gdb -batch -return-child-result -q -ex "set pagination off" -ex run'
-          ' -ex "thread apply all bt" --args'
-      )
-      if os.environ.get('CIRQUE_COVERAGE') == '1':
-        gdb_wrapper = ''
-      self.execute_device_cmd(
-          server_id,
-          f'CHIPCirqueDaemon.py -- run env LD_LIBRARY_PATH={host_libs_dir}'
-          f' {SESSION_KEYLOG_ENV} {gdb_wrapper}'
-          f' {app_binary_esc} --wifi --ble-controller'
-          f' {ble_adapt_id} --discriminator {TEST_DISCRIMINATOR}',
-      )
+      if self._is_silabs_lighting_app():
+        hci_port = 23458
+        try:
+          bt_info = self.query_api('virtual_bt_info')
+          if isinstance(bt_info, dict):
+            hci_port = int(bt_info.get('hci_port', 23458) or 23458)
+        except Exception as exc:
+          self.logger.debug('virtual_bt_info lookup fallback: %s', exc)
+        silabs_bt_prep_cmd = (
+            'sh -c ": > /tmp/matter_session_keys.log;'
+            ' killall -9 pty_bridge_linux 2>/dev/null || true;'
+            ' if [ -S /dev/virtual_bt/shared_hci.sock -a -f'
+            ' /dev/virtual_bt/bin/bt_tcp_to_unix_relay.py ]; then'
+            ' nohup python3 /dev/virtual_bt/bin/bt_tcp_to_unix_relay.py'
+            f' {hci_port} /dev/virtual_bt/shared_hci.sock'
+            ' >/tmp/silabs_bt_relay.log 2>&1 < /dev/null & sleep 0.3; fi;'
+            f' nohup {PTY_BRIDGE_LINUX_ESC} /dev/ttySilabsBT0 127.0.0.1'
+            f' {hci_port} silabs_hci0 >/tmp/silabs_pty_bridge.log 2>&1'
+            ' < /dev/null & sleep 0.5;'
+            ' chmod 666 /dev/ttySilabsBT0 /dev/pts/* 2>/dev/null || true"'
+        )
+        self.execute_device_cmd(server_id, silabs_bt_prep_cmd)
+        self.execute_device_cmd(
+            server_id,
+            f'CHIPCirqueDaemon.py -- run env {SESSION_KEYLOG_ENV}'
+            f' {QEMU_ARM_ESC} -L {ARM_SYSROOT_ESC}'
+            f' {app_binary_esc} --wifi --ble-controller'
+            f' {ble_adapt_id} --discriminator {TEST_DISCRIMINATOR}',
+        )
+      else:
+        self.execute_device_cmd(server_id, RESET_SESSION_KEYLOG_CMD)
+        gdb_wrapper = (
+            'gdb -batch -return-child-result -q -ex "set pagination off"'
+            ' -ex run -ex "thread apply all bt" --args'
+        )
+        if os.environ.get('CIRQUE_COVERAGE') == '1':
+          gdb_wrapper = ''
+        self.execute_device_cmd(
+            server_id,
+            f'CHIPCirqueDaemon.py -- run env LD_LIBRARY_PATH={host_libs_dir}'
+            f' {SESSION_KEYLOG_ENV} {gdb_wrapper}'
+            f' {app_binary_esc} --wifi --ble-controller'
+            f' {ble_adapt_id} --discriminator {TEST_DISCRIMINATOR}',
+        )
 
   def _dump_emulator_diagnostics(self, req_device_id):
     """Logs emulator state so a CI boot failure is diagnosable."""
