@@ -119,6 +119,12 @@ build_lit_icd() {
         'chip_system_config_use_openthread_inet_endpoints=true'
         'openthread_config_dns_client_enable=true'
         'openthread_external_mbedtls="//third_party/connectedhomeip/third_party/mbedtls:mbedtls"'
+        # all-clusters-app/linux/args.gni turns the MeshCoP Joiner on, which
+        # needs EC-JPAKE in mbedtls; CHIP's mbedtls config leaves it off. The
+        # device is commissioned over BLE, so drop the Joiner and CHIP's
+        # Thread MeshCoP rendezvous (which calls the Joiner's otSeeker* API).
+        'openthread_config_joiner_enable=false'
+        'chip_device_config_enable_thread_meshcop=false'
         'chip_enable_icd_server=true'
         'chip_enable_icd_lit=true'
         'chip_enable_icd_dsls=true'
