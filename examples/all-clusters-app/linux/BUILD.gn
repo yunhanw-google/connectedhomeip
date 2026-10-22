@@ -204,6 +204,7 @@ group("linux") {
     deps += [
       ":chip-all-clusters-app",
       "${chip_root}/examples/lighting-app/silabs/linux:chip-silabs-lighting-app",
+      "${chip_root}/examples/lit-icd-app/silabs/linux:chip-silabs-lit-icd-app",
     ]
   }
 }

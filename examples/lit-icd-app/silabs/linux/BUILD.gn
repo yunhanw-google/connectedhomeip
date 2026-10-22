@@ -1,0 +1,75 @@
+import("//build_overrides/build.gni")
+import("//build_overrides/chip.gni")
+
+import("${chip_root}/src/lib/lib.gni")
+import("${chip_root}/src/platform/device.gni")
+
+config("silabs-posix-cflags") {
+  cflags = [
+    "-Wno-shadow",
+    "-Wno-unused-but-set-global",
+    "-Wno-unused-but-set-variable",
+    "-Wno-unused-const-variable",
+  ]
+}
+
+executable("chip-silabs-lit-icd-app") {
+  sources = [
+    "${chip_root}/examples/all-clusters-app/all-clusters-common/src/software-diagnostics-stub.cpp",
+    "${chip_root}/examples/all-clusters-app/all-clusters-common/src/wifi-diagnostics-stub.cpp",
+    "${chip_root}/examples/platform/silabs/LEDWidget.cpp",
+    "${chip_root}/examples/lit-icd-app/silabs/src/AppTask.cpp",
+    
+    "SilabsPosixShim.cpp",
+    "SilabsPosixShim.h",
+    "main.cpp",
+  ]
+
+  if (chip_linux_use_silabs_ble_wifi) {
+    sources += [ "${chip_root}/src/platform/silabs/efr32/BLEManagerImpl.cpp" ]
+  }
+
+  include_dirs = [
+    "${chip_root}/config/standalone",
+    "include",
+    ".",
+    "${chip_root}/examples/lit-icd-app/silabs/include",
+    "${chip_root}/examples/platform/silabs",
+    "${chip_root}/examples/platform/silabs/customer",
+  ]
+
+  defines = [
+    "CHIP_SILABS_APP_USE_CUSTOMER_APP_TASK=0",
+    "SL_MATTER_DISPLAY_ENABLED=0",
+    "SL_MATTER_QR_CODE_ENABLED=0",
+    "SL_MATTER_RGB_LED_ENABLED=0",
+    "SL_MATTER_PROVISION_CHANNEL_ENABLED=0",
+    "ENABLE_WSTK_LEDS=0",
+    "CONFIG_BUILD_FOR_HOST_UNIT_TEST=0",
+    "CHIP_CONFIG_ICD_OBSERVERS_POOL_SIZE=5",
+    "CHIP_CONFIG_ICD_IDLE_MODE_DURATION_SEC=5",
+    "CHIP_CONFIG_ICD_SHORT_IDLE_MODE_DURATION_SEC=5",
+    "CHIP_CONFIG_ICD_ACTIVE_MODE_DURATION_MS=1000",
+    "CHIP_CONFIG_ICD_ACTIVE_MODE_THRESHOLD_MS=5000",
+  ]
+
+  configs += [ ":silabs-posix-cflags" ]
+
+  deps = [
+    "${chip_root}/examples/lit-icd-app/lit-icd-common",
+    "${chip_root}/examples/platform/linux:app-main",
+    "${chip_root}/src/app/common:ids",
+    "${chip_root}/src/lib",
+    "${chip_root}/third_party/jsoncpp",
+  ]
+
+  output_dir = root_out_dir
+}
+
+group("linux") {
+  deps = [ ":chip-silabs-lit-icd-app" ]
+}
+
+group("default") {
+  deps = [ ":linux" ]
+}

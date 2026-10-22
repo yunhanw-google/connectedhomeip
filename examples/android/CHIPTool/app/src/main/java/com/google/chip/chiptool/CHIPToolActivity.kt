@@ -28,6 +28,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
 import com.google.chip.chiptool.provisioning.AddressCommissioningFragment
 import com.google.chip.chiptool.provisioning.DeviceProvisioningFragment
 import com.google.chip.chiptool.provisioning.EnterNetworkFragment
@@ -62,11 +63,13 @@ class CHIPToolActivity :
       val fragment = SelectActionFragment.newInstance()
       supportFragmentManager
         .beginTransaction()
-        .add(R.id.nav_host_fragment, fragment, fragment.javaClass.simpleName)
+        .replace(R.id.nav_host_fragment, fragment, fragment.javaClass.simpleName)
         .commit()
     } else {
       networkType =
         ProvisionNetworkType.fromName(savedInstanceState.getString(ARG_PROVISION_NETWORK_TYPE))
+      @Suppress("DEPRECATION")
+      deviceInfo = savedInstanceState.getParcelable(ARG_DEVICE_INFO)
     }
 
     if (intent?.action == NfcAdapter.ACTION_NDEF_DISCOVERED) onNfcIntent(intent)
@@ -99,7 +102,11 @@ class CHIPToolActivity :
   private fun onCommissionBleThreadIntent(intent: Intent) {
     val discriminator = intent.getIntExtra(EXTRA_DISCRIMINATOR, 3840)
     val setupPinCode = intent.getLongExtra(EXTRA_SETUP_PIN_CODE, 20202021L)
-    val devInfo = CHIPDeviceInfo(discriminator = discriminator, setupPinCode = setupPinCode)
+    // LIT ICD registration (ICD Management RegisterClient during commissioning).
+    // Defaults to true like CHIPDeviceInfo; tests pass false as a negative control.
+    val isLIT = intent.getBooleanExtra(EXTRA_IS_LIT, true)
+    val devInfo =
+      CHIPDeviceInfo(discriminator = discriminator, setupPinCode = setupPinCode, isLIT = isLIT)
     this.deviceInfo = devInfo
 
     val rawDatasetHex = intent.getStringExtra(EXTRA_THREAD_OPERATIONAL_DATASET)
@@ -130,14 +137,14 @@ class CHIPToolActivity :
             3.toByte(),
             0.toByte(),
             (channel.shr(8) and 0xFF).toByte(),
-            (channel and 0xFF).toByte()
+            (channel and 0xFF).toByte(),
           )
         dataset +=
           byteArrayOf(
             1.toByte(),
             2.toByte(),
             (panId.shr(8) and 0xFF).toByte(),
-            (panId and 0xFF).toByte()
+            (panId and 0xFF).toByte(),
           )
         dataset += byteArrayOf(2.toByte(), 8.toByte()) + xpanIdBytes
         dataset += byteArrayOf(5.toByte(), 16.toByte()) + masterKeyBytes
@@ -153,39 +160,54 @@ class CHIPToolActivity :
 
   override fun onSaveInstanceState(outState: Bundle) {
     outState.putString(ARG_PROVISION_NETWORK_TYPE, networkType?.name)
+    outState.putParcelable(ARG_DEVICE_INFO, deviceInfo)
 
     super.onSaveInstanceState(outState)
   }
 
   override fun onCHIPDeviceInfoReceived(deviceInfo: CHIPDeviceInfo) {
     this.deviceInfo = deviceInfo
+    supportFragmentManager.popBackStack()
     if (networkType == null) {
       showFragment(CHIPDeviceDetailsFragment.newInstance(deviceInfo))
     } else {
       if (deviceInfo.ipAddress != null) {
-        showFragment(DeviceProvisioningFragment.newInstance(deviceInfo!!, null))
+        showFragment(DeviceProvisioningFragment.newInstance(deviceInfo, null))
       } else {
-        showFragment(EnterNetworkFragment.newInstance(networkType!!), false)
+        showFragment(EnterNetworkFragment.newInstance(networkType!!))
       }
     }
   }
 
   override fun onCommissioningComplete(code: Long, nodeId: Long) {
+    DeviceIdUtil.setCommissionedNodeId(this, nodeId)
+    ChipClient.getDeviceController(this).close()
     runOnUiThread {
       Toast.makeText(this, getString(R.string.commissioning_completed, code), Toast.LENGTH_SHORT)
         .show()
+      if (!isFinishing && !isDestroyed) {
+        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        showFragment(SelectActionFragment.newInstance(), false)
+      }
     }
-    DeviceIdUtil.setCommissionedNodeId(this, nodeId)
-    ChipClient.getDeviceController(this).close()
-    showFragment(SelectActionFragment.newInstance(), false)
   }
 
   override fun onShowDeviceAddressInput() {
-    showFragment(AddressCommissioningFragment.newInstance(), false)
+    supportFragmentManager.popBackStack()
+    showFragment(AddressCommissioningFragment.newInstance())
   }
 
   override fun onNetworkCredentialsEntered(networkCredentials: NetworkCredentialsParcelable) {
-    showFragment(DeviceProvisioningFragment.newInstance(deviceInfo!!, networkCredentials))
+    val targetDeviceInfo = deviceInfo
+    if (targetDeviceInfo == null) {
+      Log.e(TAG, "onNetworkCredentialsEntered called with null deviceInfo; returning to scanner")
+      Toast.makeText(this, "Device info lost; please scan the device again.", Toast.LENGTH_SHORT)
+        .show()
+      supportFragmentManager.popBackStack()
+      showFragment(BarcodeFragment.newInstance())
+      return
+    }
+    showFragment(DeviceProvisioningFragment.newInstance(targetDeviceInfo, networkCredentials))
   }
 
   override fun handleReadFromLedgerClicked(deviceInfo: CHIPDeviceInfo) {
@@ -241,7 +263,7 @@ class CHIPToolActivity :
       arrayOf(
         getString(R.string.nfc_tag_action_show),
         getString(R.string.nfc_tag_action_wifi),
-        getString(R.string.nfc_tag_action_thread)
+        getString(R.string.nfc_tag_action_thread),
       )
 
     AlertDialog.Builder(this)
@@ -327,6 +349,7 @@ class CHIPToolActivity :
     private const val TAG = "CHIPToolActivity"
     private const val ADDRESS_COMMISSIONING_FRAGMENT_TAG = "address_commissioning_fragment"
     private const val ARG_PROVISION_NETWORK_TYPE = "provision_network_type"
+    private const val ARG_DEVICE_INFO = "device_info"
 
     const val ACTION_COMMISSION_BLE_WIFI = "com.google.chip.chiptool.action.COMMISSION_BLE_WIFI"
     const val EXTRA_DISCRIMINATOR = "discriminator"
@@ -339,5 +362,6 @@ class CHIPToolActivity :
     const val EXTRA_THREAD_PAN_ID = "threadPanId"
     const val EXTRA_THREAD_XPAN_ID = "threadXpanId"
     const val EXTRA_THREAD_MASTER_KEY = "threadMasterKey"
+    const val EXTRA_IS_LIT = "isLIT"
   }
 }

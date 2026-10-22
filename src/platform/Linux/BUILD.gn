@@ -103,8 +103,10 @@ if (chip_enable_nfc_based_commissioning) {
 }
 
 if (chip_mdns == "platform") {
-  pkg_config("avahi_client_config") {
-    packages = [ "avahi-client" ]
+  if (!chip_enable_thread || chip_enable_wifi) {
+    pkg_config("avahi_client_config") {
+      packages = [ "avahi-client" ]
+    }
   }
 }
 

@@ -97,3 +97,39 @@ fi
 if command -v ccache >/dev/null 2>&1; then
     ccache --show-stats || true
 fi
+
+# Build Thread version (LIT ICD)
+ARM_SILABS_THREAD_ARGS=(
+    'target_cpu="arm"'
+    'target_os="linux"'
+    'is_clang=true'
+    'chip_crypto="mbedtls"'
+    'chip_mdns="platform"'
+    'chip_logging_backend="stdio"'
+    'chip_enable_wifi=false'
+    'chip_enable_ble=true'
+    'chip_config_network_layer_ble=true'
+    'chip_enable_thread=true'
+    'chip_system_config_use_openthread_inet_endpoints=true'
+    'openthread_config_dns_client_enable=true'
+    'openthread_external_mbedtls="//third_party/connectedhomeip/third_party/mbedtls:mbedtls"'
+    'chip_enable_icd_server=true'
+    'chip_enable_icd_lit=true'
+    'chip_enable_icd_dsls=true'
+    'chip_linux_use_silabs_ble_wifi=true'
+    'chip_inet_config_enable_ipv4=false'
+    'chip_enable_session_keylog=true'
+    'chip_im_force_fabric_quota_check=true'
+    'chip_build_tests=false'
+    'target_cflags=["-DCONFIG_BUILD_FOR_HOST_UNIT_TEST=0","-DCHIP_CONFIG_ICD_OBSERVERS_POOL_SIZE=5","-DCHIP_CONFIG_ICD_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_SHORT_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_ACTIVE_MODE_DURATION_MS=1000","-DCHIP_CONFIG_ICD_ACTIVE_MODE_THRESHOLD_MS=5000"]'
+    "sysroot=\"$ARM_SYSROOT\""
+)
+if command -v ccache >/dev/null 2>&1; then
+    ARM_SILABS_THREAD_ARGS+=('pw_command_launcher="ccache"')
+fi
+
+echo "Build: Cross-compile ARM32 Silicon Labs LIT ICD App (out/arm-silabs-thread/chip-silabs-lit-icd-app)"
+mkdir -p out/arm-silabs-thread
+gn --root="$CHIP_ROOT/examples/all-clusters-app/linux" gen out/arm-silabs-thread --args="${ARM_SILABS_THREAD_ARGS[*]}"
+time ninja -C out/arm-silabs-thread chip-silabs-lit-icd-app
+
