@@ -28,7 +28,12 @@ from AndroidBleThreadMobileDeviceTest import (
     TEST_DISCRIMINATOR,
     TestAndroidBleThreadMobileDevice,
 )
-from helper.paths import CHIP_REPO_STR, PTY_BRIDGE_LINUX_ESC
+from helper.paths import (
+    ARM_SYSROOT_ESC,
+    CHIP_REPO_STR,
+    PTY_BRIDGE_LINUX_ESC,
+    QEMU_ARM_ESC,
+)
 from helper.pcap_oracles import (
     ieee802154_mac_command_frames,
     matter_icd_checkin_packets,
@@ -332,16 +337,18 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
         'chmod 666 /tmp/ttySilabsBT0 2>/dev/null || true', shell=True
     )
 
-    host_libs_dir = f'{CHIP_REPO_STR}/out/host_libs'
     app_log_path = '/tmp/chip-all-clusters.log'
     open(app_log_path, 'w').close()
     self.app_log_file = open(app_log_path, 'a')
 
     disable_reg = os.environ.get('DISABLE_ICD_REGISTRATION', '0')
+    # Same emulator and sysroot as the Silabs lighting-app test: the static
+    # out/host_libs/qemu-arm and the Pigweed armhf sysroot, so the test needs
+    # no qemu-user or armhf cross packages in the runner image.
     cmd = (
         'ulimit -c 0; env SILABS_BT_PTY_PATH=/tmp/ttySilabsBT0'
-        f' PORT_OFFSET={port_offset} LD_LIBRARY_PATH={host_libs_dir} qemu-arm'
-        f' -L /usr/arm-linux-gnueabihf/ {self._get_end_device_binary_esc()}'
+        f' PORT_OFFSET={port_offset} {QEMU_ARM_ESC}'
+        f' -L {ARM_SYSROOT_ESC} {self._get_end_device_binary_esc()}'
         ' --thread-node-id 2 --ble-controller 0 --discriminator'
         f' {TEST_DISCRIMINATOR}'
     )

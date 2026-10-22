@@ -148,7 +148,7 @@ jobs:
                        git config --global --add safe.directory '*' \
                        && export CCACHE_DIR=\"\$PWD/.ccache\" \
                        && mkdir -p \"\$CCACHE_DIR\" \
-                       && scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && SILABS_ARM32_APPS=lighting scripts/build/gn_gen_cirque_silabs_arm32.sh \
                        && chown -R $(id -u):$(id -g) .ccache out .environment \
                       "
                   cp -fL /usr/bin/qemu-arm-static out/host_libs/qemu-arm
@@ -178,6 +178,69 @@ jobs:
                   if-no-files-found: error
                   overwrite: true
 
+    build_silabs_arm32_thread:
+        name: Build ARM32 Silabs LIT ICD App
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 90
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: linux
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: ARM32 Silabs LIT ICD Build Cache
+              id: silabs-arm32-thread-build-cache
+              uses: actions/cache@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}
+                restore-keys: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-
+            - name: Build ARM32 chip-silabs-lit-icd-app
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \
+                       && SILABS_ARM32_APPS=lit-icd scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && chown -R $(id -u):$(id -g) .ccache out .environment \
+                      "
+            - name: Verify ARM32 LIT ICD artifact
+              run: |
+                  file out/arm-silabs-thread/chip-silabs-lit-icd-app | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
+            - name: Save ARM32 Silabs LIT ICD Build Cache
+              if: ${{ always() && !env.ACT && steps.silabs-arm32-thread-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}
+            - name: Upload ARM32 Silabs LIT ICD artifact
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-silabs-arm32-lit-icd-app
+                  path: out/arm-silabs-thread/chip-silabs-lit-icd-app
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
     cirque:
         name: Cirque
 
@@ -187,8 +250,9 @@ jobs:
         runs-on: ubuntu-latest
         if: github.actor != 'restyled-io[bot]'
         # Budget: ~40 min of bootstrap and Linux builds (with Android CHIPTool
-        # built in parallel on build_android_chiptool and the ARM32 Silabs
-        # lighting-app on build_silabs_arm32), ~30 min of tests, and
+        # built in parallel on build_android_chiptool, the ARM32 Silabs
+        # lighting-app on build_silabs_arm32 and the ARM32 Silabs LIT ICD app on
+        # build_silabs_arm32_thread), ~30 min of tests, and
         # one end-of-suite coverage capture. Keep generous headroom so a cold
         # cache never cancels the run before logs are uploaded.
         timeout-minutes: 180
@@ -425,7 +489,7 @@ jobs:
               run: |
                   test -s out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
                   ls -lh out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
-            - name: Wait for parallel Build ARM32 Silabs Lighting App job
+            - name: Wait for parallel ARM32 Silabs build jobs
               if: ${{ !env.ACT }}
               timeout-minutes: 60
               env:
@@ -438,8 +502,11 @@ jobs:
                   import time
                   import urllib.request
 
-                  JOB = "Build ARM32 Silabs Lighting App"
-                  STEP = "Upload ARM32 Silabs artifacts"
+                  # (job name, upload step name) of each parallel ARM32 build.
+                  PENDING = {
+                      "Build ARM32 Silabs Lighting App": "Upload ARM32 Silabs artifacts",
+                      "Build ARM32 Silabs LIT ICD App": "Upload ARM32 Silabs LIT ICD artifact",
+                  }
                   repo = os.environ["GITHUB_REPOSITORY"]
                   run_id = os.environ["GITHUB_RUN_ID"]
                   token = os.environ.get("GH_TOKEN", "")
@@ -453,25 +520,28 @@ jobs:
                       req = urllib.request.Request(url, headers=headers)
                       with urllib.request.urlopen(req, timeout=30) as resp:
                           data = json.loads(resp.read().decode("utf-8"))
-                      jobs = [j for j in data.get("jobs", []) if j.get("name") == JOB]
-                      if not jobs:
-                          print(f"Waiting for '{JOB}' job to register...", flush=True)
-                          time.sleep(10)
-                          continue
-                      job = jobs[-1]
-                      steps = [s for s in job.get("steps", []) if s.get("name") == STEP]
-                      if steps and steps[-1].get("status") == "completed":
-                          if steps[-1].get("conclusion") == "success":
-                              print(f"{STEP} completed.", flush=True)
-                              sys.exit(0)
-                          print(f"::error::{STEP} failed: {steps[-1].get('conclusion')}", flush=True)
-                          sys.exit(1)
-                      if job.get("status") == "completed":
-                          print(f"::error::{JOB} finished with conclusion={job.get('conclusion')} before uploading", flush=True)
-                          sys.exit(1)
-                      print(f"{JOB} status={job.get('status')}; sleeping 15s...", flush=True)
+                      for job_name, step_name in list(PENDING.items()):
+                          jobs = [j for j in data.get("jobs", []) if j.get("name") == job_name]
+                          if not jobs:
+                              print(f"Waiting for '{job_name}' job to register...", flush=True)
+                              continue
+                          job = jobs[-1]
+                          steps = [s for s in job.get("steps", []) if s.get("name") == step_name]
+                          if steps and steps[-1].get("status") == "completed":
+                              if steps[-1].get("conclusion") == "success":
+                                  print(f"{step_name} completed.", flush=True)
+                                  del PENDING[job_name]
+                                  continue
+                              print(f"::error::{step_name} failed: {steps[-1].get('conclusion')}", flush=True)
+                              sys.exit(1)
+                          if job.get("status") == "completed":
+                              print(f"::error::{job_name} finished with conclusion={job.get('conclusion')} before uploading", flush=True)
+                              sys.exit(1)
+                          print(f"{job_name} status={job.get('status')}", flush=True)
+                      if not PENDING:
+                          sys.exit(0)
                       time.sleep(15)
-                  print(f"::error::Timed out waiting for {JOB}", flush=True)
+                  print(f"::error::Timed out waiting for {sorted(PENDING)}", flush=True)
                   sys.exit(1)
                   PY
                   sudo chown -R "$(id -u):$(id -g)" out
@@ -481,6 +551,13 @@ jobs:
               with:
                   name: cirque-silabs-arm32-lighting-app
                   path: out
+            - name: Download ARM32 Silabs LIT ICD artifact
+              # A single-file artifact is stored without its directories.
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
+              with:
+                  name: cirque-silabs-arm32-lit-icd-app
+                  path: out/arm-silabs-thread
             - name: Build ARM32 Silabs artifacts (Local ACT fallback)
               if: ${{ env.ACT }}
               run: |
@@ -496,8 +573,9 @@ jobs:
               # upload-artifact drops the executable bit; restore it, then
               # fail loudly if anything the Silabs E2E test needs is missing.
               run: |
-                  chmod 755 out/arm-silabs/chip-silabs-lighting-app out/host_libs/pty_bridge_linux out/host_libs/qemu-arm
+                  chmod 755 out/arm-silabs/chip-silabs-lighting-app out/arm-silabs-thread/chip-silabs-lit-icd-app out/host_libs/pty_bridge_linux out/host_libs/qemu-arm
                   file out/arm-silabs/chip-silabs-lighting-app | grep -q "ELF 32-bit LSB.*ARM"
+                  file out/arm-silabs-thread/chip-silabs-lit-icd-app | grep -q "ELF 32-bit LSB.*ARM"
                   file -L out/host_libs/qemu-arm | grep -q "static"
                   test -x out/host_libs/pty_bridge_linux
                   test -f .environment/cipd/packages/pigweed/clang_sysroot/lib/ld-linux-armhf.so.3
@@ -520,6 +598,8 @@ jobs:
                      --volume "${HOME}/.android/avd:${HOME}/.android/avd:rw" \
                      -- sh -c " \
                        git config --global --add safe.directory '*' \
+                       && apt-get update -qq \
+                       && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends tshark \
                        && scripts/tests/cirque_tests.sh run_all_tests \
                       "
 

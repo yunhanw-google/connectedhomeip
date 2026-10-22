@@ -72,6 +72,7 @@ CIRQUE_ANDROID_TESTS=(
     "AndroidBleWiFiMobileDeviceTest"
     "AndroidBleWiFiSilabsLightingTest"
     "AndroidBleThreadMobileDeviceTest"
+    "test_silabs_lit_icd_app_posix"
 )
 
 BOLD_GREEN_TEXT="\033[1;32m"
