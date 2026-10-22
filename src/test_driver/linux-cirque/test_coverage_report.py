@@ -28,6 +28,7 @@ if str(_CUR_DIR) not in sys.path:
     sys.path.insert(0, str(_CUR_DIR))
 
 from helper.coverage_report import (
+    append_llvm_profraw_coverage,
     canonicalize_lcov_symlinks,
     parse_lcov_info,
     compute_metrics,
@@ -212,6 +213,91 @@ class TestCoverageReport(unittest.TestCase):
                 "examples/all-clusters-app/linux/third_party/connectedhomeip",
                 normalized,
             )
+
+
+class TestAppendLlvmProfrawCoverage(unittest.TestCase):
+    """Verifies ARM32 .profraw files are merged into the lcov tracefile."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        root = Path(self._tmp.name)
+        self.chip_root = root / "connectedhomeip"
+        self.out_dir = self.chip_root / "out/debug"
+        self.output_dir = root / "cov"
+        self.output_dir.mkdir(parents=True)
+        self.raw_info = self.output_dir / "lcov_raw.info"
+        self.raw_info.write_text("SF:/x86/only.cpp\nend_of_record\n")
+        bin_dir = self.chip_root / ".environment/cipd/packages/pigweed/bin"
+        bin_dir.mkdir(parents=True)
+        self.cov_args = root / "llvm-cov.args"
+        # llvm-profdata writes the -o file; llvm-cov records its arguments
+        # and prints one lcov record.
+        (bin_dir / "llvm-profdata").write_text(
+            '#!/bin/sh\nwhile [ "$1" != "-o" ]; do shift; done; '
+            'echo merged > "$2"\n')
+        (bin_dir / "llvm-cov").write_text(
+            f'#!/bin/sh\necho "$@" > {self.cov_args}\n'
+            'printf "SF:/arm/silabs/AppTask.cpp\\nDA:1,1\\n'
+            'end_of_record\\n"\n')
+        for tool in ("llvm-profdata", "llvm-cov"):
+            (bin_dir / tool).chmod(0o755)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, rel: str, content: bytes) -> Path:
+        path = self.chip_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path
+
+    def _append(self) -> bool:
+        return append_llvm_profraw_coverage(
+            self.out_dir, self.output_dir, self.chip_root, self.raw_info)
+
+    def test_no_profraw_leaves_tracefile_unchanged(self):
+        self._write("out/arm-silabs-thread/chip-silabs-lit-icd-app",
+                    b"ELF __llvm_covmap")
+        self.assertFalse(self._append())
+        self.assertEqual(self.raw_info.read_text(),
+                         "SF:/x86/only.cpp\nend_of_record\n")
+
+    def test_profraw_without_instrumented_binary_is_skipped(self):
+        self._write("out/debug/profraw/lit-icd-1-0.profraw", b"raw")
+        self._write("out/arm-silabs-thread/chip-silabs-lit-icd-app", b"ELF")
+        self.assertFalse(self._append())
+        self.assertFalse(self.cov_args.exists())
+
+    def test_profraw_is_exported_for_instrumented_binaries_only(self):
+        self._write("out/debug/profraw/lit-icd-1-0.profraw", b"raw")
+        lit_icd = self._write(
+            "out/arm-silabs-thread/chip-silabs-lit-icd-app",
+            b"ELF __llvm_covmap")
+        lighting = self._write("out/arm-silabs/chip-silabs-lighting-app",
+                               b"ELF")
+        self.assertTrue(self._append())
+        info = self.raw_info.read_text()
+        self.assertIn("SF:/x86/only.cpp\n", info)
+        self.assertIn("SF:/arm/silabs/AppTask.cpp\n", info)
+        args = self.cov_args.read_text()
+        self.assertIn(f"-object {lit_icd}", args)
+        self.assertNotIn(str(lighting), args)
+
+    @unittest.skipUnless(shutil.which("lcov"), "lcov not installed")
+    def test_report_from_profraw_only_run(self):
+        """A run with no .gcda files still reports the ARM32 apps."""
+        from helper.coverage_report import generate_coverage_report
+        self._write("out/debug/profraw/lit-icd-1-0.profraw", b"raw")
+        self._write("out/arm-silabs-thread/chip-silabs-lit-icd-app",
+                    b"ELF __llvm_covmap")
+        # setUp left a stale lcov_raw.info; it must not leak into the report.
+        json_path, _ = generate_coverage_report(
+            self.out_dir, self.output_dir, self.chip_root, skip_genhtml=True)
+        metrics = json.loads(Path(json_path).read_text())
+        self.assertEqual(metrics["overall"]["total_files"], 1)
+        info = (self.output_dir / "lcov.info").read_text()
+        self.assertIn("SF:/arm/silabs/AppTask.cpp", info)
+        self.assertNotIn("/x86/only.cpp", info)
 
 
 def _write_fake_lcov(bin_dir: Path, version_line: str) -> None:

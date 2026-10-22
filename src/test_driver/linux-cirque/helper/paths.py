@@ -76,6 +76,10 @@ ARM_SYSROOT_PATH = (
     CHIP_REPO_PATH / ".environment/cipd/packages/pigweed/clang_sysroot"
 )
 ARM_SYSROOT_ESC = shlex.quote(str(ARM_SYSROOT_PATH))
+# LLVM_PROFILE_FILE directory for the clang ARM32 Silabs apps built with
+# CIRQUE_COVERAGE=1; helper/coverage_report.py merges the .profraw files.
+SILABS_PROFRAW_DIR_PATH = CHIP_REPO_PATH / "out/debug/profraw"
+SILABS_PROFRAW_DIR_ESC = shlex.quote(str(SILABS_PROFRAW_DIR_PATH))
 PTY_BRIDGE_LINUX_PATH = _resolve_binary_path(
     "out/host_libs/pty_bridge_linux",
     "out/debug/pty_bridge_linux",

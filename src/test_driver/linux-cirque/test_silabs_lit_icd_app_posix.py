@@ -33,6 +33,8 @@ from helper.paths import (
     CHIP_REPO_STR,
     PTY_BRIDGE_LINUX_ESC,
     QEMU_ARM_ESC,
+    SILABS_PROFRAW_DIR_ESC,
+    SILABS_PROFRAW_DIR_PATH,
 )
 from helper.pcap_oracles import (
     ieee802154_mac_command_frames,
@@ -345,12 +347,23 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
     # Same emulator and sysroot as the Silabs lighting-app test: the static
     # out/host_libs/qemu-arm and the Pigweed armhf sysroot, so the test needs
     # no qemu-user or armhf cross packages in the runner image.
+    # With CIRQUE_COVERAGE=1 the clang ARM32 build writes .profraw files on
+    # exit; exec lets terminate() signal qemu-arm itself instead of the shell.
+    coverage_env = ''
+    if os.environ.get('CIRQUE_COVERAGE') == '1':
+      os.makedirs(SILABS_PROFRAW_DIR_PATH, exist_ok=True)
+      coverage_env = (
+          f'LLVM_PROFILE_FILE={SILABS_PROFRAW_DIR_ESC}/lit-icd-%p-%m.profraw '
+      )
+
     cmd = (
-        'ulimit -c 0; env SILABS_BT_PTY_PATH=/tmp/ttySilabsBT0'
-        f' PORT_OFFSET={port_offset} {QEMU_ARM_ESC}'
-        f' -L {ARM_SYSROOT_ESC} {self._get_end_device_binary_esc()}'
-        ' --thread-node-id 2 --ble-controller 0 --discriminator'
-        f' {TEST_DISCRIMINATOR}'
+        'ulimit -c 0; '
+        f'exec env {coverage_env}'
+        'SILABS_BT_PTY_PATH=/tmp/ttySilabsBT0 '
+        f'PORT_OFFSET={port_offset} {QEMU_ARM_ESC} '
+        f'-L {ARM_SYSROOT_ESC} {self._get_end_device_binary_esc()} '
+        '--thread-node-id 2 --ble-controller 0 --discriminator '
+        f'{TEST_DISCRIMINATOR}'
     )
     self.logger.info(
         'Starting host chip-silabs-lit-icd-app under qemu-arm: %s', cmd

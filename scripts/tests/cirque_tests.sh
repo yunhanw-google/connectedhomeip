@@ -369,7 +369,7 @@ function cirquetest_run_test() {
         local cov_dir="$LOG_DIR/$CURRENT_TEST/coverage"
         echo "Generating coverage report for $CURRENT_TEST at $cov_dir..."
         # Fix permissions on root-owned .gcda files written by docker containers
-        find "$out_dir" -name "*.gcda" -exec chown "$(id -u):$(id -g)" {} + 2>/dev/null || true
+        find "$out_dir" \( -name "*.gcda" -o -name "*.profraw" \) -exec chown "$(id -u):$(id -g)" {} + 2>/dev/null || true
         chmod -R a+rX "$out_dir" 2>/dev/null || true
         __cirquetest_generate_coverage_report "$out_dir" "$cov_dir"
         if [[ -f "$cov_dir/coverage_summary.md" ]]; then
@@ -384,7 +384,7 @@ function cirquetest_coverage_report() {
     local out_dir="${1:-"$REPO_DIR/out/debug"}"
     local cov_dir="${2:-"$REPO_DIR/out/coverage"}"
     echo "Generating coverage report from $out_dir to $cov_dir..."
-    find "$out_dir" -name "*.gcda" -exec chown "$(id -u):$(id -g)" {} + 2>/dev/null || true
+    find "$out_dir" \( -name "*.gcda" -o -name "*.profraw" \) -exec chown "$(id -u):$(id -g)" {} + 2>/dev/null || true
     chmod -R a+rX "$out_dir" 2>/dev/null || true
     __cirquetest_generate_coverage_report "$out_dir" "$cov_dir"
     if [[ -f "$cov_dir/coverage_summary.md" ]]; then
@@ -449,7 +449,7 @@ function cirquetest_run_all_tests() {
     fi
     if [[ "${CIRQUE_COVERAGE:-0}" = "1" ]]; then
         echo "Zeroing coverage counters for aggregated test suite..."
-        find "$REPO_DIR/out/debug" -name "*.gcda" -delete 2>/dev/null || true
+        find "$REPO_DIR/out/debug" \( -name "*.gcda" -o -name "*.profraw" \) -delete 2>/dev/null || true
     fi
     export CIRQUE_IN_RUN_ALL_TESTS=1
     local test_idx=0

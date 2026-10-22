@@ -32,6 +32,7 @@ from helper.paths import (
     CHIP_TOOL_APK_PATH,
     PTY_BRIDGE_LINUX_ESC,
     QEMU_ARM_ESC,
+    SILABS_PROFRAW_DIR_ESC,
 )
 from helper.android_emulator_logs import save_android_emulator_diagnostics
 from helper.pcap_oracles import (
@@ -342,9 +343,21 @@ class TestAndroidBleWiFiMobileDevice(CHIPVirtualHome):
             ' chmod 666 /dev/ttySilabsBT0 /dev/pts/* 2>/dev/null || true"'
         )
         self.execute_device_cmd(server_id, silabs_bt_prep_cmd)
+        # The ARM32 build is clang; with CIRQUE_COVERAGE=1 it is built with
+        # use_coverage and writes .profraw files on exit, which
+        # helper/coverage_report.py merges into the report.
+        coverage_env = ''
+        if os.environ.get('CIRQUE_COVERAGE') == '1':
+          self.execute_device_cmd(
+              server_id, f'mkdir -p {SILABS_PROFRAW_DIR_ESC}'
+          )
+          coverage_env = (
+              f'LLVM_PROFILE_FILE={SILABS_PROFRAW_DIR_ESC}/'
+              'lighting-%p-%m.profraw'
+          )
         self.execute_device_cmd(
             server_id,
-            f'CHIPCirqueDaemon.py -- run env {SESSION_KEYLOG_ENV}'
+            f'CHIPCirqueDaemon.py -- run env {coverage_env} {SESSION_KEYLOG_ENV}'
             f' {QEMU_ARM_ESC} -L {ARM_SYSROOT_ESC}'
             f' {app_binary_esc} --wifi --ble-controller'
             f' {ble_adapt_id} --discriminator {TEST_DISCRIMINATOR}',

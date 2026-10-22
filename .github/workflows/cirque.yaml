@@ -144,6 +144,7 @@ jobs:
             - name: Build ARM32 chip-silabs-lighting-app and pty_bridge_linux
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
                     -- sh -c " \
                        git config --global --add safe.directory '*' \
                        && export CCACHE_DIR=\"\$PWD/.ccache\" \
@@ -214,6 +215,7 @@ jobs:
             - name: Build ARM32 chip-silabs-lit-icd-app
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
                     -- sh -c " \
                        git config --global --add safe.directory '*' \
                        && export CCACHE_DIR=\"\$PWD/.ccache\" \

@@ -311,6 +311,23 @@ def _classify_matter_udp(event: FlowEvent) -> None:
   )
 
 
+# ConnectNetwork carries no network type, so it takes the stage of the last
+# AddOrUpdate*Network seen in the same log (Wi-Fi or Thread).
+_ADD_NETWORK_STAGES = {
+    'AddOrUpdateWiFiNetwork': 'WIFI_PROVISIONED',
+    'AddOrUpdateThreadNetwork': 'THREAD_PROVISIONED',
+}
+_last_network_stage_by_log: Dict[str, str] = {}
+
+
+def _command_stage(command: str, log_file: str) -> str:
+  if command in _ADD_NETWORK_STAGES:
+    _last_network_stage_by_log[log_file] = _ADD_NETWORK_STAGES[command]
+  elif command == 'ConnectNetwork' and log_file in _last_network_stage_by_log:
+    return _last_network_stage_by_log[log_file]
+  return COMMAND_STAGES.get(command, 'CLUSTER_CONTROL')
+
+
 def matter_log_dissector(event: FlowEvent) -> Optional[FlowEvent]:
   """Classifies container .log events that carry Matter exchange or session traffic."""
   details = event.details
@@ -321,7 +338,7 @@ def matter_log_dissector(event: FlowEvent) -> Optional[FlowEvent]:
   command = details.get('matter_command')
   if command:
     event.layer = MATTER_LAYER
-    event.stage = COMMAND_STAGES.get(command, 'CLUSTER_CONTROL')
+    event.stage = _command_stage(command, str(details['log_file']))
     if 'Matter Interaction Model' not in event.encapsulation:
       event.encapsulation.append('Matter Interaction Model')
     return event

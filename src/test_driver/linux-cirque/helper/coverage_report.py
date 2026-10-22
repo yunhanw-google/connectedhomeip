@@ -17,6 +17,7 @@ limitations under the License.
 import argparse
 import json
 import logging
+import mmap
 import os
 import re
 import shutil
@@ -347,6 +348,66 @@ def canonicalize_lcov_symlinks(raw_info: Path, chip_root: Path) -> None:
         raw_info.write_text("\n".join(updated_lines) + "\n")
 
 
+# clang-built ARM32 Silabs apps (scripts/build/gn_gen_cirque_silabs_arm32.sh
+# with CIRQUE_COVERAGE=1) write LLVM .profraw files instead of gcov .gcda.
+LLVM_COVERAGE_BINARIES = (
+    "out/arm-silabs/chip-silabs-lighting-app",
+    "out/arm-silabs-thread/chip-silabs-lit-icd-app",
+)
+
+
+def has_llvm_coverage_mapping(binary: Path) -> bool:
+    """Returns True if binary was built with -fcoverage-mapping."""
+    try:
+        with open(binary, "rb") as f, mmap.mmap(
+                f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+            return data.find(b"__llvm_covmap") != -1
+    except (OSError, ValueError):
+        return False
+
+
+def append_llvm_profraw_coverage(out_dir: Path, output_dir: Path,
+                                 chip_root: Path, raw_info: Path) -> bool:
+    """Merges out_dir/profraw/*.profraw and appends them to raw_info as lcov.
+
+    Returns True if records were appended.
+    """
+    profraw_files = sorted((out_dir / "profraw").glob("*.profraw"))
+    if not profraw_files:
+        return False
+    llvm_bin = chip_root / ".environment/cipd/packages/pigweed/bin"
+    llvm_profdata = llvm_bin / "llvm-profdata"
+    llvm_cov = llvm_bin / "llvm-cov"
+    if not (llvm_profdata.exists() and llvm_cov.exists()):
+        logger.warning("Skipping %d .profraw files: %s not found",
+                       len(profraw_files), llvm_bin)
+        return False
+    binaries = [chip_root / b for b in LLVM_COVERAGE_BINARIES]
+    binaries = [b for b in binaries if has_llvm_coverage_mapping(b)]
+    if not binaries:
+        logger.warning("Skipping %d .profraw files: no binary with LLVM "
+                       "coverage mapping", len(profraw_files))
+        return False
+    profdata = output_dir / "llvm_merged.profdata"
+    export_cmd = [str(llvm_cov), "export", "-format=lcov",
+                  "-instr-profile", str(profdata)]
+    for binary in binaries:
+        export_cmd += ["-object", str(binary)]
+    try:
+        run_command([str(llvm_profdata), "merge", "-sparse",
+                     *map(str, profraw_files), "-o", str(profdata)])
+        lcov_out = run_command(export_cmd).stdout
+    except subprocess.CalledProcessError as e:
+        logger.warning("LLVM coverage export failed: %s\nStderr: %s",
+                       e, e.stderr)
+        return False
+    with open(raw_info, "a") as f:
+        f.write("\n" + lcov_out)
+    logger.info("Appended LLVM coverage from %d .profraw files (%s)",
+                len(profraw_files), ", ".join(b.name for b in binaries))
+    return True
+
+
 def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                              skip_genhtml: bool = False) -> Tuple[str, str]:
     """
@@ -371,6 +432,7 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                 jobs or "disabled", timeout)
 
     # Step 1: Capture coverage data
+    raw_info.unlink(missing_ok=True)
     capture_cmd = [
         "lcov", "--capture",
         "--gcov-tool", gcov_tool,
@@ -388,7 +450,13 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
     except subprocess.CalledProcessError as e:
         logger.warning("lcov capture warning/error (continuing if info created): %s\nStderr: %s", e, e.stderr)
 
-    if not raw_info.exists() or raw_info.stat().st_size == 0:
+    gcov_captured = raw_info.exists() and raw_info.stat().st_size > 0
+    if not gcov_captured:
+        # A run may exercise only the clang ARM32 apps (no .gcda files).
+        raw_info.write_text("")
+    llvm_appended = append_llvm_profraw_coverage(
+        out_dir, output_dir, chip_root, raw_info)
+    if not gcov_captured and not llvm_appended:
         logger.error("lcov failed to generate %s", raw_info)
         raise RuntimeError(f"Failed to generate {raw_info}")
 

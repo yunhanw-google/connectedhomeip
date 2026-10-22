@@ -223,6 +223,32 @@ class MatterLogTest(unittest.TestCase):
         ],
     )
 
+  def test_connect_network_stage_follows_the_added_network(self):
+    def network_cmd(ts, cmd):
+      return (f'[{ts}] [164:164] [DMG] Received command for Endpoint=0 '
+              f'Cluster=0x0000_0031 Command={cmd}')
+
+    wifi_log = 'CHIPEndDevice-1791928996-aaaaaaaa.log'
+    thread_log = 'CHIPEndDevice-1791928996-bbbbbbbb.log'
+    # AddOrUpdateWiFiNetwork (0x02) / AddOrUpdateThreadNetwork (0x03), then
+    # ConnectNetwork (0x06), which carries no network type of its own.
+    _write(os.path.join(self.temp_dir, wifi_log), [
+        network_cmd('1791928973.100', '0x0000_0002'),
+        network_cmd('1791928973.200', '0x0000_0006'),
+    ])
+    _write(os.path.join(self.temp_dir, thread_log), [
+        network_cmd('1791928974.100', '0x0000_0003'),
+        network_cmd('1791928974.200', '0x0000_0006'),
+    ])
+    events = matter_flow_plugin.parse_log_directory(self.temp_dir)
+    stages = {(ev.details.get('log_file'), ev.details.get('matter_command')): ev.stage
+              for ev in events}
+    by_log = {}
+    for (log_file, command), stage in stages.items():
+      by_log.setdefault(os.path.basename(str(log_file)), {})[command] = stage
+    self.assertEqual(by_log[wifi_log]['ConnectNetwork'], 'WIFI_PROVISIONED')
+    self.assertEqual(by_log[thread_log]['ConnectNetwork'], 'THREAD_PROVISIONED')
+
   def test_thread_diag_copy_and_full_logcat_are_not_duplicated(self):
     _write(os.path.join(self.temp_dir, DEVICE_LOG), DEVICE_LINES)
     _write(

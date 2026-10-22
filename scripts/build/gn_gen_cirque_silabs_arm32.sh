@@ -97,6 +97,10 @@ build_lighting() {
         "sysroot=\"$ARM_SYSROOT\""
         "${CCACHE_ARGS[@]}"
     )
+    if [ "${CIRQUE_COVERAGE:-0}" == "1" ]; then
+        args+=('use_coverage=true')
+    fi
+
     echo "Build: Cross-compile ARM32 Silicon Labs Lighting-App (out/arm-silabs/chip-silabs-lighting-app)"
     mkdir -p out/arm-silabs
     gn --root="$CHIP_ROOT/examples/all-clusters-app/linux" gen out/arm-silabs --args="${args[*]}"
@@ -137,6 +141,10 @@ build_lit_icd() {
         "sysroot=\"$ARM_SYSROOT\""
         "${CCACHE_ARGS[@]}"
     )
+    if [ "${CIRQUE_COVERAGE:-0}" == "1" ]; then
+        args+=('use_coverage=true')
+    fi
+
     echo "Build: Cross-compile ARM32 Silicon Labs LIT ICD App (out/arm-silabs-thread/chip-silabs-lit-icd-app)"
     mkdir -p out/arm-silabs-thread
     gn --root="$CHIP_ROOT/examples/all-clusters-app/linux" gen out/arm-silabs-thread --args="${args[*]}"
