@@ -515,7 +515,7 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
 
     lcov_ignore_errors = (
         "format,unsupported,inconsistent,unused,gcov,negative,version,empty,"
-        "range,source,count"
+        "source,count"
     )
 
     # Auto-detect gcov tool version matching compiler
