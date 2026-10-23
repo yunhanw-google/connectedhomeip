@@ -67,6 +67,13 @@ CHIP_SILABS_LIGHTING_APP_PATH = _resolve_binary_path(
     "out/standalone/chip-silabs-lighting-app",
 )
 CHIP_SILABS_LIGHTING_APP_ESC = shlex.quote(str(CHIP_SILABS_LIGHTING_APP_PATH))
+CHIP_SILABS_LIT_ICD_APP_FRAGMENT = "standalone/chip-silabs-lit-icd-app"
+CHIP_SILABS_LIT_ICD_APP_PATH = _resolve_binary_path(
+    "out/arm-silabs-thread/chip-silabs-lit-icd-app",
+    "out/debug" / Path(CHIP_SILABS_LIT_ICD_APP_FRAGMENT),
+    "out/standalone/chip-silabs-lit-icd-app",
+)
+CHIP_SILABS_LIT_ICD_APP_ESC = shlex.quote(str(CHIP_SILABS_LIT_ICD_APP_PATH))
 QEMU_ARM_PATH = _resolve_binary_path(
     "out/host_libs/qemu-arm",
     "out/debug/qemu-arm",

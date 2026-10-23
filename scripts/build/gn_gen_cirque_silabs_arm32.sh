@@ -19,7 +19,7 @@
 # Builds the ARM32 Silabs artifacts the Cirque Silabs E2E tests need,
 # separately from the x86_64 Cirque binaries (like the Android CHIPTool APK):
 #   out/arm-silabs/chip-silabs-lighting-app        AndroidBleWiFiSilabsLightingTest
-#   out/arm-silabs-thread/chip-silabs-lit-icd-app  test_silabs_lit_icd_app_posix
+#   out/arm-silabs-thread/chip-silabs-lit-icd-app  AndroidBleWiFiSilabsLitIcdTest
 #   out/host_libs/pty_bridge_linux                 x86_64 PTY <-> TCP HCI H4 bridge
 #   out/host_libs/qemu-arm                         only if QEMU_ARM_STATIC is set
 # The ARM binaries are 32-bit ARM (armv7 hard-float) ELFs.

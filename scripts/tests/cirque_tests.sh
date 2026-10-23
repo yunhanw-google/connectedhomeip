@@ -21,7 +21,8 @@
 # Optional environment variables:
 #   CIRQUE_ENABLE_ANDROID_TESTS: Set to 1 (default) to include Android emulator
 #     tests (AndroidBleWiFiMobileDeviceTest, AndroidBleWiFiSilabsLightingTest,
-#     AndroidBleThreadMobileDeviceTest) in run_all_tests, or 0 to skip.
+#     AndroidBleThreadMobileDeviceTest, AndroidBleWiFiSilabsLitIcdTest) in
+#     run_all_tests, or 0 to skip.
 #     Requires KVM and cirque-android-runner.
 
 SOURCE=${BASH_SOURCE[0]}
@@ -72,7 +73,7 @@ CIRQUE_ANDROID_TESTS=(
     "AndroidBleWiFiMobileDeviceTest"
     "AndroidBleWiFiSilabsLightingTest"
     "AndroidBleThreadMobileDeviceTest"
-    "test_silabs_lit_icd_app_posix"
+    "AndroidBleWiFiSilabsLitIcdTest"
 )
 
 BOLD_GREEN_TEXT="\033[1;32m"
@@ -126,6 +127,7 @@ function __cirquetest_cleanup_stale_cirque_resources() {
 
 function __cirquetest_start_flask() {
     echo 'Start Flask'
+    pkill -f 'cirque/restservice/service.py|python3 -m flask run' 2>/dev/null || true
     __cirquetest_cleanup_stale_cirque_resources
     cd "$REPO_DIR"/third_party/cirque/repo
     # When running the ManualTests, if Ctrl-C is send to the shell, it will stop flask as well.

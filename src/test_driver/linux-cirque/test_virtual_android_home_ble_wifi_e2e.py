@@ -88,7 +88,9 @@ class TestVirtualAndroidHomeBleWiFiUnit(unittest.TestCase):
           "    'BleMobileDeviceTest',\n"
           "    'BleWiFiMobileDeviceTest',\n"
           "    'AndroidBleWiFiMobileDeviceTest',\n"
+          "    'AndroidBleWiFiSilabsLightingTest',\n"
           "    'AndroidBleThreadMobileDeviceTest',\n"
+          "    'AndroidBleWiFiSilabsLitIcdTest',\n"
           '):\n'
           '  importlib.import_module(mod_name)\n'
           'class DummyHome(base.CHIPVirtualHome):\n'

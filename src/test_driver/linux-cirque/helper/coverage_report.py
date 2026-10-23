@@ -348,6 +348,98 @@ def canonicalize_lcov_symlinks(raw_info: Path, chip_root: Path) -> None:
         raw_info.write_text("\n".join(updated_lines) + "\n")
 
 
+def _file_line_count(
+    sf_path: str, cache: Dict[str, Optional[int]]
+) -> Optional[int]:
+    if sf_path in cache:
+        return cache[sf_path]
+    try:
+        p = Path(sf_path)
+        cache[sf_path] = (
+            len(p.read_bytes().splitlines()) if p.is_file() else None
+        )
+    except OSError:
+        cache[sf_path] = None
+    return cache[sf_path]
+
+
+def sanitize_lcov_out_of_range_lines(info_path: Path) -> int:
+    """Drops DA/BRDA/FN records exceeding the source file's physical line count.
+
+    Clang's `llvm-cov export -format=lcov` can emit an EOF counter at
+    `line_count + 1` (e.g. `DA:85,...` on 84-line `StatusCodeList.h`), which
+    causes `genhtml` parallel workers to abort with a `(range)` error before
+    writing `html/index.html`.
+    """
+    if not info_path.exists():
+        return 0
+    line_count_cache: Dict[str, Optional[int]] = {}
+    content = info_path.read_text(errors="replace")
+    out_lines: List[str] = []
+    current_max_line: Optional[int] = None
+    removed = 0
+    block_removed = 0
+    block_da_total = 0
+    block_da_hit = 0
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("SF:"):
+            sf_path = stripped[3:].strip()
+            current_max_line = _file_line_count(sf_path, line_count_cache)
+            block_removed = 0
+            block_da_total = 0
+            block_da_hit = 0
+            out_lines.append(line)
+        elif current_max_line is not None and stripped.startswith("DA:"):
+            parts = stripped[3:].split(",")
+            try:
+                lineno = int(parts[0])
+                hit = int(parts[1]) if len(parts) > 1 else 0
+            except ValueError:
+                out_lines.append(line)
+                continue
+            if lineno > current_max_line or lineno < 1:
+                removed += 1
+                block_removed += 1
+                continue
+            block_da_total += 1
+            if hit > 0:
+                block_da_hit += 1
+            out_lines.append(line)
+        elif current_max_line is not None and (
+            stripped.startswith("BRDA:") or stripped.startswith("FN:")
+        ):
+            prefix_len = 5 if stripped.startswith("BRDA:") else 3
+            first_field = stripped[prefix_len:].split(",", 1)[0]
+            try:
+                lineno = int(first_field)
+            except ValueError:
+                out_lines.append(line)
+                continue
+            if lineno > current_max_line or lineno < 1:
+                removed += 1
+                block_removed += 1
+                continue
+            out_lines.append(line)
+        elif stripped.startswith("LF:") and block_removed > 0:
+            out_lines.append(f"LF:{block_da_total}")
+        elif stripped.startswith("LH:") and block_removed > 0:
+            out_lines.append(f"LH:{block_da_hit}")
+        elif stripped == "end_of_record":
+            current_max_line = None
+            block_removed = 0
+            out_lines.append(line)
+        else:
+            out_lines.append(line)
+
+    if removed > 0:
+        info_path.write_text("\n".join(out_lines) + "\n")
+        logger.info("Sanitized %d out-of-range coverage line record(s) in %s",
+                    removed, info_path)
+    return removed
+
+
 # clang-built ARM32 Silabs apps (scripts/build/gn_gen_cirque_silabs_arm32.sh
 # with CIRQUE_COVERAGE=1) write LLVM .profraw files instead of gcov .gcda.
 LLVM_COVERAGE_BINARIES = (
@@ -421,7 +513,10 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
     filtered_info = output_dir / "lcov.info"
     html_dir = output_dir / "html"
 
-    lcov_ignore_errors = "format,unsupported,inconsistent,unused,gcov,negative,version,empty"
+    lcov_ignore_errors = (
+        "format,unsupported,inconsistent,unused,gcov,negative,version,empty,"
+        "range,source,count"
+    )
 
     # Auto-detect gcov tool version matching compiler
     gcov_tool = detect_gcov_tool(out_dir)
@@ -461,6 +556,7 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
         raise RuntimeError(f"Failed to generate {raw_info}")
 
     canonicalize_lcov_symlinks(raw_info, chip_root)
+    sanitize_lcov_out_of_range_lines(raw_info)
 
     # Build anchored exclude patterns using chip_root to prevent false stripping
     exclude_patterns = [
@@ -504,16 +600,40 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
 
     # Step 3: Run genhtml
     if not skip_genhtml:
-        genhtml_cmd = [
+        genhtml_ignore_errors = (
+            "inconsistent,corrupt,unsupported,empty,format,range,source,count"
+        )
+        base_genhtml_cmd = [
             "genhtml", str(filtered_info),
             "--output-directory", str(html_dir),
-            "--ignore-errors", "inconsistent,corrupt,unsupported,empty,format",
+            "--ignore-errors", genhtml_ignore_errors,
             "--rc", "max_message_count=1000",
             "--header-title", "Matter Cirque Virtual-Home Coverage",
-            *parallel_args,
         ]
+        genhtml_cmd = [*base_genhtml_cmd, *parallel_args]
         try:
-            run_command(genhtml_cmd, check=False, timeout=timeout)
+            res = run_command(genhtml_cmd, check=False, timeout=timeout)
+            if (
+                (res.returncode != 0 or not (html_dir / "index.html").is_file())
+                and parallel_args
+            ):
+                logger.warning(
+                    "genhtml with %s did not produce index.html "
+                    "(returncode=%s); retrying without --parallel.\nStderr: %s",
+                    " ".join(parallel_args),
+                    res.returncode,
+                    res.stderr,
+                )
+                res = run_command(
+                    base_genhtml_cmd, check=False, timeout=timeout
+                )
+            if not (html_dir / "index.html").is_file():
+                logger.warning(
+                    "genhtml did not produce %s (returncode=%s)\nStderr: %s",
+                    html_dir / "index.html",
+                    res.returncode,
+                    res.stderr,
+                )
         except Exception as e:
             logger.warning("genhtml failed: %s", e)
 
