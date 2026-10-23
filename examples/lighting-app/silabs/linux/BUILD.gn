@@ -29,6 +29,7 @@ config("silabs-posix-cflags") {
     "-Wno-unused-but-set-variable",
     "-Wno-unused-const-variable",
   ]
+  ldflags = [ "-Wl,--wrap=setsockopt" ]
 }
 
 executable("chip-silabs-lighting-app") {

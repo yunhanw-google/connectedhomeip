@@ -256,6 +256,24 @@ ObjectPool<Identify, MATTER_DM_IDENTIFY_CLUSTER_SERVER_ENDPOINT_COUNT + CHIP_DEV
 
 extern "C" {
 
+int __real_setsockopt(int fd, int level, int optname, const void * optval, socklen_t optlen);
+
+int __wrap_setsockopt(int fd, int level, int optname, const void * optval, socklen_t optlen)
+{
+    int rc = __real_setsockopt(fd, level, optname, optval, optlen);
+    if (rc == -1 && errno == ENOPROTOOPT &&
+        ((level == IPPROTO_IP && optname == IP_MULTICAST_IF) || (level == IPPROTO_IPV6 && optname == IPV6_MULTICAST_IF)))
+    {
+        // QEMU linux-user prior to 10.0 (such as QEMU 8.2.2 on Ubuntu 24.04 CI)
+        // does not translate IP_MULTICAST_IF / IPV6_MULTICAST_IF in do_setsockopt()
+        // and returns ENOPROTOOPT. Ignoring ENOPROTOOPT here preserves socket
+        // initialization under older qemu-arm user-mode emulation.
+        errno = 0;
+        return 0;
+    }
+    return rc;
+}
+
 osTimerId_t osTimerNew(osTimerFunc_t func, osTimerType_t type, void * argument, const osTimerAttr_t * /* attr */)
 {
     if (func == nullptr)
@@ -635,6 +653,9 @@ void TriggerSilabsButtonAction(uint8_t button, uint8_t action)
 
 void ShutdownSilabsPosixRuntime()
 {
+#ifdef MATTER_DM_PLUGIN_IDENTIFY_SERVER
+    IdentifyPool.ReleaseAll();
+#endif
     chip::Server::GetInstance().GetFabricTable().RemoveFabricDelegate(&BaseApplication::sAppDelegate);
 
     if (sAppEventQueue != nullptr)
