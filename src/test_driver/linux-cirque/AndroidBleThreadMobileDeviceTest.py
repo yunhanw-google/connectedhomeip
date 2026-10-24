@@ -133,10 +133,18 @@ import time
 import re
 
 def sh(cmd):
-  try:
-    return subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT).decode("utf-8").strip()
-  except:
-    return ""
+  for _ in range(3):
+    try:
+      raw = subprocess.check_output(
+          cmd, shell=True, stderr=subprocess.STDOUT
+      )
+      out = raw.decode("utf-8").strip()
+      if "Connection reset by peer" not in out:
+        return out
+    except (subprocess.SubprocessError, OSError) as exc:
+      sys.stderr.write(f"[SRP-Shim] sh warning: {exc}\n")
+    time.sleep(0.2)
+  return ""
 
 print("[SRP-Shim] Started", flush=True)
 

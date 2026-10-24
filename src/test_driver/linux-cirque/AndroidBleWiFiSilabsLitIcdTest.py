@@ -97,7 +97,42 @@ def _invert_key_hex(key_hex: str) -> str:
   return ''.join(f'{0xFF - b:02x}' for b in bytes.fromhex(key_hex))
 
 
-SRP_BRIDGER_SCRIPT = """import subprocess, time, os, re
+def _is_chiptool_srp_registered(
+    srp_service_output: str, svc_name: str, svc_port: str
+) -> bool:
+  """Returns True if svc_name is active in ot-ctl srp server service output."""
+  blocks, cur_block = [], []
+  for raw_line in srp_service_output.splitlines():
+    line_r = raw_line.rstrip()
+    if not line_r or line_r == 'Done':
+      continue
+    if not line_r.startswith(' ') and not line_r.startswith('\t'):
+      if cur_block:
+        blocks.append('\n'.join(cur_block))
+      cur_block = [line_r]
+    else:
+      cur_block.append(line_r)
+  if cur_block:
+    blocks.append('\n'.join(cur_block))
+
+  target_prefix = f'{svc_name}._matter._tcp'
+  for block in blocks:
+    lines = [l.strip() for l in block.splitlines() if l.strip()]
+    if not lines or not lines[0].startswith(target_prefix):
+      continue
+    if 'deleted: false' not in lines:
+      continue
+    if f'port: {svc_port}' not in lines:
+      continue
+    if not any(l.startswith('host: android-chiptool') for l in lines):
+      continue
+    if not any(l.startswith('addresses:') and 'fd11:22:' in l for l in lines):
+      continue
+    return True
+  return False
+
+
+SRP_BRIDGER_SCRIPT = """import fcntl, subprocess, time, os, re
 
 os.makedirs('/etc/avahi/services', exist_ok=True)
 known = {}
@@ -156,7 +191,14 @@ def _write_service(inst, host, port, ips):
 
 def sync():
     cmd = ['ot-ctl', 'srp', 'server', 'service']
-    out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL)
+    with open('/tmp/ot_ctl.lock', 'w') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            out = subprocess.check_output(
+                cmd, text=True, stderr=subprocess.DEVNULL
+            )
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
     blocks, cur_block = [], []
     for raw_line in out.splitlines():
         line_r = raw_line.rstrip()
@@ -281,23 +323,97 @@ class TestAndroidBleWiFiSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
         'killall -9 pty_bridge_linux 2>/dev/null || true', shell=True
     )
 
+  def _exec_tbr_ot_ctl(self, tbr_id: str, shell_body: str) -> str:
+    """Executes ot-ctl commands on TBR under /tmp/ot_ctl.lock."""
+    escaped = shell_body.replace('"', '\\"')
+    cmd = (
+        'sh -c "if command -v flock >/dev/null 2>&1; then'
+        f' flock -w 5 /tmp/ot_ctl.lock sh -c \\"{escaped}\\";'
+        f' else {shell_body}; fi"'
+    )
+    res = self.execute_device_cmd(tbr_id, cmd)
+    return res.get('output', '') if isinstance(res, dict) else str(res)
+
+  def _register_chiptool_srp_service(
+      self,
+      tbr_id: str,
+      svc_name: str,
+      svc_port: str,
+      max_attempts: int = 5,
+  ) -> bool:
+    """Registers Android CHIPTool node in TBR SRP server and verifies it."""
+    reg_body = (
+        'ot-ctl srp client stop >/dev/null 2>&1 || true; '
+        'ot-ctl srp client host clear >/dev/null 2>&1 || true; '
+        'ot-ctl srp client host name android-chiptool; '
+        'ot-ctl srp client host address fd11:22::3; '
+        f'ot-ctl srp client service add {svc_name} _matter._tcp {svc_port}; '
+        'ot-ctl srp client autostart enable'
+    )
+    for attempt in range(1, max_attempts + 1):
+      self.logger.info(
+          'Registering Android CHIPTool operational node %s (port=%s,'
+          ' ip=fd11:22::3) in TBR SRP server (attempt %d/%d)',
+          svc_name,
+          svc_port,
+          attempt,
+          max_attempts,
+      )
+      reg_out = self._exec_tbr_ot_ctl(tbr_id, reg_body)
+      if 'Connection reset by peer' in reg_out or 'Error' in reg_out:
+        self.logger.warning(
+            'TBR ot-ctl SRP client command encountered transient error on'
+            ' attempt %d/%d: %s',
+            attempt,
+            max_attempts,
+            reg_out.strip(),
+        )
+        time.sleep(0.5)
+        continue
+
+      for _ in range(3):
+        time.sleep(0.5)
+        srv_out = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl srp server service')
+        if _is_chiptool_srp_registered(srv_out, svc_name, svc_port):
+          self.logger.info(
+              'Verified Android CHIPTool operational node %s (port=%s) in TBR'
+              ' SRP server',
+              svc_name,
+              svc_port,
+          )
+          return True
+      self.logger.warning(
+          'Android CHIPTool operational node %s not yet visible in TBR SRP'
+          ' server after attempt %d/%d',
+          svc_name,
+          attempt,
+          max_attempts,
+      )
+    return False
+
   def _get_thread_radio_context(self, tbr_id: str):
     """Returns (network_key_hex, child_table, sleepy_child_rloc16s) from TBR."""
-    key_res = self.execute_device_cmd(tbr_id, 'ot-ctl networkkey')
-    key_out = (
-        key_res.get('output', '') if isinstance(key_res, dict) else str(key_res)
-    )
-    key_match = re.search(r'\b([0-9a-fA-F]{32})\b', key_out)
+    key_out = ''
+    key_match = None
+    for _ in range(3):
+      key_out = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl networkkey')
+      key_match = re.search(r'\b([0-9a-fA-F]{32})\b', key_out)
+      if key_match is not None:
+        break
+      time.sleep(0.5)
     self.assertTrue(
         key_match is not None,
         f'Could not read Thread network key from TBR {tbr_id}: {key_out!r}',
     )
-    child_res = self.execute_device_cmd(tbr_id, 'ot-ctl child table')
-    child_table = (
-        child_res.get('output', '')
-        if isinstance(child_res, dict)
-        else str(child_res)
-    )
+    child_table = ''
+    for _ in range(3):
+      child_table = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl child table')
+      if (
+          'RLOC16' in child_table
+          and 'Connection reset by peer' not in child_table
+      ):
+        break
+      time.sleep(0.5)
     return (
         key_match.group(1).lower(),
         child_table,
@@ -505,21 +621,10 @@ class TestAndroidBleWiFiSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
         if pub_matches:
           svc_name, svc_port = pub_matches[-1]
           if (svc_name, svc_port) != registered_chiptool_srp:
-            self.logger.info(
-                'Registering Android CHIPTool operational node %s (port=%s,'
-                ' ip=fd11:22::3) in TBR SRP server',
-                svc_name,
-                svc_port,
-            )
-            srp_cmd = (
-                'sh -c "ot-ctl srp client stop >/dev/null 2>&1 || true; ot-ctl'
-                ' srp client host clear >/dev/null 2>&1 || true; ot-ctl srp'
-                ' client host name android-chiptool; ot-ctl srp client host'
-                f' address fd11:22::3; ot-ctl srp client service add {svc_name}'
-                f' _matter._tcp {svc_port}; ot-ctl srp client autostart enable"'
-            )
-            self.execute_device_cmd(tbr_ids[0], srp_cmd)
-            registered_chiptool_srp = (svc_name, svc_port)
+            if self._register_chiptool_srp_service(
+                tbr_ids[0], svc_name, svc_port
+            ):
+              registered_chiptool_srp = (svc_name, svc_port)
         if (
             'Device commissioning completed with code: 0' in out
             or 'Commissioning complete' in out
@@ -540,6 +645,25 @@ class TestAndroidBleWiFiSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
       self.assertTrue(
           comm_success,
           'BLE + Thread commissioning did not complete with code 0 within 120s',
+      )
+      if registered_chiptool_srp is None:
+        out = self._poll_android_logcat(req_device_id)
+        pub_matches = re.findall(
+            r'publish'
+            r' serviceName=([0-9A-F]{16}-000000000001B669)\s+'
+            r'type=_matter\._tcp\S*\s+port=(\d+)',
+            out,
+        )
+        if pub_matches:
+          svc_name, svc_port = pub_matches[-1]
+          if self._register_chiptool_srp_service(
+              tbr_ids[0], svc_name, svc_port
+          ):
+            registered_chiptool_srp = (svc_name, svc_port)
+      self.assertIsNotNone(
+          registered_chiptool_srp,
+          'Android CHIPTool operational node was not registered in TBR SRP'
+          ' server',
       )
 
       pcap_dir = (

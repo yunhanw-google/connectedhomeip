@@ -29,6 +29,7 @@ from AndroidBleWiFiSilabsLitIcdTest import (
     TestAndroidBleWiFiSilabsLitIcdDevice,
     _ANDROID_POLL_LOGCAT_CMD,
     _invert_key_hex,
+    _is_chiptool_srp_registered,
     _sleepy_child_rloc16s,
 )
 from helper.paths import (
@@ -106,6 +107,73 @@ class TestSilabsLitIcdAppPosix(unittest.TestCase):
         "pkill -f 'cirque/restservice/service.py|python3 -m flask run'",
         cirque_tests_sh,
     )
+
+  def test_is_chiptool_srp_registered_verifies_active_service_block(self):
+    only_lit_icd = (
+        '6BA098F258162966-0000000000000001'
+        '._matter._tcp.default.service.arpa.\n'
+        '    deleted: false\n'
+        '    subtypes: _I6BA098F258162966\n'
+        '    port: 5540\n'
+        '    host: C2E1D8FB45BC6892.default.service.arpa.\n'
+        '    addresses: [fdde:ad00:beef:0:84f9:d1a9:ef32:c56d]\n'
+        'Done\n'
+    )
+    self.assertFalse(
+        _is_chiptool_srp_registered(
+            only_lit_icd, '6BA098F258162966-000000000001B669', '36532'
+        )
+    )
+
+    chiptool_hdr = (
+        '6BA098F258162966-000000000001B669._matter._tcp.default.service.arpa.\n'
+    )
+    with_chiptool = (
+        only_lit_icd
+        + chiptool_hdr
+        + '    deleted: false\n'
+        '    subtypes: (null)\n'
+        '    port: 36532\n'
+        '    host: android-chiptool.default.service.arpa.\n'
+        '    addresses: [fd11:22:0:0:0:0:0:3]\n'
+        'Done\n'
+    )
+    self.assertTrue(
+        _is_chiptool_srp_registered(
+            with_chiptool, '6BA098F258162966-000000000001B669', '36532'
+        )
+    )
+
+  def test_register_chiptool_srp_service_retries_on_socket_reset(self):
+    harness = TestAndroidBleWiFiSilabsLitIcdDevice()
+    calls = []
+    responses = [
+        {'output': 'Done\nread: Connection reset by peer\nDone\n'},
+        {'output': 'Done\nDone\nDone\nDone\n'},
+        {
+            'output': (
+                '6BA098F258162966-000000000001B669'
+                '._matter._tcp.default.service.arpa.\n'
+                '    deleted: false\n'
+                '    port: 36532\n'
+                '    host: android-chiptool.default.service.arpa.\n'
+                '    addresses: [fd11:22:0:0:0:0:0:3]\n'
+                'Done\n'
+            )
+        },
+    ]
+
+    def fake_exec(dev_id, cmd):
+      calls.append((dev_id, cmd))
+      return responses.pop(0)
+
+    harness.execute_device_cmd = fake_exec
+    ok = harness._register_chiptool_srp_service(
+        'tbr0', '6BA098F258162966-000000000001B669', '36532', max_attempts=3
+    )
+    self.assertTrue(ok)
+    self.assertEqual(len(calls), 3)
+    self.assertIn('/tmp/ot_ctl.lock', SRP_BRIDGER_SCRIPT)
 
   @unittest.skipUnless(
       CHIP_SILABS_LIT_ICD_APP_PATH.is_file(),
