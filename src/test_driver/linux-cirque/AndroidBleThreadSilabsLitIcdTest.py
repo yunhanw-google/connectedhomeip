@@ -97,6 +97,18 @@ def _invert_key_hex(key_hex: str) -> str:
   return ''.join(f'{0xFF - b:02x}' for b in bytes.fromhex(key_hex))
 
 
+def _device_tx_checkin_counters(device_log: str) -> set:
+  """Returns message counters of ICD Check-Ins the device log shows as sent."""
+  return {
+      int(c)
+      for c in re.findall(
+          r'<<< \[E:\d+i S:0 M:(\d+)\] .* Type 0000:50'
+          r' \(SecureChannel:ICD_CheckInMessage\)',
+          device_log,
+      )
+  }
+
+
 def _is_chiptool_srp_registered(
     srp_service_output: str, svc_name: str, svc_port: str
 ) -> bool:
@@ -807,14 +819,7 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
           'Oracle 2 failed: TBR child table has no R=0 child to attribute'
           f' radio frames to:\n{child_table}',
       )
-      dev_tx_counters = {
-          int(c)
-          for c in re.findall(
-              r'<<< \[E:\d+i S:0 M:(\d+)\] .* Type 0000:50'
-              r' \(SecureChannel:ICD_CheckInMessage\)',
-              device_log,
-          )
-      }
+      dev_tx_counters = _device_tx_checkin_counters(device_log)
       self.assertTrue(
           len(dev_tx_counters) >= 2,
           'Oracle 2a failed: expected >= 2 ICD_CheckInMessage transmissions in'
@@ -833,6 +838,13 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
           f' {thread_pcap}, got {len(radio_checkins)}',
       )
       radio_counters = [f['msg_counter'] for f in radio_checkins]
+      # The device keeps sending a Check-In every IdleModeDuration, so one can
+      # land on the radio after device_log was read above. Re-read the device
+      # log now that the capture has been parsed; the TX log line is written
+      # before the frame is sent, so this snapshot covers every radio frame.
+      with open(app_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+        device_log = f.read()
+      dev_tx_counters = _device_tx_checkin_counters(device_log)
       self.assertTrue(
           set(radio_counters) <= dev_tx_counters,
           'Oracle 2b failed: radio Check-In counters'

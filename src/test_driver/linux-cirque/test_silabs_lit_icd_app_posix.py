@@ -28,6 +28,7 @@ from AndroidBleThreadSilabsLitIcdTest import (
     SRP_BRIDGER_SCRIPT,
     TestAndroidBleThreadSilabsLitIcdDevice,
     _ANDROID_POLL_LOGCAT_CMD,
+    _device_tx_checkin_counters,
     _invert_key_hex,
     _is_chiptool_srp_registered,
     _sleepy_child_rloc16s,
@@ -88,6 +89,24 @@ class TestSilabsLitIcdAppPosix(unittest.TestCase):
         ' 0 |     0 |     0 | 1122334455667788 |\n'
     )
     self.assertEqual(_sleepy_child_rloc16s(child_table), {0xA001})
+
+  def test_device_tx_checkin_counters_parses_only_sent_checkins(self):
+    log = (
+        '[1792818213.142] [1374938:1374938] [EM] <<< [E:24262i S:0'
+        ' M:79822948] (U) Msg TX from 7A15A47DF515E279 to'
+        ' 0:0000000000000000 [0000] [UDP:[fd11:22:0:0:0:0:0:3]:40297] ---'
+        ' Type 0000:50 (SecureChannel:ICD_CheckInMessage) (B:57)\n'
+        '[1792818223.350] [1374938:1374938] [EM] <<< [E:24263i S:0'
+        ' M:79822949] (U) Msg TX from 21C3CABBE919D0F0 to'
+        ' 0:0000000000000000 [0000] [UDP:[fd11:22:0:0:0:0:0:3]:40297] ---'
+        ' Type 0000:50 (SecureChannel:ICD_CheckInMessage) (B:57)\n'
+        # Received (>>>) Check-Ins and other message types are not counted.
+        '[1792818224.000] [1374938:1374938] [EM] >>> [E:1r S:0 M:5] (U) Msg'
+        ' RX --- Type 0000:50 (SecureChannel:ICD_CheckInMessage) (B:57)\n'
+        '[1792818225.000] [1374938:1374938] [EM] <<< [E:9i S:0 M:7] (U) Msg'
+        ' TX --- Type 0000:10 (SecureChannel:StandaloneAck) (B:26)\n'
+    )
+    self.assertEqual(_device_tx_checkin_counters(log), {79822948, 79822949})
 
   def test_invert_key_hex_flips_all_bits(self):
     orig = '00112233445566778899aabbccddeeff'
