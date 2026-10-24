@@ -19,6 +19,7 @@ Unit and live binary tests for POSIX-hosted Silicon Labs LIT ICD App
 
 import os
 from pathlib import Path
+import re
 import struct
 import unittest
 
@@ -57,6 +58,23 @@ class TestSilabsLitIcdAppPosix(unittest.TestCase):
         harness._get_end_device_binary_esc(),
         CHIP_SILABS_LIT_ICD_APP_ESC,
     )
+
+  def test_only_assert_helpers_defined_by_chip_virtual_home_are_used(self):
+    # CHIPVirtualHome is not a unittest.TestCase; it only defines a subset of
+    # assert helpers, so e.g. self.assertIsNotNone raises AttributeError at
+    # runtime in the E2E test.
+    harness = TestAndroidBleThreadSilabsLitIcdDevice()
+    test_dir = CHIP_REPO_PATH / 'src/test_driver/linux-cirque'
+    for name in (
+        'AndroidBleThreadSilabsLitIcdTest.py',
+        'AndroidBleThreadMobileDeviceTest.py',
+    ):
+      source = (test_dir / name).read_text(encoding='utf-8')
+      for helper in sorted(set(re.findall(r'self\.(assert\w+)\(', source))):
+        self.assertTrue(
+            callable(getattr(harness, helper, None)),
+            f'{name} uses self.{helper}, which CHIPVirtualHome lacks',
+        )
 
   def test_sleepy_child_rloc16s_only_returns_rx_off_when_idle_children(self):
     child_table = (

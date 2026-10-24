@@ -660,8 +660,8 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
               tbr_ids[0], svc_name, svc_port
           ):
             registered_chiptool_srp = (svc_name, svc_port)
-      self.assertIsNotNone(
-          registered_chiptool_srp,
+      self.assertTrue(
+          registered_chiptool_srp is not None,
           'Android CHIPTool operational node was not registered in TBR SRP'
           ' server',
       )
