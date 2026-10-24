@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 Unit and live binary tests for POSIX-hosted Silicon Labs LIT ICD App
-(chip-silabs-lit-icd-app) and AndroidBleWiFiSilabsLitIcdTest.
+(chip-silabs-lit-icd-app) and AndroidBleThreadSilabsLitIcdTest.
 """
 
 import os
@@ -22,11 +22,10 @@ from pathlib import Path
 import struct
 import unittest
 
-from AndroidBleWiFiSilabsLitIcdTest import (
+from AndroidBleThreadSilabsLitIcdTest import (
     DEVICE_CONFIG,
     SRP_BRIDGER_SCRIPT,
     TestAndroidBleThreadSilabsLitIcdDevice,
-    TestAndroidBleWiFiSilabsLitIcdDevice,
     _ANDROID_POLL_LOGCAT_CMD,
     _invert_key_hex,
     _is_chiptool_srp_registered,
@@ -42,7 +41,6 @@ __all__ = [
     'DEVICE_CONFIG',
     'SRP_BRIDGER_SCRIPT',
     'TestAndroidBleThreadSilabsLitIcdDevice',
-    'TestAndroidBleWiFiSilabsLitIcdDevice',
     'TestSilabsLitIcdAppPosix',
     '_invert_key_hex',
     '_sleepy_child_rloc16s',
@@ -50,14 +48,10 @@ __all__ = [
 
 
 class TestSilabsLitIcdAppPosix(unittest.TestCase):
-  """Unit tests for AndroidBleWiFiSilabsLitIcdTest and silabs-lit-icd-app."""
+  """Unit tests for AndroidBleThreadSilabsLitIcdTest and silabs-lit-icd-app."""
 
   def test_silabs_lit_icd_device_class_selects_silabs_lit_icd_binary(self):
-    harness = TestAndroidBleWiFiSilabsLitIcdDevice()
-    self.assertIs(
-        TestAndroidBleThreadSilabsLitIcdDevice,
-        TestAndroidBleWiFiSilabsLitIcdDevice,
-    )
+    harness = TestAndroidBleThreadSilabsLitIcdDevice()
     self.assertNotIn('device2', harness.device_config)
     self.assertEqual(
         harness._get_end_device_binary_esc(),
@@ -83,18 +77,34 @@ class TestSilabsLitIcdAppPosix(unittest.TestCase):
     self.assertEqual(inv, 'ffeeddccbbaa99887766554433221100')
     self.assertEqual(_invert_key_hex(inv), orig)
 
-  def test_cirque_tests_sh_registers_android_ble_wifi_silabs_lit_icd_test(self):
+  def test_cirque_tests_sh_registers_android_ble_thread_silabs_lit_icd_test(
+      self,
+  ):
     cirque_tests_sh = (
         CHIP_REPO_PATH / 'scripts/tests/cirque_tests.sh'
     ).read_text(encoding='utf-8')
-    self.assertIn('"AndroidBleWiFiSilabsLitIcdTest"', cirque_tests_sh)
+    self.assertIn('"AndroidBleThreadSilabsLitIcdTest"', cirque_tests_sh)
+    self.assertNotIn('AndroidBleWiFiSilabsLitIcdTest', cirque_tests_sh)
     self.assertNotIn('"test_silabs_lit_icd_app_posix"', cirque_tests_sh)
 
     gn_gen_sh = (
         CHIP_REPO_PATH / 'scripts/build/gn_gen_cirque_silabs_arm32.sh'
     ).read_text(encoding='utf-8')
-    self.assertIn('AndroidBleWiFiSilabsLitIcdTest', gn_gen_sh)
+    self.assertIn('AndroidBleThreadSilabsLitIcdTest', gn_gen_sh)
+    self.assertNotIn('AndroidBleWiFiSilabsLitIcdTest', gn_gen_sh)
     self.assertNotIn('test_silabs_lit_icd_app_posix', gn_gen_sh)
+    self.assertTrue(
+        (
+            CHIP_REPO_PATH
+            / 'src/test_driver/linux-cirque/AndroidBleThreadSilabsLitIcdTest.py'
+        ).is_file()
+    )
+    self.assertFalse(
+        (
+            CHIP_REPO_PATH
+            / 'src/test_driver/linux-cirque/AndroidBleWiFiSilabsLitIcdTest.py'
+        ).exists()
+    )
 
   def test_logcat_poll_and_stale_flask_cleanup_in_branch(self):
     self.assertIn('NsdManagerServiceResolver', _ANDROID_POLL_LOGCAT_CMD)
@@ -145,7 +155,7 @@ class TestSilabsLitIcdAppPosix(unittest.TestCase):
     )
 
   def test_register_chiptool_srp_service_retries_on_socket_reset(self):
-    harness = TestAndroidBleWiFiSilabsLitIcdDevice()
+    harness = TestAndroidBleThreadSilabsLitIcdDevice()
     calls = []
     responses = [
         {'output': 'Done\nread: Connection reset by peer\nDone\n'},

@@ -21,7 +21,7 @@
 # Optional environment variables:
 #   CIRQUE_ENABLE_ANDROID_TESTS: Set to 1 (default) to include Android emulator
 #     tests (AndroidBleWiFiMobileDeviceTest, AndroidBleWiFiSilabsLightingTest,
-#     AndroidBleThreadMobileDeviceTest, AndroidBleWiFiSilabsLitIcdTest) in
+#     AndroidBleThreadMobileDeviceTest, AndroidBleThreadSilabsLitIcdTest) in
 #     run_all_tests, or 0 to skip.
 #     Requires KVM and cirque-android-runner.
 
@@ -73,7 +73,7 @@ CIRQUE_ANDROID_TESTS=(
     "AndroidBleWiFiMobileDeviceTest"
     "AndroidBleWiFiSilabsLightingTest"
     "AndroidBleThreadMobileDeviceTest"
-    "AndroidBleWiFiSilabsLitIcdTest"
+    "AndroidBleThreadSilabsLitIcdTest"
 )
 
 BOLD_GREEN_TEXT="\033[1;32m"

@@ -235,7 +235,7 @@ while True:
 """
 
 
-class TestAndroidBleWiFiSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
+class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
 
   def __init__(self, device_config=None, *args, **kwargs):
     if device_config is None:
@@ -1007,8 +1007,5 @@ class TestAndroidBleWiFiSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
       self._cleanup_host_processes()
 
 
-TestAndroidBleThreadSilabsLitIcdDevice = TestAndroidBleWiFiSilabsLitIcdDevice
-
-
 if __name__ == '__main__':
-  sys.exit(TestAndroidBleWiFiSilabsLitIcdDevice(DEVICE_CONFIG).run_test())
+  sys.exit(TestAndroidBleThreadSilabsLitIcdDevice(DEVICE_CONFIG).run_test())
