@@ -236,6 +236,42 @@ def run_command(
     return res
 
 
+# lcov and genhtml exit before doing any work when --ignore-errors names a
+# category they do not know. Categories differ across lcov versions: lcov 2.0
+# (the chip-build-cirque CI image) rejects 'range', which lcov 2.4 accepts.
+_UNKNOWN_IGNORE_ERROR_RE = re.compile(
+    r"unknown argument for --ignore-errors:\s*'?([\w-]+)'?")
+
+
+def run_with_supported_ignore_errors(
+    base_cmd: List[str], ignore_errors: List[str], check: bool = True,
+    timeout: Optional[int] = None
+) -> subprocess.CompletedProcess:
+    """Runs an lcov/genhtml command, dropping rejected --ignore-errors values.
+
+    Retries without each category the installed tool reports as unknown, so a
+    single category list works across lcov versions.
+    """
+    categories = list(ignore_errors)
+    while True:
+        cmd = list(base_cmd)
+        if categories:
+            cmd += ["--ignore-errors", ",".join(categories)]
+        res = run_command(cmd, check=False, timeout=timeout)
+        if res.returncode != 0:
+            match = _UNKNOWN_IGNORE_ERROR_RE.search(res.stderr or "")
+            if match and match.group(1) in categories:
+                logger.warning(
+                    "%s does not support --ignore-errors category '%s'; "
+                    "retrying without it", base_cmd[0], match.group(1))
+                categories.remove(match.group(1))
+                continue
+            if check:
+                raise subprocess.CalledProcessError(
+                    res.returncode, cmd, output=res.stdout, stderr=res.stderr)
+        return res
+
+
 def detect_gcov_tool(out_dir: Path) -> str:
     """Auto-detect gcov tool matching the version of .gcno files in out_dir."""
     env_gcov = os.environ.get("CIRQUE_GCOV_TOOL")
@@ -513,10 +549,10 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
     filtered_info = output_dir / "lcov.info"
     html_dir = output_dir / "html"
 
-    lcov_ignore_errors = (
-        "format,unsupported,inconsistent,unused,gcov,negative,version,empty,"
-        "source,count"
-    )
+    lcov_ignore_errors = [
+        "format", "unsupported", "inconsistent", "unused", "gcov", "negative",
+        "version", "empty", "source", "count",
+    ]
 
     # Auto-detect gcov tool version matching compiler
     gcov_tool = detect_gcov_tool(out_dir)
@@ -533,12 +569,12 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
         "--gcov-tool", gcov_tool,
         "--directory", str(out_dir),
         "--output-file", str(raw_info),
-        "--ignore-errors", lcov_ignore_errors,
         "--rc", "geninfo_unexecuted_blocks=1",
         *parallel_args,
     ]
     try:
-        run_command(capture_cmd, check=True, timeout=timeout)
+        run_with_supported_ignore_errors(
+            capture_cmd, lcov_ignore_errors, check=True, timeout=timeout)
     except subprocess.TimeoutExpired as e:
         logger.error("lcov capture timed out after %ss: %s", timeout, e)
         raise
@@ -577,10 +613,10 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
         "lcov", "--remove", str(raw_info),
         *exclude_patterns,
         "--output-file", str(filtered_info),
-        "--ignore-errors", lcov_ignore_errors,
     ]
     try:
-        run_command(remove_cmd, check=True, timeout=timeout)
+        run_with_supported_ignore_errors(
+            remove_cmd, lcov_ignore_errors, check=True, timeout=timeout)
     except subprocess.TimeoutExpired as e:
         logger.error("lcov remove timed out after %ss: %s", timeout, e)
         raise
@@ -600,19 +636,23 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
 
     # Step 3: Run genhtml
     if not skip_genhtml:
-        genhtml_ignore_errors = (
-            "inconsistent,corrupt,unsupported,empty,format,range,source,count"
-        )
+        # lcov 2.0 rejects 'range' (it is dropped there); out-of-range records
+        # were already removed by sanitize_lcov_out_of_range_lines().
+        genhtml_ignore_errors = [
+            "inconsistent", "corrupt", "unsupported", "empty", "format",
+            "range", "source", "count",
+        ]
         base_genhtml_cmd = [
             "genhtml", str(filtered_info),
             "--output-directory", str(html_dir),
-            "--ignore-errors", genhtml_ignore_errors,
             "--rc", "max_message_count=1000",
             "--header-title", "Matter Cirque Virtual-Home Coverage",
         ]
         genhtml_cmd = [*base_genhtml_cmd, *parallel_args]
         try:
-            res = run_command(genhtml_cmd, check=False, timeout=timeout)
+            res = run_with_supported_ignore_errors(
+                genhtml_cmd, genhtml_ignore_errors, check=False,
+                timeout=timeout)
             if (
                 (res.returncode != 0 or not (html_dir / "index.html").is_file())
                 and parallel_args
@@ -624,9 +664,9 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                     res.returncode,
                     res.stderr,
                 )
-                res = run_command(
-                    base_genhtml_cmd, check=False, timeout=timeout
-                )
+                res = run_with_supported_ignore_errors(
+                    base_genhtml_cmd, genhtml_ignore_errors, check=False,
+                    timeout=timeout)
             if not (html_dir / "index.html").is_file():
                 logger.warning(
                     "genhtml did not produce %s (returncode=%s)\nStderr: %s",

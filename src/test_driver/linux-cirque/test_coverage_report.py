@@ -333,6 +333,66 @@ def _write_fake_lcov(bin_dir: Path, version_line: str) -> None:
     script.chmod(0o755)
 
 
+# Shell snippet that exits like lcov/genhtml 2.0 (chip-build-cirque CI image)
+# when --ignore-errors names 'range', which that version does not know.
+_REJECT_RANGE_SH = (
+    'prev=""\n'
+    'for a in "$@"; do\n'
+    '  if [ "$prev" = "--ignore-errors" ]; then\n'
+    '    case ",$a," in *,range,*)\n'
+    "      echo \"$(basename \"$0\"): ERROR: unknown argument for"
+    " --ignore-errors: 'range'\" >&2\n"
+    '      exit 255;;\n'
+    '    esac\n'
+    '  fi\n'
+    '  prev="$a"\n'
+    'done\n'
+)
+
+
+class TestRunWithSupportedIgnoreErrors(unittest.TestCase):
+    """Verifies rejected --ignore-errors categories are dropped and retried."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.calls = self.root / "calls.txt"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _tool(self, body: str) -> str:
+        tool = self.root / "genhtml"
+        tool.write_text(
+            "#!/bin/sh\n"
+            f'echo "$@" >> {self.calls}\n' + body)
+        tool.chmod(0o755)
+        return str(tool)
+
+    def test_drops_category_rejected_by_lcov_2_0(self):
+        from helper.coverage_report import run_with_supported_ignore_errors
+        tool = self._tool(_REJECT_RANGE_SH + "exit 0\n")
+        res = run_with_supported_ignore_errors(
+            [tool, "lcov.info"], ["inconsistent", "range", "source"])
+        self.assertEqual(res.returncode, 0)
+        calls = self.calls.read_text().splitlines()
+        self.assertEqual(len(calls), 2)
+        self.assertIn("--ignore-errors inconsistent,range,source", calls[0])
+        self.assertEqual(
+            calls[1], "lcov.info --ignore-errors inconsistent,source")
+
+    def test_other_failures_are_not_retried(self):
+        from helper.coverage_report import run_with_supported_ignore_errors
+        tool = self._tool(
+            "echo 'genhtml: ERROR: no valid records' >&2\nexit 1\n")
+        with self.assertRaises(subprocess.CalledProcessError):
+            run_with_supported_ignore_errors([tool, "lcov.info"], ["range"])
+        res = run_with_supported_ignore_errors(
+            [tool, "lcov.info"], ["range"], check=False)
+        self.assertEqual(res.returncode, 1)
+        self.assertEqual(len(self.calls.read_text().splitlines()), 2)
+
+
 class TestLcovParallelDetection(unittest.TestCase):
     """Verifies lcov --parallel feature detection and overrides."""
 
@@ -443,6 +503,28 @@ class TestGenerateCoverageReportRealLcov(unittest.TestCase):
     def test_genhtml_produces_index_html_with_out_of_range_llvm_line(self):
         """Regression test: llvm-cov DA:(N+1) on an N-line header must not
         abort genhtml before writing html/index.html."""
+        self._assert_genhtml_writes_index_html()
+
+    @unittest.skipUnless(shutil.which("genhtml"), "requires genhtml")
+    def test_genhtml_writes_index_html_when_lcov_rejects_range(self):
+        """Regression test: the CI image ships lcov 2.0, whose genhtml exits
+        255 on '--ignore-errors range'; html/index.html must still be written.
+        """
+        real_genhtml = shutil.which("genhtml")
+        with tempfile.TemporaryDirectory() as bin_tmp:
+            wrapper = Path(bin_tmp) / "genhtml"
+            wrapper.write_text(
+                "#!/bin/sh\n" + _REJECT_RANGE_SH
+                + f'exec {real_genhtml} "$@"\n')
+            wrapper.chmod(0o755)
+            saved_path = os.environ["PATH"]
+            os.environ["PATH"] = f"{bin_tmp}{os.pathsep}{saved_path}"
+            try:
+                self._assert_genhtml_writes_index_html()
+            finally:
+                os.environ["PATH"] = saved_path
+
+    def _assert_genhtml_writes_index_html(self):
         from helper.coverage_report import generate_coverage_report
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
