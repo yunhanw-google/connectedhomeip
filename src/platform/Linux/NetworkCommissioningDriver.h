@@ -45,9 +45,8 @@ public:
         currentIterating++;
         return true;
     }
-    void Release() override
-    { /* nothing to do, we don't hold the ownership of the vector, and users is not expected to hold the
-         ownership in OnFinished for scan. */
+    void Release() override { /* nothing to do, we don't hold the ownership of the vector, and users is not expected to hold the
+                                 ownership in OnFinished for scan. */
     }
 
 private:
@@ -56,7 +55,7 @@ private:
     std::vector<T> * mpScanResponse;
 };
 
-#if CHIP_DEVICE_CONFIG_ENABLE_WPA
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA || (defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI)
 // Reported as ConnectMaxTimeSeconds and enforced by ConnectivityManagerImpl as the connect deadline.
 inline constexpr uint8_t kWiFiConnectNetworkTimeoutSeconds = 30;
 
@@ -161,7 +160,7 @@ private:
     // Whether 5GHz band is supported, as claimed by callers (`Set5gSupport()`) rather than syscalls.
     bool mIs5gSupported = false;
 };
-#endif // CHIP_DEVICE_CONFIG_ENABLE_WPA
+#endif // CHIP_DEVICE_CONFIG_ENABLE_WPA || CHIP_LINUX_USE_SILABS_BLE_WIFI
 
 #if CHIP_DEVICE_CONFIG_ENABLE_THREAD
 class LinuxThreadDriver final : public ThreadDriver

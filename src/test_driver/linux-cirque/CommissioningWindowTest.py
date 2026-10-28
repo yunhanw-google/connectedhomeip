@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 import logging
+import os
 import shlex
 import sys
 
@@ -85,11 +86,15 @@ class TestCommissioningWindow(CHIPVirtualHome):
         servers[0]['discriminator'] = TEST_DISCRIMINATOR
         servers[0]['nodeid'] = 1
 
+        gdb_wrapper = 'gdb -return-child-result -q -ex "set pagination off" -ex run -ex "bt 25" --args'
+        if os.environ.get("CIRQUE_COVERAGE") == "1":
+            gdb_wrapper = ""
+
         for server in servers:
             self.execute_device_cmd(
                 server['id'],
-                'CHIPCirqueDaemon.py -- run gdb -return-child-result -q -ex "set pagination off" -ex run -ex "bt 25" '
-                f'--args {CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {server["discriminator"]}')
+                f'CHIPCirqueDaemon.py -- run {gdb_wrapper} '
+                f'{CHIP_ALL_CLUSTERS_APP_ESC} --thread --discriminator {server["discriminator"]}')
 
         self.reset_thread_devices([server['id'] for server in servers])
 

@@ -1,0 +1,1076 @@
+#!/usr/bin/env python3
+"""Copyright (c) 2026 Project CHIP Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import base64
+import copy
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+from AndroidBleThreadMobileDeviceTest import (
+    DEVICE_CONFIG as _BASE_DEVICE_CONFIG,
+    TEST_DISCRIMINATOR,
+    TestAndroidBleThreadMobileDevice,
+)
+from helper.paths import (
+    ARM_SYSROOT_ESC,
+    CHIP_SILABS_LIT_ICD_APP_ESC,
+    PTY_BRIDGE_LINUX_ESC,
+    QEMU_ARM_ESC,
+    SILABS_PROFRAW_DIR_ESC,
+    SILABS_PROFRAW_DIR_PATH,
+)
+from helper.pcap_oracles import (
+    ieee802154_mac_command_frames,
+    matter_icd_checkin_packets,
+    thread_decrypted_udp_frames,
+    thread_icd_checkin_frames,
+)
+from helper.session_keylog import (
+    SESSION_KEYLOG_DEVICE_PATH,
+    SESSION_KEYLOG_ENV,
+)
+from helper.wifi_lease import wait_for_device_wlan0_ipv4
+
+# SIMULATION-DISCLOSURE: Executes the ARM32 Silicon Labs LIT ICD example app
+# (out/arm-silabs-thread/chip-silabs-lit-icd-app, built from
+# examples/lit-icd-app/silabs with chip_enable_ble=true,
+# chip_enable_thread=true, chip_enable_icd_server=true) under qemu-arm over
+# userspace Virtual Bluetooth (pty_bridge_linux + VirtualBluetoothServer) and
+# OpenThread 802.15.4 simulation radio, commissioned over BLE + Thread via
+# ThreadBorderRouter and Virtual Wi-Fi AP by Android CHIPTool
+# (cirque-android-runner).
+
+DEVICE_CONFIG = copy.deepcopy(_BASE_DEVICE_CONFIG)
+DEVICE_CONFIG.pop('device2', None)
+
+# One row of `ot-ctl child table`:
+# | ID | RLOC16 | Timeout | Age | LQ In | C_VN |R|D|N| Ver |CSL|...
+_CHILD_TABLE_ROW_RE = re.compile(
+    r'^\|\s*\d+\s*\|\s*(0x[0-9a-fA-F]{4})\s*\|(?:[^|]*\|){4}([01])\|',
+    re.MULTILINE,
+)
+
+# Max time from the Check-In leaving the SED on 802.15.4 to the border router
+# forwarding it onto the Wi-Fi medium.
+_MAX_BR_FORWARD_DELAY_S = 1.0
+
+# Tag filter used during 2-second logcat polling so each poll reads only the
+# Matter/CHIPTool lines instead of dumping the full ~3.5 MB Android framework
+# boot logcat into the test stdout log on every iteration.
+_ANDROID_POLL_LOGCAT_CMD = (
+    'adb shell "logcat -d -v epoch | grep -E'
+    " 'NsdManagerServiceResolver|DeviceProvisioningFragment|"
+    'ChipDeviceController|ChipClient|ICDListener|Commissioning|'
+    'OnReadCommissioningInfo|onICDRegistrationComplete|onCheckInComplete|'
+    'Check In Message|SecureChannel:ICD_CheckInMessage|CHIP|NsdService|'
+    'MdnsServiceTypeClient|AndroidRuntime\' || true"'
+)
+
+
+def _sleepy_child_rloc16s(child_table: str) -> set:
+  """Returns RLOC16s of child-table rows with RxOnWhenIdle (R) == 0."""
+  return {
+      int(rloc16, 16)
+      for rloc16, rx_on_when_idle in _CHILD_TABLE_ROW_RE.findall(child_table)
+      if rx_on_when_idle == '0'
+  }
+
+
+def _invert_key_hex(key_hex: str) -> str:
+  return ''.join(f'{0xFF - b:02x}' for b in bytes.fromhex(key_hex))
+
+
+def _device_tx_checkin_counters(device_log: str) -> set:
+  """Returns message counters of ICD Check-Ins the device log shows as sent."""
+  return {
+      int(c)
+      for c in re.findall(
+          r'<<< \[E:\d+i S:0 M:(\d+)\] .* Type 0000:50'
+          r' \(SecureChannel:ICD_CheckInMessage\)',
+          device_log,
+      )
+  }
+
+
+def _is_chiptool_srp_registered(
+    srp_service_output: str, svc_name: str, svc_port: str
+) -> bool:
+  """Returns True if svc_name is active in ot-ctl srp server service output."""
+  blocks, cur_block = [], []
+  for raw_line in srp_service_output.splitlines():
+    line_r = raw_line.rstrip()
+    if not line_r or line_r == 'Done':
+      continue
+    if not line_r.startswith(' ') and not line_r.startswith('\t'):
+      if cur_block:
+        blocks.append('\n'.join(cur_block))
+      cur_block = [line_r]
+    else:
+      cur_block.append(line_r)
+  if cur_block:
+    blocks.append('\n'.join(cur_block))
+
+  target_prefix = f'{svc_name}._matter._tcp'
+  for block in blocks:
+    lines = [l.strip() for l in block.splitlines() if l.strip()]
+    if not lines or not lines[0].startswith(target_prefix):
+      continue
+    if 'deleted: false' not in lines:
+      continue
+    if f'port: {svc_port}' not in lines:
+      continue
+    if not any(l.startswith('host: android-chiptool') for l in lines):
+      continue
+    if not any(l.startswith('addresses:') and 'fd11:22:' in l for l in lines):
+      continue
+    return True
+  return False
+
+
+SRP_BRIDGER_SCRIPT = """import fcntl, subprocess, time, os, re
+
+os.makedirs('/etc/avahi/services', exist_ok=True)
+known = {}
+
+def _parse_block(b):
+    lines = [l.strip() for l in b.strip().split('\\n') if l.strip()]
+    if not lines or 'deleted: true' in b:
+        return None
+    inst = lines[0].split('.')[0].strip()
+    if not inst or '-' not in inst or inst.endswith('-000000000001B669'):
+        return None
+    port, host, ips = '5540', '', []
+    for l in lines[1:]:
+        if l.startswith('port:'):
+            port = l.split(':', 1)[1].strip()
+        elif l.startswith('host:'):
+            host = l.split(':', 1)[1].strip().split('.')[0]
+        elif l.startswith('addresses:'):
+            m = re.search(r'\\[(.*?)\\]', l)
+            if m and m.group(1).strip():
+                raw_ips = m.group(1).split(',')
+                ips = [x.strip() for x in raw_ips if x.strip()]
+    if host == 'android-chiptool' or not (inst and host and ips):
+        return None
+    return inst, (host, port, tuple(ips))
+
+def _write_service(inst, host, port, ips):
+    non_ula = [ip for ip in ips if not ip.startswith('fdde:ad00:beef')]
+    chosen_ip = non_ula[0] if non_ula else ips[0]
+    with open('/etc/avahi/hosts', 'a+') as hf:
+        hf.seek(0)
+        if chosen_ip not in hf.read():
+            hf.write(f'\\n{chosen_ip} {host}.local\\n')
+    fid = inst.split('-')[0] if '-' in inst else ''
+    sub = f'    <subtype>_I{fid}._sub._matter._tcp</subtype>\\n' if fid else ''
+    xml = f'''<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="no">{inst}</name>
+  <service protocol="ipv6">
+    <type>_matter._tcp</type>
+{sub}    <host-name>{host}.local</host-name>
+    <port>{port}</port>
+    <txt-record>SII=500</txt-record>
+    <txt-record>SAI=300</txt-record>
+    <txt-record>SAT=4000</txt-record>
+    <txt-record>T=1</txt-record>
+    <txt-record>ICD=1</txt-record>
+  </service>
+</service-group>
+'''
+    short_inst = inst[-12:] if len(inst) > 12 else inst
+    svc_path = f'/etc/avahi/services/srp_{short_inst}.service'
+    with open(svc_path, 'w') as sf:
+        sf.write(xml)
+
+def sync():
+    cmd = ['ot-ctl', 'srp', 'server', 'service']
+    with open('/tmp/ot_ctl.lock', 'w') as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            out = subprocess.check_output(
+                cmd, text=True, stderr=subprocess.DEVNULL
+            )
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
+    blocks, cur_block = [], []
+    for raw_line in out.splitlines():
+        line_r = raw_line.rstrip()
+        if not line_r or line_r == 'Done':
+            continue
+        if not line_r.startswith(' ') and not line_r.startswith('\\t'):
+            if cur_block:
+                blocks.append('\\n'.join(cur_block))
+            cur_block = [line_r]
+        else:
+            cur_block.append(line_r)
+    if cur_block:
+        blocks.append('\\n'.join(cur_block))
+    current = {}
+    for b in blocks:
+        parsed = _parse_block(b)
+        if parsed:
+            current[parsed[0]] = parsed[1]
+    if current and current != known:
+        for inst, (host, port, ips) in current.items():
+            if known.get(inst) != (host, port, ips):
+                _write_service(inst, host, port, ips)
+        hup_cmd = ['killall', '-HUP', 'avahi-daemon']
+        subprocess.run(hup_cmd, stderr=subprocess.DEVNULL)
+        known.clear()
+        known.update(current)
+
+while True:
+    try:
+        sync()
+    except (subprocess.SubprocessError, OSError) as exc:
+        print('srp_bridger sync warning:', exc, flush=True)
+    time.sleep(1)
+"""
+
+
+class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
+
+  def __init__(self, device_config=None, *args, **kwargs):
+    if device_config is None:
+      device_config = copy.deepcopy(DEVICE_CONFIG)
+    else:
+      device_config = copy.deepcopy(device_config)
+      device_config.pop('device2', None)
+    super().__init__(device_config, *args, **kwargs)
+    self.app_proc = None
+    self.pty_proc = None
+    self.app_log_file = None
+
+  def _get_end_device_binary_esc(self) -> str:
+    return CHIP_SILABS_LIT_ICD_APP_ESC
+
+  def _extra_app_env(self) -> str:
+    """Returns extra `NAME=value ` settings for the end-device environment."""
+    return ''
+
+  def _end_device_thread_node_id(self) -> int:
+    """Returns the simulation node id of the host-side end device.
+
+    Cirque numbers the Thread-capable devices of one petition 1..N in config
+    order; the end device runs on the host, outside that list, and takes the
+    next id.
+    """
+    thread_devices = [
+        d
+        for d in self.device_config.values()
+        if isinstance(d, dict) and 'Thread' in (d.get('capability') or [])
+    ]
+    return len(thread_devices) + 1
+
+  def _run_post_checkin_phase(self, ctx: dict) -> None:
+    """Runs after the Check-In oracles pass, while the end device is alive.
+
+    Args:
+      ctx: tbr_id, req_device_id, app_log_path, thread_pcap, wifi_pcap,
+        network_key, sed_rloc16s and chiptool_srp (the CHIPTool operational
+        (service name, port) registered in the TBR SRP server) of the
+        commissioned run.
+    """
+    del ctx  # The base test has no extra phase.
+
+  def _save_host_session_keylog(self):
+    """Writes host-side CHIP_SESSION_KEYLOG_FILE to matter_session_keys.txt."""
+    out_dir = os.environ.get('CIRQUE_PCAP_DIR') or os.environ.get(
+        'DEVICE_LOG_DIR'
+    )
+    if not out_dir or not os.path.isfile(SESSION_KEYLOG_DEVICE_PATH):
+      return None
+    try:
+      with open(
+          SESSION_KEYLOG_DEVICE_PATH, 'r', encoding='utf-8', errors='replace'
+      ) as f:
+        text = f.read()
+      if not text.strip():
+        return None
+      from cirque.protocols.matter.session import write_matter_session_key_file  # pylint: disable=import-outside-toplevel
+
+      path = write_matter_session_key_file(out_dir, text)
+      self.logger.info('Saved TEST-ONLY Matter session keys to %s', path)
+      return path
+    except (ImportError, OSError, ValueError) as exc:
+      self.logger.debug('Host Matter session keys not saved: %s', exc)
+      return None
+
+  def save_device_logs(self):
+    super().save_device_logs()
+    self._save_host_session_keylog()
+
+  def _poll_android_logcat(self, req_device_id: str) -> str:
+    res = self.execute_device_cmd(req_device_id, _ANDROID_POLL_LOGCAT_CMD)
+    out = res.get('output', '') if isinstance(res, dict) else str(res)
+    if out.strip():
+      return out
+    res = self.execute_device_cmd(
+        req_device_id, 'adb shell "logcat -d -v epoch"'
+    )
+    return res.get('output', '') if isinstance(res, dict) else str(res)
+
+  def _cleanup_host_processes(self):
+    if self.app_proc:
+      try:
+        self.app_proc.terminate()
+        self.app_proc.wait(timeout=3)
+      except (subprocess.SubprocessError, OSError):
+        try:
+          self.app_proc.kill()
+        except OSError as exc:
+          self.logger.debug('app_proc kill ignored: %s', exc)
+      self.app_proc = None
+    if self.pty_proc:
+      try:
+        self.pty_proc.terminate()
+        self.pty_proc.wait(timeout=3)
+      except (subprocess.SubprocessError, OSError):
+        try:
+          self.pty_proc.kill()
+        except OSError as exc:
+          self.logger.debug('pty_proc kill ignored: %s', exc)
+      self.pty_proc = None
+    if self.app_log_file:
+      try:
+        self.app_log_file.close()
+      except OSError as exc:
+        self.logger.debug('app_log_file close ignored: %s', exc)
+      self.app_log_file = None
+    subprocess.run(
+        "pkill -9 -f '[c]hip-silabs-lit-icd-app|[c]hip-silabs-lock-app'"
+        ' 2>/dev/null || true',
+        shell=True,
+    )
+    subprocess.run(
+        'killall -9 pty_bridge_linux 2>/dev/null || true', shell=True
+    )
+
+  def _exec_tbr_ot_ctl(self, tbr_id: str, shell_body: str) -> str:
+    """Executes ot-ctl commands on TBR under /tmp/ot_ctl.lock."""
+    escaped = shell_body.replace('"', '\\"')
+    cmd = (
+        'sh -c "if command -v flock >/dev/null 2>&1; then'
+        f' flock -w 5 /tmp/ot_ctl.lock sh -c \\"{escaped}\\";'
+        f' else {shell_body}; fi"'
+    )
+    res = self.execute_device_cmd(tbr_id, cmd)
+    return res.get('output', '') if isinstance(res, dict) else str(res)
+
+  def _register_chiptool_srp_service(
+      self,
+      tbr_id: str,
+      svc_name: str,
+      svc_port: str,
+      max_attempts: int = 5,
+  ) -> bool:
+    """Registers Android CHIPTool node in TBR SRP server and verifies it."""
+    reg_body = (
+        'ot-ctl srp client stop >/dev/null 2>&1 || true; '
+        'ot-ctl srp client host clear >/dev/null 2>&1 || true; '
+        'ot-ctl srp client host name android-chiptool; '
+        'ot-ctl srp client host address fd11:22::3; '
+        f'ot-ctl srp client service add {svc_name} _matter._tcp {svc_port}; '
+        'ot-ctl srp client autostart enable'
+    )
+    for attempt in range(1, max_attempts + 1):
+      self.logger.info(
+          'Registering Android CHIPTool operational node %s (port=%s,'
+          ' ip=fd11:22::3) in TBR SRP server (attempt %d/%d)',
+          svc_name,
+          svc_port,
+          attempt,
+          max_attempts,
+      )
+      reg_out = self._exec_tbr_ot_ctl(tbr_id, reg_body)
+      if 'Connection reset by peer' in reg_out or 'Error' in reg_out:
+        self.logger.warning(
+            'TBR ot-ctl SRP client command encountered transient error on'
+            ' attempt %d/%d: %s',
+            attempt,
+            max_attempts,
+            reg_out.strip(),
+        )
+        time.sleep(0.5)
+        continue
+
+      for _ in range(3):
+        time.sleep(0.5)
+        srv_out = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl srp server service')
+        if _is_chiptool_srp_registered(srv_out, svc_name, svc_port):
+          self.logger.info(
+              'Verified Android CHIPTool operational node %s (port=%s) in TBR'
+              ' SRP server',
+              svc_name,
+              svc_port,
+          )
+          return True
+      self.logger.warning(
+          'Android CHIPTool operational node %s not yet visible in TBR SRP'
+          ' server after attempt %d/%d',
+          svc_name,
+          attempt,
+          max_attempts,
+      )
+    return False
+
+  def _get_thread_radio_context(self, tbr_id: str):
+    """Returns (network_key_hex, child_table, sleepy_child_rloc16s) from TBR."""
+    key_out = ''
+    key_match = None
+    for _ in range(3):
+      key_out = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl networkkey')
+      key_match = re.search(r'\b([0-9a-fA-F]{32})\b', key_out)
+      if key_match is not None:
+        break
+      time.sleep(0.5)
+    self.assertTrue(
+        key_match is not None,
+        f'Could not read Thread network key from TBR {tbr_id}: {key_out!r}',
+    )
+    child_table = ''
+    for _ in range(3):
+      child_table = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl child table')
+      if (
+          'RLOC16' in child_table
+          and 'Connection reset by peer' not in child_table
+      ):
+        break
+      time.sleep(0.5)
+    return (
+        key_match.group(1).lower(),
+        child_table,
+        _sleepy_child_rloc16s(child_table),
+    )
+
+  def _install_enhanced_srp_bridger(self, tbr_id: str):
+    b64_script = base64.b64encode(SRP_BRIDGER_SCRIPT.encode('utf-8')).decode(
+        'ascii'
+    )
+    self.execute_device_cmd(
+        tbr_id,
+        'sh -c "pkill -9 -f \'[s]rp_bridger\' 2>/dev/null || true"',
+    )
+    self.execute_device_cmd(
+        tbr_id,
+        f"sh -c 'echo {b64_script} | base64 -d > /tmp/srp_bridger.py && cp"
+        " /tmp/srp_bridger.py /tmp/srp_bridger_lit.py'",
+    )
+    self.execute_device_cmd(
+        tbr_id,
+        "sh -c 'nohup python3 /tmp/srp_bridger_lit.py >/tmp/srp_bridger.log"
+        " 2>&1 </dev/null &'",
+    )
+
+  def run_android_ble_thread_commissioning_test(self):
+    all_devs = list(self.device_config.values())
+    tbr_devices = [d for d in all_devs if d.get('type') == 'ThreadBorderRouter']
+    req_devices = [
+        d
+        for d in all_devs
+        if d.get('type') in ('android_emulator', 'Android_Emulator')
+    ]
+
+    if not tbr_devices:
+      raise RuntimeError('No ThreadBorderRouter in device_config')
+    if not req_devices:
+      raise RuntimeError('No android_emulator in device_config')
+
+    tbr_ids = [d['id'] for d in tbr_devices]
+    req_device_id = req_devices[0]['id']
+
+    self._setup_android_emulator_node(req_device_id)
+    super()._isolate_eth0_and_start_avahi(tbr_ids)
+    tbr_dataset = self._setup_thread_border_routers(tbr_ids)
+    self._install_enhanced_srp_bridger(tbr_ids[0])
+
+    self.logger.info(
+        'Setting up host QEMU execution for chip-silabs-lit-icd-app'
+    )
+    self._cleanup_host_processes()
+    node_id = self._end_device_thread_node_id()
+    subprocess.run(
+        'rm -rf /tmp/chip_kvs* /tmp/chip_*.ini'
+        f' /tmp/chip_ot_node{node_id}.log /tmp/openthread-simulation'
+        f' 0_{node_id}.flash tmp/0_{node_id}.flash 2>/dev/null || true',
+        shell=True,
+    )
+    try:
+      open(SESSION_KEYLOG_DEVICE_PATH, 'w').close()
+    except OSError as e:
+      self.logger.warning('Failed to clear session keylog: %s', e)
+    time.sleep(0.5)
+
+    hci_port = 23458
+    try:
+      bt_info = self.query_api('virtual_bt_info')
+      if isinstance(bt_info, dict):
+        hci_port = int(bt_info.get('hci_port', 23458) or 23458)
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
+      self.logger.warning(
+          'virtual_bt_info lookup failed (%s); using hci_port=%d', exc, hci_port
+      )
+
+    port_offset = '0'
+    try:
+      pids = subprocess.check_output(['pgrep', 'ot-rcp']).decode().split()
+      for pid in pids:
+        with open(f'/proc/{pid}/environ', 'rb') as env_f:
+          env = env_f.read().decode('utf-8', errors='ignore')
+          if 'PORT_OFFSET=' in env:
+            for item in env.split('\0'):
+              if item.startswith('PORT_OFFSET='):
+                port_offset = item.split('=')[1]
+                break
+    except (subprocess.SubprocessError, OSError, ValueError) as exc:
+      self.logger.warning('Failed to find PORT_OFFSET from ot-rcp: %s', exc)
+
+    self.logger.info(
+        'Starting pty_bridge_linux on host (/tmp/ttySilabsBT0 -> silabs_hci0)'
+    )
+    self.pty_proc = subprocess.Popen(
+        f'{PTY_BRIDGE_LINUX_ESC} /tmp/ttySilabsBT0 127.0.0.1 {hci_port}'
+        ' silabs_hci0',
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    time.sleep(1.0)
+    subprocess.run(
+        'chmod 666 /tmp/ttySilabsBT0 2>/dev/null || true', shell=True
+    )
+
+    app_log_path = '/tmp/chip-all-clusters.log'
+    open(app_log_path, 'w').close()
+    self.app_log_file = open(app_log_path, 'a')
+
+    disable_reg = os.environ.get('DISABLE_ICD_REGISTRATION', '0')
+    # Same emulator and sysroot as the Silabs lighting-app test: the static
+    # out/host_libs/qemu-arm and the Pigweed armhf sysroot, so the test needs
+    # no qemu-user or armhf cross packages in the runner image.
+    # With CIRQUE_COVERAGE=1 the clang ARM32 build writes .profraw files on
+    # exit; exec lets terminate() signal qemu-arm itself instead of the shell.
+    coverage_env = ''
+    if os.environ.get('CIRQUE_COVERAGE') == '1':
+      os.makedirs(SILABS_PROFRAW_DIR_PATH, exist_ok=True)
+      coverage_env = (
+          f'LLVM_PROFILE_FILE={SILABS_PROFRAW_DIR_ESC}/lit-icd-%p-%m.profraw '
+      )
+
+    cmd = (
+        'ulimit -c 0; '
+        f'exec env {coverage_env}{SESSION_KEYLOG_ENV} '
+        f'{self._extra_app_env()}'
+        'SILABS_BT_PTY_PATH=/tmp/ttySilabsBT0 '
+        f'PORT_OFFSET={port_offset} {QEMU_ARM_ESC} '
+        f'-L {ARM_SYSROOT_ESC} {self._get_end_device_binary_esc()} '
+        f'--thread-node-id {node_id} --ble-controller 0 --discriminator '
+        f'{TEST_DISCRIMINATOR}'
+    )
+    self.logger.info(
+        'Starting host chip-silabs-lit-icd-app under qemu-arm: %s', cmd
+    )
+    self.app_proc = subprocess.Popen(
+        cmd, shell=True, stdout=self.app_log_file, stderr=self.app_log_file
+    )
+    time.sleep(8.0)
+
+    tbr_ip = wait_for_device_wlan0_ipv4(self, tbr_ids[0])
+    self.assertTrue(
+        bool(tbr_ip and tbr_ip.startswith('10.0.1.')),
+        f'Invalid TBR IP: {tbr_ip}',
+    )
+
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell su root ip -6 addr add fd11:22::3/64 dev wlan0 nodad'
+        ' 2>/dev/null || true',
+    )
+    for prefix in ('fdde:ad00:beef:0::/64', 'fd11:33::/64'):
+      self.execute_device_cmd(
+          req_device_id,
+          f'adb shell su root ip -6 route add {prefix} via fd11:22::2 dev wlan0'
+          ' 2>/dev/null || true',
+      )
+      self.execute_device_cmd(
+          req_device_id,
+          f'adb shell su root ip -6 route add {prefix} via fd11:22::2 dev wlan0'
+          ' table wlan0 2>/dev/null || true',
+      )
+      self.execute_device_cmd(
+          req_device_id,
+          f'adb shell su root ip -6 route add {prefix} via fd11:22::2 dev wlan0'
+          ' table eth0 2>/dev/null || true',
+      )
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell su root ip -6 route add ff02::fb/128 dev wlan0 table eth0'
+        ' 2>/dev/null || true',
+    )
+
+    is_lit_str = 'false' if disable_reg == '1' else 'true'
+    self.logger.info(
+        'Driving CHIPTool commissioning over BLE + Thread via ADB Intent'
+        ' (isLIT=%s)',
+        is_lit_str,
+    )
+    self.execute_device_cmd(req_device_id, 'adb logcat -c')
+    self.execute_device_cmd(
+        req_device_id, 'adb shell am force-stop com.google.chip.chiptool'
+    )
+    time.sleep(0.5)
+
+    self._start_ui_video(req_device_id, '2_ble_thread_commissioning.mp4')
+    comm_success = False
+    registered_chiptool_srp = None
+    try:
+      intent_cmd = (
+          'adb shell am start -n com.google.chip.chiptool/.CHIPToolActivity '
+          '-a com.google.chip.chiptool.action.COMMISSION_BLE_THREAD '
+          f'--ei discriminator {TEST_DISCRIMINATOR} --el setupPinCode 20202021 '
+          f'--ez isLIT {is_lit_str} '
+          '--es threadOperationalDataset '
+          + tbr_dataset.get('dataset_tlvs_hex', '')
+      )
+      self.execute_device_cmd(req_device_id, intent_cmd)
+
+      start_wait = time.time()
+      while time.time() - start_wait < 120.0:
+        out = self._poll_android_logcat(req_device_id)
+        pub_matches = re.findall(
+            r'publish'
+            r' serviceName=([0-9A-F]{16}-000000000001B669)\s+'
+            r'type=_matter\._tcp\S*\s+port=(\d+)',
+            out,
+        )
+        if pub_matches:
+          svc_name, svc_port = pub_matches[-1]
+          if (svc_name, svc_port) != registered_chiptool_srp:
+            if self._register_chiptool_srp_service(
+                tbr_ids[0], svc_name, svc_port
+            ):
+              registered_chiptool_srp = (svc_name, svc_port)
+        if (
+            'Device commissioning completed with code: 0' in out
+            or 'Commissioning complete' in out
+            or ('onCommissioningComplete' in out and 'errorCode = 0' in out)
+        ):
+          comm_success = True
+          break
+        if (
+            'Device commissioning completed with code:' in out
+            and 'code: 0' not in out
+        ):
+          break
+        time.sleep(2.0)
+    finally:
+      self._stop_ui_video(req_device_id)
+
+    try:
+      self.assertTrue(
+          comm_success,
+          'BLE + Thread commissioning did not complete with code 0 within 120s',
+      )
+      if registered_chiptool_srp is None:
+        out = self._poll_android_logcat(req_device_id)
+        pub_matches = re.findall(
+            r'publish'
+            r' serviceName=([0-9A-F]{16}-000000000001B669)\s+'
+            r'type=_matter\._tcp\S*\s+port=(\d+)',
+            out,
+        )
+        if pub_matches:
+          svc_name, svc_port = pub_matches[-1]
+          if self._register_chiptool_srp_service(
+              tbr_ids[0], svc_name, svc_port
+          ):
+            registered_chiptool_srp = (svc_name, svc_port)
+      self.assertTrue(
+          registered_chiptool_srp is not None,
+          'Android CHIPTool operational node was not registered in TBR SRP'
+          ' server',
+      )
+
+      pcap_dir = (
+          os.environ.get('CIRQUE_PCAP_DIR')
+          or os.environ.get('DEVICE_LOG_DIR')
+          or '/tmp'
+      )
+      wifi_pcap = os.path.join(pcap_dir, 'wifi_medium.pcap')
+      thread_pcap = os.path.join(pcap_dir, 'thread_0.pcap')
+      self.assertTrue(
+          os.path.exists(thread_pcap), f'Missing Thread capture {thread_pcap}'
+      )
+
+      if disable_reg == '1':
+        self.logger.info(
+            'Negative control mode (DISABLE_ICD_REGISTRATION=1): waiting 20s to'
+            ' verify 0 Check-Ins'
+        )
+        time.sleep(20.0)
+        network_key, child_table, sed_rloc16s = self._get_thread_radio_context(
+            tbr_ids[0]
+        )
+        self.assertTrue(
+            sed_rloc16s,
+            'Negative control failed: TBR child table has no R=0 child:'
+            f'\n{child_table}',
+        )
+        with open(app_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+          device_log = f.read()
+        logcat_out = self._poll_android_logcat(req_device_id)
+        wire_checkins = (
+            matter_icd_checkin_packets(wifi_pcap)
+            if os.path.exists(wifi_pcap)
+            else []
+        )
+        radio_checkins = [
+            f
+            for f in thread_icd_checkin_frames(thread_pcap, network_key)
+            if f['src16'] in sed_rloc16s
+        ]
+        # Non-vacuity: the SED's MAC-secured traffic must decrypt, so that
+        # 0 radio Check-Ins means none were sent, not that decryption failed.
+        sed_radio_udp = [
+            f
+            for f in thread_decrypted_udp_frames(thread_pcap, network_key)
+            if f['src16'] in sed_rloc16s
+        ]
+
+        self.assertNotIn(
+            'Cluster=0x0000_0046 Command=0x0000_0000',
+            device_log,
+            'Negative control failed: RegisterClient (0x0046:0x00) was'
+            ' unexpectedly sent when isLIT=false',
+        )
+        self.assertNotIn(
+            'SecureChannel:ICD_CheckInMessage',
+            device_log,
+            'Negative control failed: device sent ICD_CheckInMessage without'
+            ' client registration',
+        )
+        self.assertEqual(
+            logcat_out.count('onCheckInComplete'),
+            0,
+            'Negative control failed: Android logcat reported onCheckInComplete'
+            ' when registration was disabled',
+        )
+        self.assertEqual(
+            len(wire_checkins),
+            0,
+            'Negative control failed: wifi_medium.pcap contained'
+            f' {len(wire_checkins)} ICD_CheckIn packets',
+        )
+        self.assertTrue(
+            sed_radio_udp,
+            'Negative control is vacuous: no MAC-secured UDP frame from SED'
+            f' {sorted(hex(r) for r in sed_rloc16s)} decrypted in'
+            f' {thread_pcap}',
+        )
+        self.assertEqual(
+            len(radio_checkins),
+            0,
+            'Negative control failed: thread_0.pcap contained'
+            f' {len(radio_checkins)} ICD_CheckIn frames from the SED',
+        )
+        self.logger.info(
+            'Oracle 5 (Negative control) passed: 0 RegisterClient, 0 Check-Ins'
+            ' on device/802.15.4/Wi-Fi/Android (sed_decrypted_udp=%d)',
+            len(sed_radio_udp),
+        )
+        return
+
+      self.logger.info(
+          'Commissioning succeeded; polling up to 90s for >= 2 ICD Check-In'
+          ' messages...'
+      )
+      logcat_out = ''
+      start_wait = time.time()
+      while time.time() - start_wait < 90.0:
+        logcat_out = self._poll_android_logcat(req_device_id)
+        if logcat_out.count('onCheckInComplete :') >= 2:
+          break
+        time.sleep(2.0)
+
+      # Give one extra idle cycle to capture several slow-poll intervals
+      time.sleep(6.0)
+      logcat_out = self._poll_android_logcat(req_device_id)
+      with open(app_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+        device_log = f.read()
+
+      # Oracle 1: Registration
+      self.assertIn(
+          'Cluster=0x0000_0046 Command=0x0000_0000',
+          device_log,
+          'Oracle 1 failed: device log missing IcdManagement::RegisterClient'
+          ' (0x0046:0x00)',
+      )
+      self.assertIn(
+          'OnReadCommissioningInfo ICD - IdleModeDuration=5',
+          logcat_out,
+          'Oracle 1 failed: Android logcat did not read IdleModeDuration=5 from'
+          ' ICD Management cluster',
+      )
+      self.assertIn(
+          'onICDRegistrationComplete - errorCode: 0',
+          logcat_out,
+          'Oracle 1 failed: Android logcat missing onICDRegistrationComplete -'
+          ' errorCode: 0',
+      )
+      self.logger.info('Oracle 1 (ICD Registration) passed')
+
+      # Oracle 2: Check-In delivery along the whole path:
+      #   2a device TX log -> 2b 802.15.4 radio (decrypted thread_0.pcap)
+      #   -> 2c border-router egress (wifi_medium.pcap) -> 2d Android callback.
+      # The radio leg is the primary proof that the sleepy device itself sent
+      # the Check-In; wifi_medium.pcap only shows it after TBR routing.
+      network_key, child_table, sed_rloc16s = self._get_thread_radio_context(
+          tbr_ids[0]
+      )
+      self.assertTrue(
+          sed_rloc16s,
+          'Oracle 2 failed: TBR child table has no R=0 child to attribute'
+          f' radio frames to:\n{child_table}',
+      )
+      dev_tx_counters = _device_tx_checkin_counters(device_log)
+      self.assertTrue(
+          len(dev_tx_counters) >= 2,
+          'Oracle 2a failed: expected >= 2 ICD_CheckInMessage transmissions in'
+          f' device log, got {len(dev_tx_counters)}',
+      )
+
+      radio_checkins = [
+          f
+          for f in thread_icd_checkin_frames(thread_pcap, network_key)
+          if f['src16'] in sed_rloc16s
+      ]
+      self.assertTrue(
+          len(radio_checkins) >= 2,
+          'Oracle 2b failed: expected >= 2 ICD_CheckIn (0x0000:0x50) frames'
+          f' from SED {sorted(hex(r) for r in sed_rloc16s)} in decrypted'
+          f' {thread_pcap}, got {len(radio_checkins)}',
+      )
+      radio_counters = [f['msg_counter'] for f in radio_checkins]
+      # The device keeps sending a Check-In every IdleModeDuration, so one can
+      # land on the radio after device_log was read above. Re-read the device
+      # log now that the capture has been parsed; the TX log line is written
+      # before the frame is sent, so this snapshot covers every radio frame.
+      with open(app_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+        device_log = f.read()
+      dev_tx_counters = _device_tx_checkin_counters(device_log)
+      self.assertTrue(
+          set(radio_counters) <= dev_tx_counters,
+          'Oracle 2b failed: radio Check-In counters'
+          f' {radio_counters} not all in device TX log counters'
+          f' {sorted(dev_tx_counters)}',
+      )
+      # Mutation check: the radio oracle must depend on the network key.
+      wrong_key_frames = thread_decrypted_udp_frames(
+          thread_pcap, _invert_key_hex(network_key)
+      )
+      self.assertEqual(
+          len(wrong_key_frames),
+          0,
+          'Oracle 2b failed: a wrong network key still decrypted'
+          f' {len(wrong_key_frames)} frames; radio oracle is not key-bound',
+      )
+
+      self.assertTrue(
+          os.path.exists(wifi_pcap), f'Oracle 2c failed: missing {wifi_pcap}'
+      )
+      wire_checkins = matter_icd_checkin_packets(wifi_pcap)
+      wire_by_nonce = {w['nonce_hex']: w for w in wire_checkins}
+      forward_delays = []
+      for f in radio_checkins:
+        w = wire_by_nonce.get(f['nonce_hex'])
+        self.assertTrue(
+            w is not None,
+            'Oracle 2c failed: radio Check-In (counter'
+            f' {f["msg_counter"]}, nonce {f["nonce_hex"]}) never reached'
+            f' {wifi_pcap}',
+        )
+        self.assertEqual(
+            w['msg_counter'],
+            f['msg_counter'],
+            'Oracle 2c failed: Wi-Fi copy of Check-In nonce'
+            f' {f["nonce_hex"]} has a different message counter',
+        )
+        delay = w['ts'] - f['ts']
+        self.assertTrue(
+            -0.1 <= delay <= _MAX_BR_FORWARD_DELAY_S,
+            f'Oracle 2c failed: TBR forward delay {delay:.4f}s outside'
+            f' [-0.1, {_MAX_BR_FORWARD_DELAY_S}]s for counter {f["msg_counter"]}',
+        )
+        forward_delays.append(delay)
+
+      self.assertNotIn(
+          'onCheckInComplete - FindMethod is failed!',
+          logcat_out,
+          'Oracle 2d failed: JNI callback lookup for onCheckInComplete failed',
+      )
+      android_checkin_cb = re.findall(
+          r'onCheckInComplete\s*:\s*ICDClientInfo', logcat_out
+      )
+      self.assertTrue(
+          len(android_checkin_cb) >= 2,
+          'Oracle 2d failed: expected >= 2 onCheckInComplete callbacks in'
+          f' Android logcat, got {len(android_checkin_cb)}',
+      )
+      self.logger.info(
+          'Oracle 2 (Check-In delivery) passed: device_tx=%d, radio=%d'
+          ' (src16=%s, sec_level=%s), wifi=%d, tbr_forward_ms=%s,'
+          ' android_cb=%d',
+          len(dev_tx_counters),
+          len(radio_checkins),
+          sorted({hex(f['src16']) for f in radio_checkins}),
+          sorted({f['sec_level'] for f in radio_checkins}),
+          len(wire_checkins),
+          [round(d * 1000, 2) for d in forward_delays],
+          len(android_checkin_cb),
+      )
+
+      # Oracle 3: Timing & strictly increasing Check-In counter
+      counter_matches = re.findall(
+          r'Check In Message processing'
+          r' complete:\s*start_counter=(\d+)\s+offset=(\d+)',
+          logcat_out,
+      )
+      self.assertTrue(
+          len(counter_matches) >= 2,
+          'Oracle 3 failed: expected >= 2 decoded Check-In counter lines in'
+          f' logcat, got {len(counter_matches)}',
+      )
+      counters = [int(s) + int(o) for s, o in counter_matches]
+      for i in range(len(counters) - 1):
+        self.assertTrue(
+            counters[i + 1] > counters[i],
+            'Oracle 3 failed: Check-In counters not strictly increasing:'
+            f' {counters}',
+        )
+      for i in range(len(radio_counters) - 1):
+        self.assertTrue(
+            radio_counters[i + 1] > radio_counters[i],
+            'Oracle 3 failed: radio Check-In message counters not strictly'
+            f' increasing: {radio_counters}',
+        )
+      radio_deltas = [
+          radio_checkins[i + 1]['ts'] - radio_checkins[i]['ts']
+          for i in range(len(radio_checkins) - 1)
+      ]
+      min_radio_delta = min(radio_deltas)
+      # IdleModeDuration=5s + ActiveModeThreshold=5s => nominal ~10s cycle.
+      self.assertTrue(
+          3.0 <= min_radio_delta <= 18.0,
+          f'Oracle 3 failed: Check-In radio interval {min_radio_delta:.2f}s'
+          f' outside [3.0s, 18.0s] tolerance (deltas={radio_deltas})',
+      )
+      self.logger.info(
+          'Oracle 3 (Timing & counter monotonicity) passed: counters=%s,'
+          ' radio_msg_counters=%s, radio_deltas=%s',
+          counters,
+          radio_counters,
+          [round(d, 2) for d in radio_deltas],
+      )
+
+      # Oracle 4: Sleepy End Device (SED) polling & child table R=0
+      self.assertIn(
+          'Setting OpenThread device type to SLEEPY END DEVICE',
+          device_log,
+          'Oracle 4 failed: device log missing SLEEPY END DEVICE configuration',
+      )
+      self.assertIn(
+          'Device Role: CHILD',
+          device_log,
+          'Oracle 4 failed: device log missing Thread CHILD role transition',
+      )
+      # sed_rloc16s (R=0 children) was read from the TBR child table for
+      # Oracle 2 and asserted non-empty there.
+      self.logger.info(
+          'Oracle 4: TBR child table R=0 children: %s',
+          sorted(hex(r) for r in sed_rloc16s),
+      )
+      mac_cmds = ieee802154_mac_command_frames(thread_pcap)
+      self.assertTrue(
+          len(mac_cmds) >= 10,
+          'Oracle 4 failed: expected >= 10 IEEE 802.15.4 MAC Command (Data'
+          f' Request) frames in {thread_pcap}, got {len(mac_cmds)}',
+      )
+      poll_deltas = [
+          mac_cmds[i + 1]['ts'] - mac_cmds[i]['ts']
+          for i in range(len(mac_cmds) - 1)
+          if mac_cmds[i + 1]['ts'] > mac_cmds[i]['ts']
+      ]
+      fast_polls = [d for d in poll_deltas if 0.02 <= d <= 0.50]
+      slow_polls = [d for d in poll_deltas if d >= 0.80]
+      self.assertTrue(
+          len(fast_polls) >= 3,
+          'Oracle 4 failed: expected fast-poll MAC Data Requests during'
+          f' ActiveMode in {thread_pcap}',
+      )
+      self.assertTrue(
+          len(slow_polls) >= 2,
+          'Oracle 4 failed: expected slow-poll MAC Data Requests during'
+          f' IdleMode in {thread_pcap}',
+      )
+      self.logger.info(
+          'Oracle 4 (Sleepy polling) passed: mac_cmds=%d, fast_polls=%d,'
+          ' slow_polls=%d',
+          len(mac_cmds),
+          len(fast_polls),
+          len(slow_polls),
+      )
+      self._run_post_checkin_phase({
+          'tbr_id': tbr_ids[0],
+          'req_device_id': req_device_id,
+          'app_log_path': app_log_path,
+          'thread_pcap': thread_pcap,
+          'wifi_pcap': wifi_pcap,
+          'network_key': network_key,
+          'sed_rloc16s': sed_rloc16s,
+          'chiptool_srp': registered_chiptool_srp,
+      })
+    finally:
+      log_dir = os.environ.get('DEVICE_LOG_DIR')
+      if log_dir and os.path.isdir(log_dir) and os.path.exists(app_log_path):
+        try:
+          shutil.copy(
+              app_log_path, os.path.join(log_dir, 'lit-icd-app-host.log')
+          )
+        except OSError as exc:
+          self.logger.warning('Failed to copy lit-icd-app-host.log: %s', exc)
+      self._save_host_session_keylog()
+      self._cleanup_host_processes()
+      # The OpenThread simulation log is buffered until the app exits.
+      ot_log_path = (
+          f'/tmp/chip_ot_node{self._end_device_thread_node_id()}.log'
+      )
+      if log_dir and os.path.isdir(log_dir) and os.path.exists(ot_log_path):
+        try:
+          shutil.copy(
+              ot_log_path, os.path.join(log_dir, 'lit-icd-openthread.log')
+          )
+        except OSError as exc:
+          self.logger.warning('Failed to copy lit-icd-openthread.log: %s', exc)
+
+
+if __name__ == '__main__':
+  sys.exit(TestAndroidBleThreadSilabsLitIcdDevice(DEVICE_CONFIG).run_test())

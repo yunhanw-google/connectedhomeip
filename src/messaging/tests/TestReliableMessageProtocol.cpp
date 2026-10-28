@@ -2441,6 +2441,163 @@ TEST_F(TestReliableMessageProtocol, CheckApplicationResponseNeverComes)
     EXPECT_EQ(removedHandler, &mockReceiver);
 }
 
+TEST_F(TestReliableMessageProtocol, CheckBurstLossExhaustsRetransMarksCaseDefunct)
+{
+    CHIP_ERROR err = CHIP_NO_ERROR;
+
+    // Make sure we are using CASE sessions, because there is no defunct-marking for PASE.
+    ExpireSessionBobToAlice();
+    ExpireSessionAliceToBob();
+    err = CreateCASESessionBobToAlice();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    err = CreateCASESessionAliceToBob();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+
+    chip::System::PacketBufferHandle buffer = chip::MessagePacketBuffer::NewWithData(PAYLOAD, sizeof(PAYLOAD));
+    EXPECT_FALSE(buffer.IsNull());
+
+    MockAppDelegate mockReceiver(*this);
+    err = GetExchangeManager().RegisterUnsolicitedMessageHandlerForType(Echo::MsgType::EchoRequest, &mockReceiver);
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+
+    MockAppDelegate mockSender(*this);
+    ExchangeContext * exchange = NewExchangeToAlice(&mockSender);
+    ASSERT_NE(exchange, nullptr);
+
+    ReliableMessageMgr * rm = GetExchangeManager().GetReliableMessageMgr();
+    ASSERT_NE(rm, nullptr);
+
+    exchange->GetSessionHandle()->AsSecureSession()->SetRemoteSessionParameters(ReliableMessageProtocolConfig({
+        100_ms32, // CHIP_CONFIG_MRP_LOCAL_IDLE_RETRY_INTERVAL
+        100_ms32, // CHIP_CONFIG_MRP_LOCAL_ACTIVE_RETRY_INTERVAL
+    }));
+
+    constexpr uint32_t kMaxMRPTransmits = 1 + CHIP_CONFIG_RMP_DEFAULT_MAX_RETRANS; // 5
+
+    // Let's drop all transmits
+    auto & loopback               = GetLoopback();
+    loopback.mSentMessageCount    = 0;
+    loopback.mNumMessagesToDrop   = kMaxMRPTransmits;
+    loopback.mDroppedMessageCount = 0;
+
+    // Ensure the retransmit table is empty right now
+    EXPECT_EQ(rm->TestGetCountRetransTable(), 0);
+
+    // Verify session is CASE
+    EXPECT_TRUE(GetSessionBobToAlice()->AsSecureSession()->IsCASESession());
+
+    // Send a reliable message with NO response expected
+    err = exchange->SendMessage(Echo::MsgType::EchoRequest, std::move(buffer), SendMessageFlags::kNone);
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    DrainAndServiceIO();
+
+    // Wait for all retransmits to be exhausted
+    GetIOContext().DriveIOUntil(5000_ms32, [&] { return rm->TestGetCountRetransTable() == 0; });
+    DrainAndServiceIO();
+
+    EXPECT_EQ(loopback.mSentMessageCount, kMaxMRPTransmits);
+    EXPECT_EQ(loopback.mDroppedMessageCount, kMaxMRPTransmits);
+    EXPECT_EQ(rm->TestGetCountRetransTable(), 0);         // We timed out our MRP context.
+    EXPECT_FALSE(mockReceiver.IsOnMessageReceivedCalled); // Other side never got message.
+    EXPECT_FALSE(mockSender.IsOnMessageReceivedCalled);   // We did not expect/get a response.
+
+    // We should have marked our session defunct.
+    EXPECT_TRUE(GetSessionBobToAlice()->AsSecureSession()->IsDefunct());
+    // Other side had no reason to mark its session defunct.
+    EXPECT_FALSE(GetSessionAliceToBob()->AsSecureSession()->IsDefunct());
+
+    // Reset our sessions, so other tests get the usual PASE session
+    ExpireSessionBobToAlice();
+    ExpireSessionAliceToBob();
+    err = CreateSessionBobToAlice();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    err = CreateSessionAliceToBob();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+
+    Messaging::UnsolicitedMessageHandler * removedHandler = nullptr;
+    err = GetExchangeManager().UnregisterUnsolicitedMessageHandlerForType(Echo::MsgType::EchoRequest, &removedHandler);
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    EXPECT_EQ(removedHandler, &mockReceiver);
+}
+
+TEST_F(TestReliableMessageProtocol, CheckBurstLossExhaustsRetransMarksCaseDefunct_BoundaryControl)
+{
+    CHIP_ERROR err = CHIP_NO_ERROR;
+
+    // Make sure we are using CASE sessions, because there is no defunct-marking for PASE.
+    ExpireSessionBobToAlice();
+    ExpireSessionAliceToBob();
+    err = CreateCASESessionBobToAlice();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    err = CreateCASESessionAliceToBob();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+
+    chip::System::PacketBufferHandle buffer = chip::MessagePacketBuffer::NewWithData(PAYLOAD, sizeof(PAYLOAD));
+    EXPECT_FALSE(buffer.IsNull());
+
+    MockAppDelegate mockReceiver(*this);
+    err = GetExchangeManager().RegisterUnsolicitedMessageHandlerForType(Echo::MsgType::EchoRequest, &mockReceiver);
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+
+    MockAppDelegate mockSender(*this);
+    ExchangeContext * exchange = NewExchangeToAlice(&mockSender);
+    ASSERT_NE(exchange, nullptr);
+
+    ReliableMessageMgr * rm = GetExchangeManager().GetReliableMessageMgr();
+    ASSERT_NE(rm, nullptr);
+
+    exchange->GetSessionHandle()->AsSecureSession()->SetRemoteSessionParameters(ReliableMessageProtocolConfig({
+        100_ms32, // CHIP_CONFIG_MRP_LOCAL_IDLE_RETRY_INTERVAL
+        100_ms32, // CHIP_CONFIG_MRP_LOCAL_ACTIVE_RETRY_INTERVAL
+    }));
+
+    constexpr uint32_t kMaxMRPTransmits = 1 + CHIP_CONFIG_RMP_DEFAULT_MAX_RETRANS; // 5
+
+    // Let's drop all but the last transmit
+    auto & loopback               = GetLoopback();
+    loopback.mSentMessageCount    = 0;
+    loopback.mNumMessagesToDrop   = kMaxMRPTransmits - 1;
+    loopback.mDroppedMessageCount = 0;
+
+    // Ensure the retransmit table is empty right now
+    EXPECT_EQ(rm->TestGetCountRetransTable(), 0);
+
+    // Verify session is CASE
+    EXPECT_TRUE(GetSessionBobToAlice()->AsSecureSession()->IsCASESession());
+
+    // Send a reliable message with NO response expected
+    err = exchange->SendMessage(Echo::MsgType::EchoRequest, std::move(buffer), SendMessageFlags::kNone);
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    DrainAndServiceIO();
+
+    // Wait for the retransmit table to become empty (because the final retransmit succeeds and is ACKed)
+    GetIOContext().DriveIOUntil(5000_ms32, [&] { return rm->TestGetCountRetransTable() == 0; });
+    DrainAndServiceIO();
+
+    // We should have successfully delivered the final retransmit
+    EXPECT_GE(loopback.mSentMessageCount, kMaxMRPTransmits);
+    EXPECT_EQ(loopback.mDroppedMessageCount, kMaxMRPTransmits - 1);
+    EXPECT_EQ(rm->TestGetCountRetransTable(), 0);
+    EXPECT_TRUE(mockReceiver.IsOnMessageReceivedCalled); // Other side got message.
+    EXPECT_FALSE(mockSender.IsOnMessageReceivedCalled);  // We did not get a response.
+
+    // Session should NOT be defunct.
+    EXPECT_FALSE(GetSessionBobToAlice()->AsSecureSession()->IsDefunct());
+    EXPECT_FALSE(GetSessionAliceToBob()->AsSecureSession()->IsDefunct());
+
+    // Reset our sessions, so other tests get the usual PASE session
+    ExpireSessionBobToAlice();
+    ExpireSessionAliceToBob();
+    err = CreateSessionBobToAlice();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    err = CreateSessionAliceToBob();
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+
+    Messaging::UnsolicitedMessageHandler * removedHandler = nullptr;
+    err = GetExchangeManager().UnregisterUnsolicitedMessageHandlerForType(Echo::MsgType::EchoRequest, &removedHandler);
+    EXPECT_EQ(err, CHIP_NO_ERROR);
+    EXPECT_EQ(removedHandler, &mockReceiver);
+}
 #if CHIP_CONFIG_MRP_ANALYTICS_ENABLED
 TEST_F(TestReliableMessageProtocol, CheckReliableMessageAnalyticsForTransmitEventualSuccessForEstablishedCase)
 {

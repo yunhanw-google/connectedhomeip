@@ -127,7 +127,8 @@ if (chip_device_platform != "none" && chip_device_platform != "external") {
     header_dir = "platform"
 
     chip_device_config_enable_wpa =
-        chip_enable_wifi && chip_device_platform != "darwin"
+        chip_enable_wifi && chip_device_platform != "darwin" &&
+        !chip_linux_use_silabs_ble_wifi
     chip_stack_lock_tracking_log = chip_stack_lock_tracking != "none"
     chip_stack_lock_tracking_fatal = chip_stack_lock_tracking == "fatal"
 
@@ -140,6 +141,7 @@ if (chip_device_platform != "none" && chip_device_platform != "external") {
 
     defines = [
       "CHIP_DEVICE_CONFIG_ENABLE_WPA=${chip_device_config_enable_wpa}",
+      "CHIP_LINUX_USE_SILABS_BLE_WIFI=${chip_linux_use_silabs_ble_wifi}",
       "CHIP_ENABLE_OPENTHREAD=${chip_enable_thread}",
       "CHIP_DEVICE_CONFIG_THREAD_FTD=${chip_device_config_thread_ftd}",
       "CHIP_DEVICE_CONFIG_THREAD_BORDER_ROUTER=${chip_openthread_border_router}",
@@ -170,7 +172,9 @@ if (chip_device_platform != "none" && chip_device_platform != "external") {
     # supports PDC. However on Linux practical support also depends on
     # wpa_supplicant, so make the flag controllable directly via GN.
     if (chip_device_platform == "linux" || chip_device_platform == "darwin") {
-      _enable_wifi_pdc = chip_device_config_enable_wifi_pdc || chip_build_tests
+      _enable_wifi_pdc =
+          (chip_device_config_enable_wifi_pdc || chip_build_tests) &&
+          !chip_linux_use_silabs_ble_wifi
       defines += [ "CHIP_DEVICE_CONFIG_ENABLE_WIFI_PDC=${_enable_wifi_pdc}" ]
     } else {
       assert(

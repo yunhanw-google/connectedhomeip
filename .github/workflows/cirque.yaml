@@ -29,6 +29,284 @@ env:
     CHIP_LOG_TIMESTAMPS: false
 
 jobs:
+    build_android_chiptool:
+        name: Build Android x64 CHIPTool
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 90
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: android
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap Android
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh -p all,android \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: Android Build Cache
+              id: android-build-cache
+              uses: actions/cache@v4
+              with:
+                path: |
+                  .ccache
+                  .gradle-cache
+                key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}
+                restore-keys: cirque-android-build-cache-${{ runner.os }}-
+            - name: Build Android x64 CHIPTool APK
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && export CCACHE_MAXSIZE=\"2G\" \
+                       && export CCACHE_COMPILERCHECK=\"content\" \
+                       && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
+                       && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && if command -v ccache >/dev/null 2>&1; then \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-chip-tool build'; \
+                          else \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-chip-tool build'; \
+                          fi \
+                       && (ccache --show-stats || true) \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/android/CHIPTool \
+                      "
+            - name: Save Android Build Cache
+              if: ${{ always() && !env.ACT && steps.android-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: |
+                  .ccache
+                  .gradle-cache
+                key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}
+            - name: Upload Android x64 CHIPTool APK
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-android-x64-chip-tool-apk
+                  path: out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
+    build_silabs_arm32:
+        name: Build ARM32 Silabs Lighting App
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 90
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: linux
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: ARM32 Silabs Build Cache
+              id: silabs-arm32-build-cache
+              uses: actions/cache@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lighting-app/silabs/**') }}
+                restore-keys: cirque-silabs-arm32-build-cache-${{ runner.os }}-
+            - name: Install static qemu-arm
+              # Copied into CHIPEndDevice containers, so it must be static.
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y qemu-user-static
+                  file -L /usr/bin/qemu-arm-static | grep -q static
+            - name: Build ARM32 chip-silabs-lighting-app and pty_bridge_linux
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \
+                       && SILABS_ARM32_APPS=lighting scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && chown -R $(id -u):$(id -g) .ccache out .environment \
+                      "
+                  cp -fL /usr/bin/qemu-arm-static out/host_libs/qemu-arm
+                  chmod 755 out/host_libs/qemu-arm
+            - name: Verify ARM32 artifacts
+              run: |
+                  file out/arm-silabs/chip-silabs-lighting-app | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
+                  file out/host_libs/pty_bridge_linux | tee /dev/stderr | grep -q "ELF 64-bit LSB.*x86-64"
+                  file -L out/host_libs/qemu-arm | tee /dev/stderr | grep -q "static"
+            - name: Save ARM32 Silabs Build Cache
+              if: ${{ always() && !env.ACT && steps.silabs-arm32-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lighting-app/silabs/**') }}
+            - name: Upload ARM32 Silabs artifacts
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-silabs-arm32-lighting-app
+                  path: |
+                      out/arm-silabs/chip-silabs-lighting-app
+                      out/host_libs/pty_bridge_linux
+                      out/host_libs/qemu-arm
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
+    build_silabs_arm32_thread:
+        name: Build ARM32 Silabs LIT ICD App
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 90
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: linux
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: ARM32 Silabs LIT ICD Build Cache
+              id: silabs-arm32-thread-build-cache
+              uses: actions/cache@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}
+                restore-keys: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-
+            - name: Build ARM32 chip-silabs-lit-icd-app
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \
+                       && SILABS_ARM32_APPS=lit-icd scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && chown -R $(id -u):$(id -g) .ccache out .environment \
+                      "
+            - name: Verify ARM32 LIT ICD artifact
+              run: |
+                  file out/arm-silabs-thread/chip-silabs-lit-icd-app | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
+            - name: Save ARM32 Silabs LIT ICD Build Cache
+              if: ${{ always() && !env.ACT && steps.silabs-arm32-thread-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}
+            - name: Upload ARM32 Silabs LIT ICD artifact
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-silabs-arm32-lit-icd-app
+                  path: out/arm-silabs-thread/chip-silabs-lit-icd-app
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
+    build_silabs_arm32_lock:
+        name: Build ARM32 Silabs Lock App
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 90
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: linux
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: ARM32 Silabs Lock Build Cache
+              id: silabs-arm32-lock-build-cache
+              uses: actions/cache@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lock-app/silabs/**') }}
+                restore-keys: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-
+            - name: Build ARM32 chip-silabs-lock-app
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \
+                       && SILABS_ARM32_APPS=lock scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && chown -R $(id -u):$(id -g) .ccache out .environment \
+                      "
+            - name: Verify ARM32 Lock artifact
+              run: |
+                  file out/arm-silabs-thread/chip-silabs-lock-app | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
+            - name: Save ARM32 Silabs Lock Build Cache
+              if: ${{ always() && !env.ACT && steps.silabs-arm32-lock-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: .ccache
+                key: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lock-app/silabs/**') }}
+            - name: Upload ARM32 Silabs Lock artifact
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-silabs-arm32-lock-app
+                  path: out/arm-silabs-thread/chip-silabs-lock-app
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
     cirque:
         name: Cirque
 
@@ -37,6 +315,14 @@ jobs:
 
         runs-on: ubuntu-latest
         if: github.actor != 'restyled-io[bot]'
+        # Budget: ~40 min of bootstrap and Linux builds (with Android CHIPTool
+        # built in parallel on build_android_chiptool, the ARM32 Silabs
+        # lighting-app on build_silabs_arm32, the ARM32 Silabs LIT ICD app on
+        # build_silabs_arm32_thread, and the ARM32 Silabs Lock app on
+        # build_silabs_arm32_lock), ~30 min of tests, and
+        # one end-of-suite coverage capture. Keep generous headroom so a cold
+        # cache never cancels the run before logs are uploaded.
+        timeout-minutes: 180
 
         # need to run with privilege, which isn't supported by job.XXX.contaner
         #  https://github.com/actions/container-action/issues/2
@@ -55,10 +341,14 @@ jobs:
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Maximize runner disk
               uses: ./.github/actions/maximize-runner-disk
+              with:
+                # The Android emulator steps below use the runner's
+                # preinstalled SDK, NDK and cmdline-tools from ANDROID_HOME.
+                prune-android: "false"
             - name: Checkout submodules
               uses: ./.github/actions/checkout-submodules
               with:
-                platform: linux
+                platform: ${{ env.ACT && 'linux,android' || 'linux' }}
 
             # TODO: Is what's being cached here actually compatible with a regular bootstrap?
             - name: Bootstrap Cache
@@ -107,28 +397,301 @@ jobs:
                   cond: ${{ github.event.pull_request.number == '' }}
                   if_true: "${{ github.sha }}"
                   if_false: "pull-${{ github.event.pull_request.number }}"
+            - name: Cirque Build Cache
+              id: cirque-build-cache
+              uses: actions/cache@v4
+              with:
+                path: .ccache
+                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}
+                restore-keys: cirque-linux-build-cache-${{ runner.os }}-
+
             - name: Build Binaries
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    --env GITHUB_ACTION_RUN=1 \
+                    --env CIRQUE_COVERAGE=1 \
                     -- sh -c " \
                        git config --global --add safe.directory '*' \
+                       && mkdir -p .ccache \
                        && scripts/build/gn_gen_cirque.sh \
+                       && chown -R $(id -u):$(id -g) .ccache out \
                       "
+            # Save the build cache as soon as the builds finish so a later
+            # test failure or cancellation does not discard it (the implicit
+            # post-step save of actions/cache is skipped on cancellation).
+            - name: Save Cirque Build Cache
+              if: ${{ always() && !env.ACT && steps.cirque-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: .ccache
+                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}
+            - name: Setup Android Emulator and AVD
+              run: |
+                  echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+                  echo "ANDROID_NDK_LATEST_HOME=${ANDROID_NDK_LATEST_HOME:-<unset>}"
+                  for p in "${ANDROID_HOME:-}/cmdline-tools/latest/bin/sdkmanager" \
+                           "${ANDROID_NDK_LATEST_HOME:-}"; do
+                    if [ ! -e "$p" ]; then
+                      echo "::error::Missing Android SDK/NDK path: '$p'"
+                      exit 1
+                    fi
+                  done
+                  export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-}"
+                  ./third_party/cirque/repo/cirque/virtual_bt/android/build_pty_bridge.sh
+                  docker build -t cirque-android-runner:latest \
+                    -f third_party/cirque/repo/cirque/nodes/Dockerfile.android_runner \
+                    third_party/cirque/repo/cirque/nodes
+                  if [ -e /dev/kvm ]; then
+                    rule='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
+                    echo "$rule" | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                    sudo udevadm control --reload-rules
+                    sudo udevadm trigger --name-match=kvm
+                    sudo chmod 666 /dev/kvm || true
+                  fi
+                  SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+                  AVDMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
+                  yes | "$SDKMANAGER" --licenses > /dev/null || true
+                  "$SDKMANAGER" --install "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64"
+                  # avdmanager does not take its AVD directory from $HOME;
+                  # pin it to the path the Run Tests step mounts.
+                  export ANDROID_AVD_HOME="${HOME}/.android/avd"
+                  mkdir -p "$ANDROID_AVD_HOME"
+                  echo no | "$AVDMANAGER" create avd --force --name Pixel_6_API_34 \
+                    --package "system-images;android-34;google_apis;x86_64" --device pixel_6
+                  test -f "$ANDROID_AVD_HOME/Pixel_6_API_34.ini"
+                  test -d "$ANDROID_AVD_HOME/Pixel_6_API_34.avd"
+                  "$ANDROID_HOME/emulator/emulator" -version 2>/dev/null | head -n 3 || true
+                  egrep -c '(vmx|svm)' /proc/cpuinfo || true
+                  nproc
+                  free -m
+                  egrep 'hw.cpu.ncore|hw.ramSize|hw.gpu.mode|image.sysdir' "$ANDROID_AVD_HOME/Pixel_6_API_34.avd/config.ini" || true
+            - name: Wait for parallel Build Android x64 CHIPTool job
+              if: ${{ !env.ACT }}
+              timeout-minutes: 60
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  sudo chown -R "$(id -u):$(id -g)" out || true
+                  mkdir -p out/android-x64-chip-tool/outputs/apk/debug
+                  python3 - <<'PY'
+                  import json
+                  import os
+                  import sys
+                  import time
+                  import urllib.request
+
+                  repo = os.environ["GITHUB_REPOSITORY"]
+                  run_id = os.environ["GITHUB_RUN_ID"]
+                  token = os.environ.get("GH_TOKEN", "")
+                  url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
+
+                  headers = {"Accept": "application/vnd.github+json", "User-Agent": "cirque-ci-wait"}
+                  if token:
+                      headers["Authorization"] = f"Bearer {token}"
+
+                  deadline = time.time() + 3600
+                  while time.time() < deadline:
+                      req = urllib.request.Request(url, headers=headers)
+                      with urllib.request.urlopen(req, timeout=30) as resp:
+                          data = json.loads(resp.read().decode("utf-8"))
+                      jobs = [j for j in data.get("jobs", []) if j.get("name") == "Build Android x64 CHIPTool"]
+                      if not jobs:
+                          print("Waiting for 'Build Android x64 CHIPTool' job to register...", flush=True)
+                          time.sleep(10)
+                          continue
+                      job = jobs[-1]
+                      status = job.get("status")
+                      conclusion = job.get("conclusion")
+                      upload_steps = [
+                          s for s in job.get("steps", [])
+                          if s.get("name") == "Upload Android x64 CHIPTool APK"
+                      ]
+                      if upload_steps and upload_steps[-1].get("status") == "completed":
+                          step_conclusion = upload_steps[-1].get("conclusion")
+                          if step_conclusion == "success":
+                              print("Android x64 CHIPTool APK artifact upload completed.", flush=True)
+                              sys.exit(0)
+                          print(f"::error::Upload Android x64 CHIPTool APK step failed: {step_conclusion}", flush=True)
+                          sys.exit(1)
+                      if status == "completed":
+                          if conclusion == "success":
+                              print("Build Android x64 CHIPTool job completed.", flush=True)
+                              sys.exit(0)
+                          print(f"::error::Build Android x64 CHIPTool job finished with conclusion={conclusion}", flush=True)
+                          sys.exit(1)
+                      print(f"Build Android x64 CHIPTool status={status}; sleeping 15s...", flush=True)
+                      time.sleep(15)
+                  print("::error::Timed out waiting for Build Android x64 CHIPTool job", flush=True)
+                  sys.exit(1)
+                  PY
+                  sudo chown -R "$(id -u):$(id -g)" out || true
+                  mkdir -p out/android-x64-chip-tool/outputs/apk/debug
+            - name: Download Android x64 CHIPTool APK
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
+              with:
+                  name: cirque-android-x64-chip-tool-apk
+                  path: out/android-x64-chip-tool/outputs/apk/debug
+            - name: Build Android x64 CHIPTool APK (Local ACT fallback)
+              if: ${{ env.ACT }}
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && export CCACHE_MAXSIZE=\"2G\" \
+                       && export CCACHE_COMPILERCHECK=\"content\" \
+                       && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
+                       && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && if command -v ccache >/dev/null 2>&1; then \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-chip-tool build'; \
+                          else \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-chip-tool build'; \
+                          fi \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/android/CHIPTool \
+                      "
+            - name: Verify Android x64 CHIPTool APK
+              run: |
+                  test -s out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
+                  ls -lh out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
+            - name: Wait for parallel ARM32 Silabs build jobs
+              if: ${{ !env.ACT }}
+              timeout-minutes: 60
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  python3 - <<'PY'
+                  import json
+                  import os
+                  import sys
+                  import time
+                  import urllib.request
+
+                  # (job name, upload step name) of each parallel ARM32 build.
+                  PENDING = {
+                      "Build ARM32 Silabs Lighting App": "Upload ARM32 Silabs artifacts",
+                      "Build ARM32 Silabs LIT ICD App": "Upload ARM32 Silabs LIT ICD artifact",
+                      "Build ARM32 Silabs Lock App": "Upload ARM32 Silabs Lock artifact",
+                  }
+                  repo = os.environ["GITHUB_REPOSITORY"]
+                  run_id = os.environ["GITHUB_RUN_ID"]
+                  token = os.environ.get("GH_TOKEN", "")
+                  url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
+                  headers = {"Accept": "application/vnd.github+json", "User-Agent": "cirque-ci-wait"}
+                  if token:
+                      headers["Authorization"] = f"Bearer {token}"
+
+                  deadline = time.time() + 3600
+                  while time.time() < deadline:
+                      req = urllib.request.Request(url, headers=headers)
+                      with urllib.request.urlopen(req, timeout=30) as resp:
+                          data = json.loads(resp.read().decode("utf-8"))
+                      for job_name, step_name in list(PENDING.items()):
+                          jobs = [j for j in data.get("jobs", []) if j.get("name") == job_name]
+                          if not jobs:
+                              print(f"Waiting for '{job_name}' job to register...", flush=True)
+                              continue
+                          job = jobs[-1]
+                          steps = [s for s in job.get("steps", []) if s.get("name") == step_name]
+                          if steps and steps[-1].get("status") == "completed":
+                              if steps[-1].get("conclusion") == "success":
+                                  print(f"{step_name} completed.", flush=True)
+                                  del PENDING[job_name]
+                                  continue
+                              print(f"::error::{step_name} failed: {steps[-1].get('conclusion')}", flush=True)
+                              sys.exit(1)
+                          if job.get("status") == "completed":
+                              print(f"::error::{job_name} finished with conclusion={job.get('conclusion')} before uploading", flush=True)
+                              sys.exit(1)
+                          print(f"{job_name} status={job.get('status')}", flush=True)
+                      if not PENDING:
+                          sys.exit(0)
+                      time.sleep(15)
+                  print(f"::error::Timed out waiting for {sorted(PENDING)}", flush=True)
+                  sys.exit(1)
+                  PY
+                  sudo chown -R "$(id -u):$(id -g)" out
+            - name: Download ARM32 Silabs artifacts
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
+              with:
+                  name: cirque-silabs-arm32-lighting-app
+                  path: out
+            - name: Download ARM32 Silabs LIT ICD artifact
+              # A single-file artifact is stored without its directories.
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
+              with:
+                  name: cirque-silabs-arm32-lit-icd-app
+                  path: out/arm-silabs-thread
+            - name: Download ARM32 Silabs Lock artifact
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
+              with:
+                  name: cirque-silabs-arm32-lock-app
+                  path: out/arm-silabs-thread
+            - name: Build ARM32 Silabs artifacts (Local ACT fallback)
+              if: ${{ env.ACT }}
+              run: |
+                  sudo apt-get update && sudo apt-get install -y qemu-user-static
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && chown -R $(id -u):$(id -g) out .environment \
+                      "
+                  cp -fL /usr/bin/qemu-arm-static out/host_libs/qemu-arm
+            - name: Verify ARM32 Silabs artifacts
+              # upload-artifact drops the executable bit; restore it, then
+              # fail loudly if anything the Silabs E2E test needs is missing.
+              run: |
+                  chmod 755 out/arm-silabs/chip-silabs-lighting-app out/arm-silabs-thread/chip-silabs-lit-icd-app out/arm-silabs-thread/chip-silabs-lock-app out/host_libs/pty_bridge_linux out/host_libs/qemu-arm
+                  file out/arm-silabs/chip-silabs-lighting-app | grep -q "ELF 32-bit LSB.*ARM"
+                  file out/arm-silabs-thread/chip-silabs-lit-icd-app | grep -q "ELF 32-bit LSB.*ARM"
+                  file out/arm-silabs-thread/chip-silabs-lock-app | grep -q "ELF 32-bit LSB.*ARM"
+                  file -L out/host_libs/qemu-arm | grep -q "static"
+                  test -x out/host_libs/pty_bridge_linux
+                  test -f .environment/cipd/packages/pigweed/clang_sysroot/lib/ld-linux-armhf.so.3
             - name: Run Tests
+              timeout-minutes: 100
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
                      --env LOG_DIR=/tmp/cirque_test_output \
                      --env CLEANUP_DOCKER_FOR_CI=1 \
                      --env GITHUB_ACTION_RUN=1 \
+                     --env CIRQUE_COVERAGE=1 \
+                     --env CIRQUE_ENABLE_ANDROID_TESTS=1 \
+                     --env ANDROID_HOME="${ANDROID_HOME}" \
+                     --env ANDROID_SDK_ROOT="${ANDROID_HOME}" \
+                     --env ANDROID_AVD_HOME="${HOME}/.android/avd" \
                      --privileged \
                      --volume /tmp:/tmp \
                      --volume /dev/pts:/dev/pts \
+                     --volume "${ANDROID_HOME}:${ANDROID_HOME}:ro" \
+                     --volume "${HOME}/.android/avd:${HOME}/.android/avd:rw" \
                      -- sh -c " \
                        git config --global --add safe.directory '*' \
+                       && apt-get update -qq \
+                       && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends tshark \
                        && scripts/tests/cirque_tests.sh run_all_tests \
                       "
 
 
+            - name: Make logs readable for upload
+              if: ${{ always() }}
+              run: |
+                  sudo chmod -R a+rX /tmp/cirque_test_output || true
+                  sudo find /tmp/cirque_test_output -type f -name 'lcov_raw.info' -delete 2>/dev/null || true
+                  sudo rm -rf /tmp/cirque_test_output/coverage_report/html /tmp/cirque_test_output/coverage_report/lcov.info 2>/dev/null || true
+                  while IFS= read -r -d '' f; do
+                    sudo mv -f "$f" "${f}.txt" 2>/dev/null || true
+                  done < <(sudo find /tmp/cirque_test_output -type f \( \
+                    -iname '*.py' -o -iname '*.sh' -o -iname '*.js' \
+                    -o -iname '*.svg' -o -iname '*.xml' \) -print0 2>/dev/null)
+                  find /tmp/cirque_test_output \( -name '*.pcap' -o -name 'thread_network_key.txt' \
+                    -o -name 'ieee802154_keys' \) -exec ls -la {} + || true
             - name: Uploading Binaries
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               if: ${{ always() && !env.ACT }}

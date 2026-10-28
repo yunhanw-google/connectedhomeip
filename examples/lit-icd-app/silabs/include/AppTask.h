@@ -70,23 +70,23 @@ public:
      * @brief When the ICD enters ActiveMode, update LCD to reflect the ICD current state.
      *        Set LCD to ActiveMode UI.
      */
-    void OnEnterActiveMode();
+    void OnEnterActiveMode() override;
 
     /**
      * @brief When the ICD enters IdleMode, update LCD to reflect the ICD current state.
      *        Set LCD to IdleMode UI.
      */
-    void OnEnterIdleMode();
+    void OnEnterIdleMode() override;
 
     /**
      * @brief AppTask has no action to do on this ICD event. Do nothing.
      */
-    void OnTransitionToIdle(){};
+    void OnTransitionToIdle() override {};
 
     /**
      * @brief AppTask has no action to do on this ICD event. Do nothing.
      */
-    void OnICDModeChange(){};
+    void OnICDModeChange() override {};
 
 private:
     static AppTask sAppTask;

@@ -129,16 +129,17 @@ CHIP_ERROR BLEEndPoint::StartConnect()
     err = StartConnectTimer();
     SuccessOrExit(err);
 
+    // Free request buffer on write confirmation. Stash a reference to it in mSendQueue, which we don't use anyway
+    // until the connection has been set up. Do this before sending: some platforms (e.g. Android) release the stack
+    // lock while sending, so the write confirmation can be handled before SendWrite() returns.
+    QueueTx(buf.Retain(), kType_Data);
+
     // Send BLE transport capabilities request to peripheral via GATT write.
     // Add reference to message fragment for duration of platform's GATT write attempt. CHIP retains partial
     // ownership of message fragment's packet buffer, since this is the same buffer as that of the whole message, just
-    // with a fragmenter-modified payload offset and data length, by a Retain() on the handle when calling this function.
-    err = SendWrite(buf.Retain());
+    // with a fragmenter-modified payload offset and data length, via the reference stashed in mSendQueue above.
+    err = SendWrite(std::move(buf));
     SuccessOrExit(err);
-
-    // Free request buffer on write confirmation. Stash a reference to it in mSendQueue, which we don't use anyway
-    // until the connection has been set up.
-    QueueTx(std::move(buf), kType_Data);
 
 exit:
     // If we failed to initiate the connection, close the end point.

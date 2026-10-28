@@ -138,6 +138,12 @@ declare_args() {
 }
 
 declare_args() {
+  # Use Silicon Labs EFR32 BLEManagerImpl (sl_bt_* BGAPI over HCI H4 PTY) and
+  # GLib-free Wi-Fi commissioning on Linux targets (e.g. ARM32 QEMU Silabs app).
+  chip_linux_use_silabs_ble_wifi = false
+}
+
+declare_args() {
   # Enable Joint Fabric features
   chip_device_config_enable_joint_fabric = false
 
@@ -145,7 +151,8 @@ declare_args() {
   # This is a feature of Wi-Fi spec that it can be enabled if wifi is enabled
   # and the supplicant can support.
   chip_device_config_enable_wifipaf =
-      chip_enable_wifi && chip_device_platform == "linux"
+      chip_enable_wifi && chip_device_platform == "linux" &&
+      !chip_linux_use_silabs_ble_wifi
 
   # Enable device-side Wi-Fi Per-Device Credentials (PDC) support.
   # Only applies to platforms (Linux / Darwin) that don't control

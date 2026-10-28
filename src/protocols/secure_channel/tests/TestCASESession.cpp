@@ -223,6 +223,8 @@ public:
         mNumPairingComplete++;
     }
 
+    void OnResponderBusy(System::Clock::Milliseconds16 requestedDelay) override { mRequestedBusyDelay = requestedDelay; }
+
     SessionHolder & GetSessionHolder() { return mSession; }
 
     SessionHolder mSession;
@@ -232,6 +234,7 @@ public:
     uint32_t mNumPairingComplete      = 0;
     uint32_t mNumBusyResponses        = 0;
     uint32_t mNumInvalidParamResponse = 0;
+    System::Clock::Milliseconds16 mRequestedBusyDelay{ 0 };
 };
 
 class TestOperationalKeystore : public chip::Crypto::OperationalKeystore
@@ -826,6 +829,106 @@ TEST_F(TestCASESession, ClientReceivesBusyTest)
 
     EXPECT_EQ(delegateCommissioner1.mNumBusyResponses, 0u);
     EXPECT_EQ(delegateCommissioner2.mNumBusyResponses, 1u);
+
+    gPairingServer.Shutdown();
+}
+
+TEST_F(TestCASESession, LossySigma2KeepsResponderBusyForSecondInitiator)
+{
+    TemporarySessionManager sessionManager(*this);
+    TestCASESecurePairingDelegate delegateCommissioner1, delegateCommissioner2;
+    CASESession pairingCommissioner1, pairingCommissioner2;
+
+    pairingCommissioner1.SetGroupDataProvider(&gCommissionerGroupDataProvider);
+    pairingCommissioner2.SetGroupDataProvider(&gCommissionerGroupDataProvider);
+
+    auto & loopback            = GetLoopback();
+    loopback.mSentMessageCount = 0;
+
+    EXPECT_EQ(gPairingServer.ListenForSessionEstablishment(&GetExchangeManager(), &GetSecureSessionManager(), &gDeviceFabrics,
+                                                           nullptr, nullptr, &gDeviceGroupDataProvider),
+              CHIP_NO_ERROR);
+
+    ExchangeContext * contextCommissioner1 = NewUnauthenticatedExchangeToBob(&pairingCommissioner1);
+    ExchangeContext * contextCommissioner2 = NewUnauthenticatedExchangeToBob(&pairingCommissioner2);
+
+    // Drop the Sigma2 from the responder so it stays in kSentSigma2.
+    // 1st message: Sigma1 from Commissioner1.
+    // 2nd message: Sigma2 from Responder.
+    loopback.mNumMessagesToAllowBeforeDropping = 1;
+    loopback.mNumMessagesToDrop                = 1;
+
+    EXPECT_EQ(pairingCommissioner1.EstablishSession(sessionManager, &gCommissionerFabrics,
+                                                    ScopedNodeId{ Node01_01, gCommissionerFabricIndex }, contextCommissioner1,
+                                                    nullptr, nullptr, &delegateCommissioner1, NullOptional),
+              CHIP_NO_ERROR);
+
+    // Drain IO so that Sigma1 is delivered and Sigma2 is sent and dropped.
+    ServiceEvents();
+
+    // The responder should still be active because its Sigma2 was dropped and it's waiting for Sigma3 or retransmission.
+    // Start a second initiator. It should receive a BUSY response from the responder.
+    EXPECT_SUCCESS(pairingCommissioner2.EstablishSession(sessionManager, &gCommissionerFabrics,
+                                                         ScopedNodeId{ Node01_01, gCommissionerFabricIndex }, contextCommissioner2,
+                                                         nullptr, nullptr, &delegateCommissioner2, NullOptional));
+
+    ServiceEvents();
+
+    // The second delegate should have received a BUSY.
+    EXPECT_EQ(delegateCommissioner2.mNumBusyResponses, 1u);
+    EXPECT_EQ(delegateCommissioner2.mNumPairingErrors, 1u);
+
+    // Verify the requested busy delay
+    auto sigma2Timeout                              = CASESession::ComputeSigma2ResponseTimeout(GetDefaultMRPConfig());
+    System::Clock::Milliseconds16 expectedBusyDelay = (sigma2Timeout < System::Clock::Milliseconds16::max())
+        ? std::chrono::duration_cast<System::Clock::Milliseconds16>(sigma2Timeout)
+        : System::Clock::Milliseconds16::max();
+
+    EXPECT_EQ(delegateCommissioner2.mRequestedBusyDelay, expectedBusyDelay);
+
+    gPairingServer.Shutdown();
+}
+
+TEST_F(TestCASESession, LossySigma2KeepsResponderBusyForSecondInitiator_IdealControl)
+{
+    TemporarySessionManager sessionManager(*this);
+    TestCASESecurePairingDelegate delegateCommissioner1, delegateCommissioner2;
+    CASESession pairingCommissioner1, pairingCommissioner2;
+
+    pairingCommissioner1.SetGroupDataProvider(&gCommissionerGroupDataProvider);
+    pairingCommissioner2.SetGroupDataProvider(&gCommissionerGroupDataProvider);
+
+    auto & loopback            = GetLoopback();
+    loopback.mSentMessageCount = 0;
+
+    EXPECT_EQ(gPairingServer.ListenForSessionEstablishment(&GetExchangeManager(), &GetSecureSessionManager(), &gDeviceFabrics,
+                                                           nullptr, nullptr, &gDeviceGroupDataProvider),
+              CHIP_NO_ERROR);
+
+    ExchangeContext * contextCommissioner1 = NewUnauthenticatedExchangeToBob(&pairingCommissioner1);
+    ExchangeContext * contextCommissioner2 = NewUnauthenticatedExchangeToBob(&pairingCommissioner2);
+
+    // No drop.
+    loopback.mNumMessagesToAllowBeforeDropping = 0;
+    loopback.mNumMessagesToDrop                = 0;
+
+    EXPECT_EQ(pairingCommissioner1.EstablishSession(sessionManager, &gCommissionerFabrics,
+                                                    ScopedNodeId{ Node01_01, gCommissionerFabricIndex }, contextCommissioner1,
+                                                    nullptr, nullptr, &delegateCommissioner1, NullOptional),
+              CHIP_NO_ERROR);
+
+    ServiceEvents();
+
+    EXPECT_SUCCESS(pairingCommissioner2.EstablishSession(sessionManager, &gCommissionerFabrics,
+                                                         ScopedNodeId{ Node01_01, gCommissionerFabricIndex }, contextCommissioner2,
+                                                         nullptr, nullptr, &delegateCommissioner2, NullOptional));
+
+    ServiceEvents();
+
+    // The second delegate should NOT have received a BUSY, both should complete.
+    EXPECT_EQ(delegateCommissioner2.mNumBusyResponses, 0u);
+    EXPECT_EQ(delegateCommissioner1.mNumPairingComplete, 1u);
+    EXPECT_EQ(delegateCommissioner2.mNumPairingComplete, 1u);
 
     gPairingServer.Shutdown();
 }

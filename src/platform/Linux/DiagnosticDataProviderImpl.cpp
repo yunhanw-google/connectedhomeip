@@ -767,11 +767,16 @@ CHIP_ERROR DiagnosticDataProviderImpl::GetWiFiOverrunCount(uint64_t & overrunCou
 
 CHIP_ERROR DiagnosticDataProviderImpl::GetWiFiBeaconRxCount(uint32_t & beaconRxCount)
 {
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA
     if (DeviceLayer::ConnectivityMgrImpl().IsWiFiManagementStarted())
     {
         beaconRxCount = mBeaconRxCount;
         return CHIP_NO_ERROR;
     }
+#else
+    (void) beaconRxCount;
+    (void) mBeaconRxCount;
+#endif
     return CHIP_ERROR_NOT_IMPLEMENTED;
 }
 

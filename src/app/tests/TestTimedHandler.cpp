@@ -196,6 +196,93 @@ TEST_F(TestTimedHandler, TestWriteTooSlow)
     TestFollowingMessageTooSlow(MsgType::WriteRequest);
 }
 
+TEST_F(TestTimedHandler, TestInvokeDelayedByLostFrameTimesOut)
+{
+    System::PacketBufferHandle payload;
+    GenerateTimedRequest(50, payload);
+
+    TestExchangeDelegate delegate;
+    ExchangeContext * exchange = NewExchangeToAlice(&delegate);
+    ASSERT_NE(exchange, nullptr);
+
+    EXPECT_FALSE(delegate.mNewMessageReceived);
+
+    delegate.mKeepExchangeOpen = true;
+
+    EXPECT_EQ(exchange->SendMessage(MsgType::TimedRequest, std::move(payload), SendMessageFlags::kExpectResponse), CHIP_NO_ERROR);
+
+    DrainAndServiceIO();
+    EXPECT_TRUE(delegate.mNewMessageReceived);
+    EXPECT_TRUE(delegate.mLastMessageWasStatus);
+    EXPECT_EQ(delegate.mError, CHIP_NO_ERROR);
+
+    // Drop the first transmission of the InvokeRequest via loopback so MRP retransmits after the timed window.
+    GetLoopback().mSentMessageCount                 = 0;
+    GetLoopback().mNumMessagesToDrop                = 1;
+    GetLoopback().mNumMessagesToAllowBeforeDropping = 0;
+    GetLoopback().mDroppedMessageCount              = 0;
+
+    payload = MessagePacketBuffer::New(0);
+    EXPECT_FALSE(payload.IsNull());
+
+    delegate.mKeepExchangeOpen   = false;
+    delegate.mNewMessageReceived = false;
+
+    EXPECT_EQ(exchange->SendMessage(MsgType::InvokeCommandRequest, std::move(payload), SendMessageFlags::kExpectResponse),
+              CHIP_NO_ERROR);
+
+    // Drive time so the retransmission lands after mTimeLimit.
+    GetIOContext().DriveIOUntil(System::Clock::Milliseconds32(2000), [&delegate]() { return delegate.mNewMessageReceived; });
+
+    EXPECT_TRUE(delegate.mNewMessageReceived);
+    EXPECT_TRUE(delegate.mLastMessageWasStatus);
+    // Expected Timeout because the MRP retransmission lands after 50ms.
+    EXPECT_EQ(StatusIB(delegate.mError).mStatus, Status::Timeout);
+    EXPECT_EQ(GetLoopback().mDroppedMessageCount, 1u);
+}
+
+TEST_F(TestTimedHandler, TestInvokeDelayedByLostFrameTimesOut_IdealControl)
+{
+    System::PacketBufferHandle payload;
+    GenerateTimedRequest(50, payload);
+
+    TestExchangeDelegate delegate;
+    ExchangeContext * exchange = NewExchangeToAlice(&delegate);
+    ASSERT_NE(exchange, nullptr);
+
+    EXPECT_FALSE(delegate.mNewMessageReceived);
+
+    delegate.mKeepExchangeOpen = true;
+
+    EXPECT_EQ(exchange->SendMessage(MsgType::TimedRequest, std::move(payload), SendMessageFlags::kExpectResponse), CHIP_NO_ERROR);
+
+    DrainAndServiceIO();
+    EXPECT_TRUE(delegate.mNewMessageReceived);
+    EXPECT_TRUE(delegate.mLastMessageWasStatus);
+    EXPECT_EQ(delegate.mError, CHIP_NO_ERROR);
+
+    // No drop injection here. Control passes cleanly.
+    GetLoopback().mSentMessageCount                 = 0;
+    GetLoopback().mNumMessagesToDrop                = 0;
+    GetLoopback().mNumMessagesToAllowBeforeDropping = 0;
+    GetLoopback().mDroppedMessageCount              = 0;
+
+    payload = MessagePacketBuffer::New(0);
+    EXPECT_FALSE(payload.IsNull());
+
+    delegate.mKeepExchangeOpen   = false;
+    delegate.mNewMessageReceived = false;
+
+    EXPECT_EQ(exchange->SendMessage(MsgType::InvokeCommandRequest, std::move(payload), SendMessageFlags::kExpectResponse),
+              CHIP_NO_ERROR);
+
+    GetIOContext().DriveIOUntil(System::Clock::Milliseconds32(2000), [&delegate]() { return delegate.mNewMessageReceived; });
+
+    EXPECT_TRUE(delegate.mNewMessageReceived);
+    EXPECT_TRUE(delegate.mLastMessageWasStatus);
+    EXPECT_NE(StatusIB(delegate.mError).mStatus, Status::Timeout);
+}
+
 TEST_F(TestTimedHandler, TestInvokeNeverComes)
 {
 
