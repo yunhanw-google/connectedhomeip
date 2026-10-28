@@ -151,6 +151,7 @@ private:
         uint64_t mPendingTicket;
     };
     std::unordered_map<std::string, ConnectionEntry> mConnMap;
+    std::unordered_map<std::string, uint64_t> mConnectRequestIds;
     uint64_t mNextPendingTicket = 0;
     GAutoPtr<GCancellable> mConnectCancellable;
     GCharPtr mPeerDevicePath;

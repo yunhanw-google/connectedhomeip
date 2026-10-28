@@ -124,11 +124,13 @@ class AndroidBuilder(Builder):
                  root: str,
                  runner: Runner,
                  output_dir_lock: OutDirLock, board: AndroidBoard, app: AndroidApp,
-                 optimize_size: bool = False):
+                 optimize_size: bool = False,
+                 use_coverage: bool = False):
         super().__init__(root, runner, output_dir_lock)
         self.board = board
         self.app = app
         self.optimize_size = optimize_size
+        self.use_coverage = use_coverage
 
     def _get_sdk_manager_paths(self):
         """Get list of possible SDK manager paths for Android SDK compatibility."""
@@ -452,6 +454,8 @@ class AndroidBuilder(Builder):
                     gn_args["chip_data_model_extra_logging"] = False
                     gn_args["enable_rtti"] = False
             gn_args.update(self.app.AppGnArgs())
+            if self.use_coverage or os.environ.get('CIRQUE_COVERAGE') == '1':
+                gn_args["use_coverage"] = True
 
             args_str = ""
             for key, value in gn_args.items():

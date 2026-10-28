@@ -616,6 +616,15 @@ config("coverage") {
   ldflags = cflags
 
   if (is_clang) {
+    if (current_os == "android") {
+      # Required for %c continuous coverage mode on Android so .profraw counters
+      # are mmap-synced continuously and survive `am force-stop` (SIGKILL).
+      cflags += [
+        "-mllvm",
+        "-runtime-counter-relocation",
+      ]
+    }
+
     # Looking to add buildid which _could_ be used for coverage
     # file format using `%b` (see
     # https://clang.llvm.org/docs/SourceBasedCodeCoverage.html#running-the-instrumented-program)

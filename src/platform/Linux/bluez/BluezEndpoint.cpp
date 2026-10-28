@@ -335,8 +335,18 @@ void BluezEndpoint::HandleNewDevice(BluezDevice1 & aDevice)
                    ChipLogError(DeviceLayer, "FAIL: Connection already tracked: conn=%p device=%s path=%s", conn,
                                 conn->GetPeerAddress(), objectPath));
 
-    auto * origin            = static_cast<GVariant *>(g_object_get_data(G_OBJECT(&aDevice), "chip-connect-request-id"));
-    const uint64_t requestId = origin != nullptr ? g_variant_get_uint64(origin) : 0;
+    auto * origin      = static_cast<GVariant *>(g_object_get_data(G_OBJECT(&aDevice), "chip-connect-request-id"));
+    uint64_t requestId = origin != nullptr ? g_variant_get_uint64(origin) : 0;
+    if (requestId == 0 && objectPath != nullptr)
+    {
+        GCharPtr requestKey(
+            g_strdup_printf("%p:%s", g_dbus_proxy_get_connection(reinterpret_cast<GDBusProxy *>(&aDevice)), objectPath));
+        auto it = mConnectRequestIds.find(requestKey.get());
+        if (it != mConnectRequestIds.end())
+        {
+            requestId = it->second;
+        }
+    }
 
     conn = chip::Platform::New<BluezConnection>(aDevice);
     VerifyOrExit(conn != nullptr, err = CHIP_ERROR_NO_MEMORY);
@@ -638,6 +648,12 @@ void BluezEndpoint::Shutdown()
 
 CHIP_ERROR BluezEndpoint::ConnectDeviceImpl(BluezDevice1 & aDevice, GCancellable * cancellable, uint64_t requestId)
 {
+    if (const char * objectPath = g_dbus_proxy_get_object_path(reinterpret_cast<GDBusProxy *>(&aDevice)); objectPath != nullptr)
+    {
+        GCharPtr requestKey(
+            g_strdup_printf("%p:%s", g_dbus_proxy_get_connection(reinterpret_cast<GDBusProxy *>(&aDevice)), objectPath));
+        mConnectRequestIds[requestKey.get()] = requestId;
+    }
     g_object_set_data_full(
         G_OBJECT(&aDevice), "chip-connect-request-id", g_variant_ref_sink(g_variant_new_uint64(requestId)),
         +[](void * value) { g_variant_unref(static_cast<GVariant *>(value)); });

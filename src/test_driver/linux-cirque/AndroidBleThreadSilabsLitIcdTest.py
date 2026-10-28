@@ -376,6 +376,40 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
     res = self.execute_device_cmd(tbr_id, cmd)
     return res.get('output', '') if isinstance(res, dict) else str(res)
 
+  def _pin_android_neighbor_on_tbr(self, req_device_id: str, tbr_id: str):
+    """Pins a permanent TBR neighbor entry for Android's fd11:22::3.
+
+    The neighbor entry for fd11:22::3 expires between commissioning and the
+    first Check-In, so the TBR must resolve it again when that Check-In
+    arrives. The Android emulator runs a connected Wi-Fi scan about every 20s
+    that keeps its station off-channel for about 3s; if the TBR's three
+    Neighbor Solicitations fall in that window, the kernel drops the queued
+    Check-In and Oracle 2c fails. Pinning the entry, like the static
+    fd11:22::3 address itself, removes that race without relaxing the
+    oracle or its forward-delay bound.
+    """
+    res = self.execute_device_cmd(
+        req_device_id, 'adb shell cat /sys/class/net/wlan0/address'
+    )
+    out = res.get('output', '') if isinstance(res, dict) else str(res)
+    mac = re.search(r'\b([0-9a-f]{2}(?::[0-9a-f]{2}){5})\b', out.lower())
+    self.assertTrue(
+        mac is not None, f'Could not read Android wlan0 MAC address: {out!r}'
+    )
+    res = self.execute_device_cmd(
+        tbr_id,
+        f'sh -c "ip -6 neigh replace fd11:22::3 lladdr {mac.group(1)}'
+        ' dev wlan0 nud permanent; ip -6 neigh show fd11:22::3 dev wlan0"',
+    )
+    out = res.get('output', '') if isinstance(res, dict) else str(res)
+    self.assertTrue(
+        mac.group(1) in out.lower() and 'PERMANENT' in out,
+        f'TBR neighbor entry for fd11:22::3 is not permanent: {out!r}',
+    )
+    self.logger.info(
+        'Pinned TBR neighbor fd11:22::3 -> %s on wlan0', mac.group(1)
+    )
+
   def _register_chiptool_srp_service(
       self,
       tbr_id: str,
@@ -583,7 +617,11 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
         'SILABS_BT_PTY_PATH=/tmp/ttySilabsBT0 '
         f'PORT_OFFSET={port_offset} {QEMU_ARM_ESC} '
         f'-L {ARM_SYSROOT_ESC} {self._get_end_device_binary_esc()} '
-        f'--thread-node-id {node_id} --ble-controller 0 --discriminator '
+        # OpenThread simulation args forwarded verbatim to otSysInit(); the
+        # log file is kept in /tmp because the simulation platform exits if it
+        # cannot open it (same form as scripts/tests/chiptest).
+        f'--thread-args=--log-file=/tmp/chip_ot_node{node_id}.log '
+        f'--thread-args={node_id} --ble-controller 0 --discriminator '
         f'{TEST_DISCRIMINATOR}'
     )
     self.logger.info(
@@ -626,6 +664,7 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
         'adb shell su root ip -6 route add ff02::fb/128 dev wlan0 table eth0'
         ' 2>/dev/null || true',
     )
+    self._pin_android_neighbor_on_tbr(req_device_id, tbr_ids[0])
 
     is_lit_str = 'false' if disable_reg == '1' else 'true'
     self.logger.info(

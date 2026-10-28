@@ -50,6 +50,7 @@ jobs:
             - name: Bootstrap Android
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
                     -- sh -c " \
                        git config --global --add safe.directory '*' \
                        && bash scripts/bootstrap.sh -p all,android \
@@ -67,6 +68,7 @@ jobs:
             - name: Build Android x64 CHIPTool APK
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
                     -- sh -c " \
                        git config --global --add safe.directory '*' \
                        && export CCACHE_DIR=\"\$PWD/.ccache\" \
@@ -97,7 +99,9 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: cirque-android-x64-chip-tool-apk
-                  path: out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
+                  path: |
+                      out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
+                      out/android-x64-chip-tool/lib/jni/x86_64/libCHIPController.so
                   retention-days: 1
                   if-no-files-found: error
                   overwrite: true
@@ -532,11 +536,12 @@ jobs:
               uses: actions/download-artifact@v8
               with:
                   name: cirque-android-x64-chip-tool-apk
-                  path: out/android-x64-chip-tool/outputs/apk/debug
+                  path: out/android-x64-chip-tool
             - name: Build Android x64 CHIPTool APK (Local ACT fallback)
               if: ${{ env.ACT }}
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
                     -- sh -c " \
                        git config --global --add safe.directory '*' \
                        && export CCACHE_DIR=\"\$PWD/.ccache\" \

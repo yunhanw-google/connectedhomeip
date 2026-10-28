@@ -31,6 +31,7 @@
 #include <lib/support/CHIPJNIError.h>
 #include <lib/support/JniReferences.h>
 #include <lib/support/JniTypeWrappers.h>
+#include <sys/stat.h>
 
 #include <app/AttributePathParams.h>
 #include <app/DataVersionFilter.h>
@@ -105,12 +106,21 @@ chip::JniGlobalReference sChipDeviceControllerExceptionCls;
 chip::NodeId kLocalDeviceId  = chip::kTestControllerNodeId;
 chip::NodeId kRemoteDeviceId = chip::kTestDeviceNodeId;
 
+extern "C" void __llvm_profile_set_filename(const char *) __attribute__((weak));
+
 jint JNI_OnLoad(JavaVM * jvm, void * reserved)
 {
     CHIP_ERROR err = CHIP_NO_ERROR;
     JNIEnv * env;
 
     ChipLogProgress(Controller, "JNI_OnLoad() called");
+
+    if (__llvm_profile_set_filename)
+    {
+        // Ensure the directory exists
+        mkdir("/data/user/0/com.google.chip.chiptool/files", 0777);
+        __llvm_profile_set_filename("%c/data/user/0/com.google.chip.chiptool/files/coverage_%p.profraw");
+    }
 
     TEMPORARY_RETURN_IGNORED chip::Platform::MemoryInit();
 

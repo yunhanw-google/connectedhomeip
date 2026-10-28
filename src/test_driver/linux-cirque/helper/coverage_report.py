@@ -35,6 +35,7 @@ SUBSYSTEMS = [
     ("src/ble", "src/ble/"),
     ("src/inet", "src/inet/"),
     ("src/platform/Linux", "src/platform/Linux/"),
+    ("src/platform/android", "src/platform/android/"),
     ("src/controller", "src/controller/"),
     ("examples", "examples/"),
 ]
@@ -482,6 +483,7 @@ LLVM_COVERAGE_BINARIES = (
     "out/arm-silabs/chip-silabs-lighting-app",
     "out/arm-silabs-thread/chip-silabs-lit-icd-app",
     "out/arm-silabs-thread/chip-silabs-lock-app",
+    "out/android-x64-chip-tool/lib/jni/x86_64/libCHIPController.so",
 )
 
 
@@ -501,7 +503,7 @@ def append_llvm_profraw_coverage(out_dir: Path, output_dir: Path,
 
     Returns True if records were appended.
     """
-    profraw_files = sorted((out_dir / "profraw").glob("*.profraw"))
+    profraw_files = sorted((out_dir / "profraw").rglob("*.profraw"))
     if not profraw_files:
         return False
     llvm_bin = chip_root / ".environment/cipd/packages/pigweed/bin"
@@ -518,22 +520,37 @@ def append_llvm_profraw_coverage(out_dir: Path, output_dir: Path,
                        "coverage mapping", len(profraw_files))
         return False
     profdata = output_dir / "llvm_merged.profdata"
-    export_cmd = [str(llvm_cov), "export", "-format=lcov",
-                  "-instr-profile", str(profdata)]
-    for binary in binaries:
-        export_cmd += ["-object", str(binary)]
     try:
         run_command([str(llvm_profdata), "merge", "-sparse",
                      *map(str, profraw_files), "-o", str(profdata)])
-        lcov_out = run_command(export_cmd).stdout
     except subprocess.CalledProcessError as e:
-        logger.warning("LLVM coverage export failed: %s\nStderr: %s",
+        logger.warning("LLVM profdata merge failed: %s\nStderr: %s",
                        e, e.stderr)
         return False
+
+    exported_binaries = []
+    lcov_chunks = []
+    for binary in binaries:
+        export_cmd = [
+            str(llvm_cov), "export", "-format=lcov",
+            "-instr-profile", str(profdata),
+            "-object", str(binary),
+        ]
+        try:
+            lcov_out = run_command(export_cmd).stdout
+            if lcov_out.strip():
+                lcov_chunks.append(lcov_out)
+                exported_binaries.append(binary.name)
+        except subprocess.CalledProcessError as e:
+            logger.warning("LLVM coverage export failed for %s: %s\nStderr: %s",
+                           binary, e, e.stderr)
+    if not lcov_chunks:
+        return False
     with open(raw_info, "a") as f:
-        f.write("\n" + lcov_out)
+        for chunk in lcov_chunks:
+            f.write("\n" + chunk)
     logger.info("Appended LLVM coverage from %d .profraw files (%s)",
-                len(profraw_files), ", ".join(b.name for b in binaries))
+                len(profraw_files), ", ".join(exported_binaries))
     return True
 
 
