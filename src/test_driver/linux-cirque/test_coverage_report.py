@@ -262,7 +262,7 @@ class TestAppendLlvmProfrawCoverage(unittest.TestCase):
             '#!/bin/sh\nwhile [ "$1" != "-o" ]; do shift; done; '
             'echo merged > "$2"\n')
         (bin_dir / "llvm-cov").write_text(
-            f'#!/bin/sh\necho "$@" > {self.cov_args}\n'
+            f'#!/bin/sh\necho "$@" >> {self.cov_args}\n'
             'printf "SF:/arm/silabs/AppTask.cpp\\nDA:1,1\\n'
             'end_of_record\\n"\n')
         for tool in ("llvm-profdata", "llvm-cov"):
@@ -308,6 +308,20 @@ class TestAppendLlvmProfrawCoverage(unittest.TestCase):
         args = self.cov_args.read_text()
         self.assertIn(f"-object {lit_icd}", args)
         self.assertNotIn(str(lighting), args)
+
+    def test_android_libchipcontroller_and_arm32_exported_separately(self):
+        self._write("out/debug/profraw/3dc12c79-coverage_4521.profraw", b"raw")
+        lit_icd = self._write(
+            "out/arm-silabs-thread/chip-silabs-lit-icd-app",
+            b"ELF __llvm_covmap")
+        android_jni = self._write(
+            "out/android-x64-chip-tool/lib/jni/x86_64/libCHIPController.so",
+            b"ELF __llvm_covmap")
+        self.assertTrue(self._append())
+        lines = self.cov_args.read_text().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn(f"-object {lit_icd}", lines[0])
+        self.assertIn(f"-object {android_jni}", lines[1])
 
     @unittest.skipUnless(shutil.which("lcov"), "lcov not installed")
     def test_report_from_profraw_only_run(self):

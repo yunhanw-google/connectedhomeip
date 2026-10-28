@@ -534,6 +534,7 @@ def BuildAndroidTarget():
 
     # Modifiers
     target.AppendModifier('size-optimized', optimize_size=True)
+    target.AppendModifier('coverage', use_coverage=True)
 
     return target
 

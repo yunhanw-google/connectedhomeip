@@ -105,12 +105,15 @@ class CHIPToolActivity :
       isAutomatedCommissioningIntent = false
       supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
       showFragment(BarcodeFragment.newInstance(), false)
-    }
-    if (intent.action == ACTION_COMMISSION_BLE_WIFI) {
+    } else if (intent.action == ACTION_COMMISSION_BLE_WIFI) {
       onCommissionBleWifiIntent(intent)
-    }
-    if (intent.action == ACTION_COMMISSION_BLE_THREAD) {
+    } else if (intent.action == ACTION_COMMISSION_BLE_THREAD) {
       onCommissionBleThreadIntent(intent)
+    } else if (
+      intent.action != NfcAdapter.ACTION_NDEF_DISCOVERED && intent.action != Intent.ACTION_VIEW
+    ) {
+      supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+      showFragment(SelectActionFragment.newInstance(), false)
     }
   }
 
@@ -213,39 +216,49 @@ class CHIPToolActivity :
     DeviceIdUtil.setCommissionedNodeId(this, nodeId)
     ChipClient.getDeviceController(this).close()
 
-    if (code == 0L && nodeId > 0L && !isAutomatedCommissioningIntent) {
-      val registry =
-        CenterConnectionManager.registry(this).also { reg ->
-          reg.autoRegisterCommissionedNode(nodeId)
-          reg.saveFabricToPreferences(this)
+    if (code == 0L && nodeId > 0L) {
+      val registry = CenterConnectionManager.registry(this)
+      PostCommissioningDialogHelper.autoRegisterNode(registry, nodeId, deviceInfo, this)
+      if (
+        !isAutomatedCommissioningIntent &&
+          intent?.getBooleanExtra("show_post_commissioning_dialog", false) == true
+      ) {
+        CenterConnectionManager.onNodeCommissioned(nodeId)
+        runOnUiThread {
+          Toast.makeText(
+              this,
+              getString(R.string.commissioning_completed, code),
+              Toast.LENGTH_SHORT,
+            )
+            .show()
+          if (!isFinishing && !isDestroyed) {
+            PostCommissioningDialogHelper.showPostCommissioningDialog(
+              activity = this,
+              nodeId = nodeId,
+              registry = registry,
+              deviceInfo = deviceInfo,
+              onComplete = {
+                if (!isFinishing && !isDestroyed) {
+                  supportFragmentManager.popBackStack(
+                    null,
+                    FragmentManager.POP_BACK_STACK_INCLUSIVE,
+                  )
+                  showFragment(DeviceCenterFragment.newInstance())
+                }
+              },
+            )
+          }
         }
-      CenterConnectionManager.onNodeCommissioned(nodeId)
-      runOnUiThread {
-        Toast.makeText(this, getString(R.string.commissioning_completed, code), Toast.LENGTH_SHORT)
-          .show()
-        if (!isFinishing && !isDestroyed) {
-          PostCommissioningDialogHelper.showPostCommissioningDialog(
-            activity = this,
-            nodeId = nodeId,
-            registry = registry,
-            deviceInfo = deviceInfo,
-            onComplete = {
-              if (!isFinishing && !isDestroyed) {
-                supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
-                showFragment(DeviceCenterFragment.newInstance())
-              }
-            },
-          )
-        }
+        return
       }
-    } else {
-      runOnUiThread {
-        Toast.makeText(this, getString(R.string.commissioning_completed, code), Toast.LENGTH_SHORT)
-          .show()
-        if (!isFinishing && !isDestroyed) {
-          supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
-          showFragment(SelectActionFragment.newInstance(), false)
-        }
+    }
+
+    runOnUiThread {
+      Toast.makeText(this, getString(R.string.commissioning_completed, code), Toast.LENGTH_SHORT)
+        .show()
+      if (!isFinishing && !isDestroyed) {
+        supportFragmentManager.popBackStack(null, FragmentManager.POP_BACK_STACK_INCLUSIVE)
+        showFragment(SelectActionFragment.newInstance(), false)
       }
     }
   }
