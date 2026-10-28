@@ -33,7 +33,15 @@ namespace chip {
 namespace DeviceLayer {
 namespace NetworkCommissioning {
 
-#if CHIP_DEVICE_CONFIG_ENABLE_WPA
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA || (defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI)
+
+#if defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI && !CHIP_DEVICE_CONFIG_ENABLE_WPA
+CHIP_ERROR SilabsPosixWiFiCommit();
+CHIP_ERROR SilabsPosixWiFiConnect(ByteSpan ssid, ByteSpan credentials,
+                                  NetworkCommissioning::Internal::WirelessDriver::ConnectCallback * connectCallback);
+CHIP_ERROR SilabsPosixWiFiScan(ByteSpan ssid, NetworkCommissioning::WiFiDriver::ScanCallback * callback);
+bool SilabsPosixWiFiIsConnected(ByteSpan ssid);
+#endif
 // TODO(#14172): Here, most interfaces are just calling ConnectivityManager interfaces, this is because the ConnectivityProvides
 // some bootstrap code for the wpa_supplicant. However, we can wrap the wpa_supplicant dbus api directly (and remove the related
 // code in ConnectivityManagerImpl).
@@ -164,7 +172,11 @@ CHIP_ERROR LinuxWiFiDriver::CommitConfiguration()
     // The network is persisted now, so a failure to save the wpa_supplicant config must not leave it to be reverted.
     mSavedNetwork          = mStagingNetwork;
     mStagingNetworkApplied = false;
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA
     return ConnectivityMgrImpl().CommitConfig();
+#elif defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI
+    return SilabsPosixWiFiCommit();
+#endif
 }
 
 CHIP_ERROR LinuxWiFiDriver::RevertConfiguration()
@@ -174,10 +186,14 @@ CHIP_ERROR LinuxWiFiDriver::RevertConfiguration()
     mStagingNetworkApplied = false;
 
     ChipLogProgress(NetworkProvisioning, "LinuxWiFiDriver: Restoring saved network configuration");
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA
     ConnectivityMgrImpl().CancelConnectWiFiNetwork();
+#endif
     if (mSavedNetwork.Empty())
     {
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA
         ConnectivityMgrImpl().ClearWiFiStationProvision();
+#endif
         return CHIP_NO_ERROR;
     }
     return ConnectToNetwork(mSavedNetwork, nullptr);
@@ -254,7 +270,11 @@ exit:
 
 void LinuxWiFiDriver::ScanNetworks(ByteSpan ssid, WiFiDriver::ScanCallback * callback)
 {
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA
     CHIP_ERROR err = DeviceLayer::ConnectivityMgrImpl().StartWiFiScan(ssid, callback);
+#elif defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI
+    CHIP_ERROR err = SilabsPosixWiFiScan(ssid, callback);
+#endif
     if (err != CHIP_NO_ERROR)
     {
         callback->OnFinished(Status::kUnknownError, CharSpan(), nullptr);
@@ -276,8 +296,13 @@ CHIP_ERROR LinuxWiFiDriver::ConnectToNetwork(const WiFiNetwork & network, Connec
 
     ChipLogProgress(NetworkProvisioning, "LinuxWiFiDriver: ConnectNetwork '%s'",
                     NullTerminated(network.ssid, network.ssidLen).c_str());
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA
     return ConnectivityMgrImpl().ConnectWiFiNetworkAsync(ByteSpan(network.ssid, network.ssidLen),
                                                          ByteSpan(network.credentials, network.credentialsLen), callback);
+#elif defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI
+    return SilabsPosixWiFiConnect(ByteSpan(network.ssid, network.ssidLen), ByteSpan(network.credentials, network.credentialsLen),
+                                  callback);
+#endif
 }
 
 size_t LinuxWiFiDriver::WiFiNetworkIterator::Count()
@@ -310,6 +335,7 @@ bool LinuxWiFiDriver::WiFiNetworkIterator::Next(Network & item)
     }
 #endif // CHIP_DEVICE_CONFIG_ENABLE_WIFI_PDC
 
+#if CHIP_DEVICE_CONFIG_ENABLE_WPA
     Network configuredNetwork;
     CHIP_ERROR err = DeviceLayer::ConnectivityMgrImpl().GetConfiguredNetwork(configuredNetwork);
     if (err == CHIP_NO_ERROR)
@@ -320,6 +346,9 @@ bool LinuxWiFiDriver::WiFiNetworkIterator::Next(Network & item)
             item.connected = true;
         }
     }
+#elif defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI
+    item.connected = SilabsPosixWiFiIsConnected(ByteSpan(item.networkID, item.networkIDLen));
+#endif
 
     return true;
 }
@@ -395,7 +424,7 @@ CHIP_ERROR LinuxWiFiDriver::SignWithClientIdentity(uint8_t networkIndex, const B
 }
 #endif // CHIP_DEVICE_CONFIG_ENABLE_WIFI_PDC
 
-#endif // CHIP_DEVICE_CONFIG_ENABLE_WPA
+#endif // CHIP_DEVICE_CONFIG_ENABLE_WPA || CHIP_LINUX_USE_SILABS_BLE_WIFI
 
 } // namespace NetworkCommissioning
 } // namespace DeviceLayer

@@ -150,6 +150,23 @@ CHIP_ERROR CryptoContext::InitTestMode(Crypto::SessionKeystore & keystore, Crypt
 }
 #endif // CHIP_CONFIG_SECURITY_TEST_MODE
 
+#if CHIP_CONFIG_SESSION_KEYLOG
+CHIP_ERROR CryptoContext::ExportSessionKeysForKeylog(Symmetric128BitsKeyByteArray & i2rKey,
+                                                     Symmetric128BitsKeyByteArray & r2iKey) const
+{
+#if CHIP_CRYPTO_KEYSTORE_RAW
+    VerifyOrReturnError(mKeyAvailable, CHIP_ERROR_INCORRECT_STATE);
+    const Aes128KeyHandle & i2r = (mSessionRole == SessionRole::kInitiator) ? mEncryptionKey : mDecryptionKey;
+    const Aes128KeyHandle & r2i = (mSessionRole == SessionRole::kInitiator) ? mDecryptionKey : mEncryptionKey;
+    memcpy(i2rKey, i2r.As<Symmetric128BitsKeyByteArray>(), sizeof(i2rKey));
+    memcpy(r2iKey, r2i.As<Symmetric128BitsKeyByteArray>(), sizeof(r2iKey));
+    return CHIP_NO_ERROR;
+#else
+    return CHIP_ERROR_NOT_IMPLEMENTED;
+#endif // CHIP_CRYPTO_KEYSTORE_RAW
+}
+#endif // CHIP_CONFIG_SESSION_KEYLOG
+
 CHIP_ERROR CryptoContext::BuildNonce(NonceView nonce, uint8_t securityFlags, uint32_t messageCounter, NodeId nodeId)
 {
     Encoding::LittleEndian::BufferWriter bbuf(nonce.data(), nonce.size());

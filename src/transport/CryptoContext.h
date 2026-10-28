@@ -158,6 +158,17 @@ public:
 
     bool IsResponder() const { return mKeyAvailable && mSessionRole == SessionRole::kResponder; }
 
+#if CHIP_CONFIG_SESSION_KEYLOG
+    /**
+     * TEST-ONLY (CHIP_CONFIG_SESSION_KEYLOG): copies the I2R and R2I session keys.
+     *
+     * Only the raw session keystore holds key material in the key handles; with other keystores
+     * (for example PSA) the handles carry key references and CHIP_ERROR_NOT_IMPLEMENTED is returned.
+     */
+    CHIP_ERROR ExportSessionKeysForKeylog(Crypto::Symmetric128BitsKeyByteArray & i2rKey,
+                                          Crypto::Symmetric128BitsKeyByteArray & r2iKey) const;
+#endif // CHIP_CONFIG_SESSION_KEYLOG
+
 private:
     CHIP_ERROR InitTestMode(Crypto::SessionKeystore & keystore, Crypto::Aes128KeyHandle & i2rKey, Crypto::Aes128KeyHandle & r2iKey);
 

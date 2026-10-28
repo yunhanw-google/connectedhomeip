@@ -90,7 +90,12 @@ public:
         bool ok = mBleLayer.HandleWriteConfirmation(mPendingConnObj, &CHIP_BLE_SVC_ID, &CHIP_BLE_CHAR_1_UUID);
         VerifyOrReturnError(ok, CHIP_ERROR_INTERNAL);
 
-        ok = mBleLayer.HandleSubscribeComplete(mPendingConnObj, &CHIP_BLE_SVC_ID, &CHIP_BLE_CHAR_2_UUID);
+        return FinishCentralHandshakeAfterWriteConfirmation(ep);
+    }
+
+    CHIP_ERROR FinishCentralHandshakeAfterWriteConfirmation(BLEEndPoint * ep)
+    {
+        bool ok = mBleLayer.HandleSubscribeComplete(mPendingConnObj, &CHIP_BLE_SVC_ID, &CHIP_BLE_CHAR_2_UUID);
         VerifyOrReturnError(ok, CHIP_ERROR_INTERNAL);
 
         BleTransportCapabilitiesResponseMessage resp;
@@ -144,6 +149,13 @@ protected:
     {
         mPendingConnObj = connObj;
         mLastWriteBuf   = buf.Retain();
+        if (mConfirmNextWriteBeforeReturn)
+        {
+            // Deliver the GATT write confirmation before SendWriteRequest() returns, as happens on platforms that
+            // release the stack lock while sending (e.g. Android BLEManagerImpl).
+            mConfirmNextWriteBeforeReturn  = false;
+            mEarlyWriteConfirmationHandled = mBleLayer.HandleWriteConfirmation(connObj, &CHIP_BLE_SVC_ID, &CHIP_BLE_CHAR_1_UUID);
+        }
         return CHIP_NO_ERROR;
     }
     CHIP_ERROR SendIndication(BLE_CONNECTION_OBJECT connObj, const ChipBleUUID *, const ChipBleUUID *,
@@ -163,6 +175,9 @@ protected:
         mPendingConnObj        = BLE_CONNECTION_UNINITIALIZED;
         mLastConnectErr        = CHIP_NO_ERROR;
         mLastCloseErr          = CHIP_NO_ERROR;
+
+        mConfirmNextWriteBeforeReturn  = false;
+        mEarlyWriteConfirmationHandled = false;
     }
 
     // Fixture state
@@ -172,6 +187,8 @@ protected:
     BLE_CONNECTION_OBJECT mPendingConnObj = BLE_CONNECTION_UNINITIALIZED; // last connObj used in a platform callback
     int mConnectCompleteCalls             = 0;
     int mConnectionClosedCalls            = 0;
+    bool mConfirmNextWriteBeforeReturn    = false; // confirm the next write from inside SendWriteRequest()
+    bool mEarlyWriteConfirmationHandled   = false; // result of that early HandleWriteConfirmation() call
 };
 
 /* ==================== Test Cases ==================== */
@@ -213,6 +230,24 @@ TEST_F(TestBleEndPoint, CloseFiresConnectionClosedCallback)
     ASSERT_EQ(CompleteCentralHandshake(ep), CHIP_NO_ERROR);
     ep->Close();
     EXPECT_EQ(mConnectionClosedCalls, 1);
+}
+
+// The capabilities request write may be confirmed before StartConnect() returns (Android releases the stack lock
+// while sending the write). The handshake must still free the request and complete without crashing.
+TEST_F(TestBleEndPoint, StartConnectHandlesWriteConfirmationBeforeSendWriteReturns)
+{
+    BLEEndPoint * ep = CreateCentralEndPoint();
+    ASSERT_NE(ep, nullptr);
+
+    mConfirmNextWriteBeforeReturn = true;
+    ASSERT_EQ(ep->StartConnect(), CHIP_NO_ERROR);
+    EXPECT_TRUE(mEarlyWriteConfirmationHandled);
+
+    ASSERT_EQ(FinishCentralHandshakeAfterWriteConfirmation(ep), CHIP_NO_ERROR);
+    EXPECT_EQ(mConnectCompleteCalls, 1);
+    EXPECT_EQ(mConnectionClosedCalls, 0);
+    EXPECT_EQ(ep->Send(System::PacketBufferHandle::New(0)), CHIP_NO_ERROR);
+    ep->Abort();
 }
 
 } // namespace Ble

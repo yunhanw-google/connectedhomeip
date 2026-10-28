@@ -47,6 +47,9 @@ class BLEManagerImpl final : public BLEManager, private BleLayer, private BlePla
 {
 
 public:
+#if defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI
+    CHIP_ERROR ConfigureBle(uint32_t aAdapterId, bool aIsCentral);
+#endif
     void HandleBootEvent(void);
 
     CHIP_ERROR PrintBLEInfo() const;

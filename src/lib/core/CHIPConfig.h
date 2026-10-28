@@ -391,6 +391,21 @@
 #endif // CHIP_CONFIG_SECURITY_TEST_MODE
 
 /**
+ *  @def CHIP_CONFIG_SESSION_KEYLOG
+ *
+ *  @brief
+ *    TEST-ONLY: when set, each established PASE/CASE session appends its keys to the file named by
+ *    the CHIP_SESSION_KEYLOG_FILE environment variable (nothing is written when it is unset). Set via
+ *    the chip_enable_session_keylog GN arg. See src/transport/SessionKeylog.h.
+ *
+ *  @note
+ *    WARNING: This exports session keys. It SHOULD NEVER BE ENABLED IN PRODUCTION BUILDS.
+ */
+#ifndef CHIP_CONFIG_SESSION_KEYLOG
+#define CHIP_CONFIG_SESSION_KEYLOG 0
+#endif // CHIP_CONFIG_SESSION_KEYLOG
+
+/**
  *  @def CHIP_CONFIG_TEST_SHARED_SECRET_VALUE
  *
  *  @brief

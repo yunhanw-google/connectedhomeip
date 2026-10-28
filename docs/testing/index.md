@@ -26,6 +26,7 @@ product as a black box.
 -   [Python testing framework](./python.md)
 -   [Enabling tests in the CI](./ci_testing.md)
 -   [Integration test utilities](./integration_test_utilities.md)
+-   [Lossy-link test hazards](./cirque_rf_lossy_link.md)
 
 ## Unit testing
 

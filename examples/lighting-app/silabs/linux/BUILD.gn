@@ -1,0 +1,99 @@
+# Copyright (c) 2026 Project CHIP Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build_overrides/build.gni")
+import("//build_overrides/chip.gni")
+
+import("${chip_root}/src/lib/lib.gni")
+import("${chip_root}/src/platform/device.gni")
+
+config("silabs-posix-cflags") {
+  # Upstream examples/platform/silabs/rgb_led/RGBLEDWidget.cpp re-declares
+  # constexpr kMaxChromaticity / kMaxBrightnessLevel inside XYToRgb(), and
+  # examples/lighting-app/silabs/src/AppTask.cpp only reads sCurrentLevel
+  # when DISPLAY_ENABLED is set.
+  cflags = [
+    "-Wno-shadow",
+    "-Wno-unused-but-set-global",
+    "-Wno-unused-but-set-variable",
+    "-Wno-unused-const-variable",
+  ]
+  ldflags = [ "-Wl,--wrap=setsockopt" ]
+}
+
+executable("chip-silabs-lighting-app") {
+  sources = [
+    "${chip_root}/examples/all-clusters-app/all-clusters-common/src/software-diagnostics-stub.cpp",
+    "${chip_root}/examples/all-clusters-app/all-clusters-common/src/wifi-diagnostics-stub.cpp",
+    "${chip_root}/examples/lighting-app/silabs/src/AppTask.cpp",
+    "${chip_root}/examples/platform/silabs/LEDWidget.cpp",
+    "${chip_root}/examples/platform/silabs/customer/CustomerAppTask.cpp",
+    "${chip_root}/examples/platform/silabs/rgb_led/RGBLEDWidget.cpp",
+    "${chip_root}/src/app/clusters/mode-base-server/CodegenIntegration.cpp",
+    "${chip_root}/src/app/clusters/mode-base-server/CodegenIntegration.h",
+    "${chip_root}/src/app/clusters/mode-base-server/Delegate.h",
+    "${chip_root}/src/app/clusters/mode-base-server/mode-base-server.h",
+    "SilabsPosixShim.cpp",
+    "SilabsPosixShim.h",
+    "main.cpp",
+  ]
+
+  if (chip_linux_use_silabs_ble_wifi) {
+    sources += [ "${chip_root}/src/platform/silabs/efr32/BLEManagerImpl.cpp" ]
+  }
+
+  include_dirs = [
+    "${chip_root}/config/standalone",
+    "include",
+    ".",
+    "${chip_root}/examples/lighting-app/silabs/include",
+    "${chip_root}/examples/platform/silabs",
+    "${chip_root}/examples/platform/silabs/customer",
+    "${chip_root}/examples/platform/silabs/rgb_led",
+  ]
+
+  defines = [
+    "CHIP_SILABS_APP_USE_CUSTOMER_APP_TASK=1",
+    "SL_MATTER_DISPLAY_ENABLED=0",
+    "SL_MATTER_QR_CODE_ENABLED=0",
+    "SL_MATTER_RGB_LED_ENABLED=1",
+    "SL_MATTER_PROVISION_CHANNEL_ENABLED=0",
+    "ENABLE_WSTK_LEDS=1",
+    "SL_CATALOG_SIMPLE_LED_LED1_PRESENT=1",
+    "SL_CATALOG_SIMPLE_BUTTON_PRESENT=1",
+  ]
+
+  configs += [ ":silabs-posix-cflags" ]
+
+  deps = [
+    "${chip_root}/examples/lighting-app/silabs/data_model:silabs-lighting",
+    "${chip_root}/examples/platform/linux:app-main",
+    "${chip_root}/src/app/clusters/mode-base-server",
+    "${chip_root}/src/app/clusters/software-diagnostics-server:software-fault-listener",
+    "${chip_root}/src/app/clusters/wifi-network-diagnostics-server:wifi-network-diagnostics-server",
+    "${chip_root}/src/app/common:ids",
+    "${chip_root}/src/lib",
+    "${chip_root}/third_party/jsoncpp",
+  ]
+
+  output_dir = root_out_dir
+}
+
+group("linux") {
+  deps = [ ":chip-silabs-lighting-app" ]
+}
+
+group("default") {
+  deps = [ ":linux" ]
+}

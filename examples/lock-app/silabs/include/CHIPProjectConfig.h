@@ -59,7 +59,9 @@
  *
  * 0x8006: example lock app
  */
+#ifndef CHIP_DEVICE_CONFIG_DEVICE_PRODUCT_ID
 #define CHIP_DEVICE_CONFIG_DEVICE_PRODUCT_ID 0x8006
+#endif
 
 /**
  * CHIP_DEVICE_CONFIG_ENABLE_CHIPOBLE
@@ -101,7 +103,9 @@
  *  needs (e.g. sleeping period) using Service Discovery TXT record CRA key.
  *
  */
+#ifndef CHIP_CONFIG_MRP_LOCAL_ACTIVE_RETRY_INTERVAL
 #define CHIP_CONFIG_MRP_LOCAL_ACTIVE_RETRY_INTERVAL (2000_ms32)
+#endif
 
 namespace SilabsDoorLockConfig {
 namespace ResourceRanges {
@@ -122,21 +126,27 @@ static constexpr uint8_t kNumCredentialTypes         = 6;
  *
  * If enabled, door-lock-server will use a local buffer for stored data to be copied into.
  */
+#ifndef DOOR_LOCK_USE_LOCAL_BUFFER
 #define DOOR_LOCK_USE_LOCAL_BUFFER 1
+#endif
 
 /**
  * DOOR_LOCK_CREDENTIAL_BUFFER_LENGTH
  *
  * A size, in bytes, of an individual credential.
  */
-
+#ifndef DOOR_LOCK_CREDENTIAL_BUFFER_LENGTH
 #define DOOR_LOCK_CREDENTIAL_BUFFER_LENGTH SilabsDoorLockConfig::ResourceRanges::kMaxCredentialSize
+#endif
+
 /**
  * DOOR_LOCK_USER_CREDENTIALS_BUFFER_LENGTH
  *
  * Number of CredentialStructs attached to a user.
  */
+#ifndef DOOR_LOCK_USER_CREDENTIALS_BUFFER_LENGTH
 #define DOOR_LOCK_USER_CREDENTIALS_BUFFER_LENGTH SilabsDoorLockConfig::ResourceRanges::kMaxCredentialsPerUser
+#endif
 
 // Enable `Extension` attribute of ACL Cluster as required by door locks
 #ifndef CHIP_CONFIG_ENABLE_ACL_EXTENSIONS
@@ -144,4 +154,6 @@ static constexpr uint8_t kNumCredentialTypes         = 6;
 #endif
 
 // Route shared platform callbacks through CustomerAppTask
+#ifndef CHIP_SILABS_APP_USE_CUSTOMER_APP_TASK
 #define CHIP_SILABS_APP_USE_CUSTOMER_APP_TASK
+#endif

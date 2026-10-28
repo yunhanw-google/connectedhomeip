@@ -42,6 +42,7 @@ static_library("transport") {
     "SessionDelegate.h",
     "SessionHolder.cpp",
     "SessionHolder.h",
+    "SessionKeylog.h",
     "SessionManager.cpp",
     "SessionManager.h",
     "SessionMessageCounter.h",
@@ -80,5 +81,10 @@ static_library("transport") {
   }
   if (chip_enable_transport_pw_trace) {
     public_deps += [ "$dir_pw_trace" ]
+  }
+  if (chip_enable_session_keylog) {
+    assert(chip_target_style == "unix",
+           "chip_enable_session_keylog needs a hosted (unix) target")
+    sources += [ "SessionKeylog.cpp" ]
   }
 }

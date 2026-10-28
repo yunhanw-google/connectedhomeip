@@ -549,6 +549,8 @@ public:
     void TestReadHandler();
     void TestReadHandlerInvalidAttributePath();
     void TestReadHandlerInvalidSubscribeRequest();
+    void TestReadHandler_LossyChunkedReportHoldsHandlerRetryGetsBusy();
+    void TestReadHandler_LossyChunkedReportHoldsHandlerIdealControl();
     void TestReadHandlerMalformedReadRequest1();
     void TestReadHandlerMalformedReadRequest2();
     void TestReadHandlerMalformedSubscribeRequest();
@@ -5667,5 +5669,130 @@ void TestReadInteraction::TestSubscriptionReportWithDefunctSession()
     EXPECT_SUCCESS(CreateSessionAliceToBob());
 }
 
+TEST_F_FROM_FIXTURE_NO_BODY(TestReadInteraction, TestReadHandler_LossyChunkedReportHoldsHandlerRetryGetsBusy)
+TEST_F_FROM_FIXTURE_NO_BODY(TestReadInteractionSync, TestReadHandler_LossyChunkedReportHoldsHandlerRetryGetsBusy)
+void TestReadInteraction::TestReadHandler_LossyChunkedReportHoldsHandlerRetryGetsBusy()
+{
+    Messaging::ReliableMessageMgr * rm = GetExchangeManager().GetReliableMessageMgr();
+    EXPECT_EQ(rm->TestGetCountRetransTable(), 0);
+
+    MockInteractionModelApp delegate1;
+    auto * engine = chip::app::InteractionModelEngine::GetInstance();
+    EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
+
+    // Force handler quota enforcement (limit the number of parallel read requests per fabric to 1)
+    engine->SetForceHandlerQuota(true);
+    engine->SetHandlerCapacityForReads(1);
+    engine->SetPathPoolCapacityForReads(2);
+
+    // Use a large attribute to force chunked report (server will wait for StatusResponse).
+    chip::app::AttributePathParams attributePathParams[1];
+    attributePathParams[0].mEndpointId  = chip::Testing::kMockEndpoint3;
+    attributePathParams[0].mClusterId   = chip::Testing::MockClusterId(2);
+    attributePathParams[0].mAttributeId = chip::Testing::MockAttributeId(4);
+
+    ReadPrepareParams readPrepareParams(GetSessionBobToAlice());
+    readPrepareParams.mpAttributePathParamsList    = attributePathParams;
+    readPrepareParams.mAttributePathParamsListSize = 1;
+
+    app::ReadClient readClient1(engine, &GetExchangeManager(), delegate1, chip::app::ReadClient::InteractionType::Read);
+
+    // Event trace setup:
+    // 1. Client -> Server: ReadRequest (allow)
+    // 2. Server -> Client: ReportData chunk 1 (drop)
+    // Server ReadHandler remains alive in mReadHandlers waiting for StatusResponse or MRP ACK.
+    GetLoopback().mSentMessageCount                 = 0;
+    GetLoopback().mNumMessagesToDrop                = 1;
+    GetLoopback().mNumMessagesToAllowBeforeDropping = 1;
+    GetLoopback().mDroppedMessageCount              = 0;
+
+    EXPECT_EQ(readClient1.SendRequest(readPrepareParams), CHIP_NO_ERROR);
+    DrainAndServiceIO();
+
+    // Verify exactly one message was dropped (the ReportData chunk).
+    EXPECT_EQ(GetLoopback().mDroppedMessageCount, 1u);
+
+    // Because the ReportData was dropped, the server never received a StatusResponse or ACK,
+    // so the ReadHandler is still held alive.
+    EXPECT_EQ(engine->GetNumActiveReadHandlers(ReadHandler::InteractionType::Read), 1u);
+
+    // Now issue a second read from the same fabric. It should get BUSY since quota is 1 and 1 is active.
+    MockInteractionModelApp delegate2;
+    app::ReadClient readClient2(engine, &GetExchangeManager(), delegate2, chip::app::ReadClient::InteractionType::Read);
+
+    GetLoopback().mNumMessagesToDrop = 0; // Stop dropping for the second client's interaction
+
+    EXPECT_EQ(readClient2.SendRequest(readPrepareParams), CHIP_NO_ERROR);
+    DrainAndServiceIO();
+
+    // The second read client should receive a Busy status!
+    EXPECT_EQ(delegate2.mError, CHIP_IM_GLOBAL_STATUS(Busy));
+
+    // Cleanup: Expire sessions to clean up the outstanding retransmissions from the first read
+    ExpireSessionAliceToBob();
+    ExpireSessionBobToAlice();
+    DrainAndServiceIO();
+
+    EXPECT_EQ(engine->GetNumActiveReadClients(), 0u);
+    engine->Shutdown();
+    EXPECT_EQ(GetExchangeManager().GetNumActiveExchanges(), 0u);
+    EXPECT_SUCCESS(CreateSessionAliceToBob());
+    EXPECT_SUCCESS(CreateSessionBobToAlice());
+}
+
+TEST_F_FROM_FIXTURE_NO_BODY(TestReadInteraction, TestReadHandler_LossyChunkedReportHoldsHandlerIdealControl)
+TEST_F_FROM_FIXTURE_NO_BODY(TestReadInteractionSync, TestReadHandler_LossyChunkedReportHoldsHandlerIdealControl)
+void TestReadInteraction::TestReadHandler_LossyChunkedReportHoldsHandlerIdealControl()
+{
+    Messaging::ReliableMessageMgr * rm = GetExchangeManager().GetReliableMessageMgr();
+    EXPECT_EQ(rm->TestGetCountRetransTable(), 0);
+
+    MockInteractionModelApp delegate1;
+    auto * engine = chip::app::InteractionModelEngine::GetInstance();
+    EXPECT_EQ(engine->Init(&GetExchangeManager(), &GetFabricTable(), gReportScheduler), CHIP_NO_ERROR);
+
+    // Force handler quota enforcement (limit the number of parallel read requests per fabric to 1)
+    engine->SetForceHandlerQuota(true);
+    engine->SetHandlerCapacityForReads(1);
+    engine->SetPathPoolCapacityForReads(2);
+
+    // Use a large attribute to force chunked report.
+    chip::app::AttributePathParams attributePathParams[1];
+    attributePathParams[0].mEndpointId  = chip::Testing::kMockEndpoint3;
+    attributePathParams[0].mClusterId   = chip::Testing::MockClusterId(2);
+    attributePathParams[0].mAttributeId = chip::Testing::MockAttributeId(4);
+
+    ReadPrepareParams readPrepareParams(GetSessionBobToAlice());
+    readPrepareParams.mpAttributePathParamsList    = attributePathParams;
+    readPrepareParams.mAttributePathParamsListSize = 1;
+
+    app::ReadClient readClient1(engine, &GetExchangeManager(), delegate1, chip::app::ReadClient::InteractionType::Read);
+
+    // Ideal negative control: ZERO drops.
+    // Client -> Server: ReadRequest
+    // Server -> Client: ReportData chunks ... Client -> Server: StatusResponse ...
+    GetLoopback().mSentMessageCount                 = 0;
+    GetLoopback().mNumMessagesToDrop                = 0;
+    GetLoopback().mNumMessagesToAllowBeforeDropping = 0;
+    GetLoopback().mDroppedMessageCount              = 0;
+
+    EXPECT_EQ(readClient1.SendRequest(readPrepareParams), CHIP_NO_ERROR);
+    DrainAndServiceIO();
+
+    // With zero drops, the handler successfully completes the chunked transfer and frees itself.
+    EXPECT_EQ(engine->GetNumActiveReadHandlers(ReadHandler::InteractionType::Read), 0u);
+
+    // Now issue a second read from the same fabric. It should SUCCEED since quota is 1 and 0 are active.
+    MockInteractionModelApp delegate2;
+    app::ReadClient readClient2(engine, &GetExchangeManager(), delegate2, chip::app::ReadClient::InteractionType::Read);
+
+    EXPECT_EQ(readClient2.SendRequest(readPrepareParams), CHIP_NO_ERROR);
+    DrainAndServiceIO();
+
+    // The second read client should have succeeded with NO_ERROR.
+    EXPECT_EQ(delegate2.mError, CHIP_NO_ERROR);
+
+    engine->Shutdown();
+}
 } // namespace app
 } // namespace chip

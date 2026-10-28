@@ -16,6 +16,7 @@ limitations under the License.
 """
 
 import logging
+import os
 import shlex
 import sys
 
@@ -85,12 +86,22 @@ class TestCommissioner(CHIPVirtualHome):
         req_ids = [device['id'] for device in self.non_ap_devices
                    if device['type'] == 'MobileDevice']
 
+        gdb_wrapper = 'gdb -batch -return-child-result -q -ex "set pagination off" -ex run -ex "thread apply all bt" --args'
+        if os.environ.get("CIRQUE_COVERAGE") == "1":
+            gdb_wrapper = ""
+
+        sleepy_env = ""
+        if os.environ.get("CHIP_CIRQUE_SLEEPY_RADIO_GATE") == "1":
+            sleepy_env = "CHIP_CIRQUE_SLEEPY_RADIO_GATE=1 "
+
         for server in server_ids:
-            self.execute_device_cmd(
-                server,
-                f'CHIPCirqueDaemon.py -- run gdb -batch -return-child-result -q -ex "set pagination off" -ex run '
-                f'-ex "thread apply all bt" --args {LIT_ICD_APP_ESC} --thread --discriminator {TEST_DISCRIMINATOR} '
-                f'--enable-key {TEST_EVENT_KEY_HEX}')
+            cmd = (
+                f'{sleepy_env}CHIPCirqueDaemon.py -- run {gdb_wrapper} '
+                f'{LIT_ICD_APP_ESC} --thread '
+                f'--discriminator {TEST_DISCRIMINATOR} '
+                f'--enable-key {TEST_EVENT_KEY_HEX}'
+            )
+            self.execute_device_cmd(server, cmd)
 
         self.reset_thread_devices(server_ids)
 
@@ -105,6 +116,12 @@ class TestCommissioner(CHIPVirtualHome):
 
         self.assertEqual(ret['return_code'], '0',
                          "Test failed: non-zero return code")
+
+    def wake_up_icd_device(self, server_id, pipe_path="/tmp/chip_icd_fifo"):
+        """Sends a wake-up command via named pipe to the sleepy LIT ICD app."""
+        payload = '{\\"Name\\": \\"TriggerActiveMode\\"}'
+        cmd = f'sh -c "echo \'{payload}\' > {pipe_path}"'
+        return self.execute_device_cmd(server_id, cmd)
 
 
 if __name__ == "__main__":

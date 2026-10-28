@@ -29,6 +29,9 @@ from urllib.parse import urljoin
 import requests
 
 
+DEFAULT_REQUEST_TIMEOUT_SEC = 300
+
+
 class TestResult(IntEnum):
     OK = 0
     TEST_FAILURE = 1
@@ -87,17 +90,42 @@ class CHIPVirtualHome:
             traceback.print_exc(file=sys.stderr)
         return test_ret
 
-    def query_api(self, end_point, args=[], binary=False):
-        ret = requests.get(self._build_request_url(end_point, args))
+    def query_api(
+            self, end_point, args=[], binary=False, params=None,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SEC):
+        if isinstance(binary, dict) and params is None:
+            params = binary
+            binary = False
+        ret = requests.get(
+            self._build_request_url(end_point, args),
+            params=params,
+            timeout=timeout,
+        )
         if binary:
             return ret.content
+        if not ret.text.strip():
+            self.logger.warning(
+                "query_api %s returned empty response (status=%d)",
+                end_point, ret.status_code,
+            )
+            return {}
         return ret.json()
 
-    def execute_device_cmd(self, device_id, cmd, stream=False):
-        self.logger.info("device: %s exec: %s", self.get_device_pretty_id(device_id), cmd)
-        ret = requests.get(self._build_request_url('device_cmd', [self.home_id, device_id, cmd]),
-                           params={'stream': stream},
-                           stream=stream)
+    def execute_device_cmd(self, device_id, cmd, stream=False, timeout=None):
+        self.logger.info(
+            "device: %s exec: %s", self.get_device_pretty_id(device_id), cmd
+        )
+        req_timeout = timeout if timeout is not None else (
+            (10.0, None) if stream else DEFAULT_REQUEST_TIMEOUT_SEC
+        )
+        ret = requests.get(
+            self._build_request_url(
+                'device_cmd', [self.home_id, device_id, cmd]
+            ),
+            params={'stream': stream},
+            stream=stream,
+            timeout=req_timeout,
+        )
         if stream:
             return ret
 
@@ -275,7 +303,7 @@ class CHIPVirtualHome:
             if self.sequenceMatch(self.get_device_log(device_id).decode(), [pattern]):
                 return True
             if time.time() < due:
-                time.sleep(1)
+                time.sleep(0.2)
             else:
                 break
         return False
@@ -286,16 +314,34 @@ class CHIPVirtualHome:
         assert(Not)Equal
         python unittest style functions that raise exceptions when condition not met
         '''
-        if exp is not True:
+        if not bool(exp):
             if note:
                 self.logger.error(note)
-            raise AssertionError
+            raise AssertionError(note or "Expected True but got {}".format(exp))
 
     def assertFalse(self, exp, note=None):
-        if exp is not False:
+        if bool(exp):
             if note:
                 self.logger.error(note)
-            raise AssertionError
+            raise AssertionError(
+                note or "Expected False but got {}".format(exp)
+            )
+
+    def assertIn(self, member, container, note=None):
+        if member not in container:
+            if note:
+                self.logger.error(note)
+            raise AssertionError(
+                note or "Expected {} in {}".format(member, container)
+            )
+
+    def assertNotIn(self, member, container, note=None):
+        if member in container:
+            if note:
+                self.logger.error(note)
+            raise AssertionError(
+                note or "Expected {} not in {}".format(member, container)
+            )
 
     def assertEqual(self, val1, val2, note=None):
         if val1 != val2:
@@ -315,12 +361,50 @@ class CHIPVirtualHome:
         return urljoin(self.cirque_url, "{}/{}".format(end_point, '/'.join([str(argv) for argv in args])))
 
     def destroy_home(self):
+        if not getattr(self, 'home_id', None):
+            self.logger.info("destroy_home: no home_id to destroy")
+            return
         self.logger.info("destroying home: %s", self.home_id)
         self.query_api('destroy_home', [self.home_id])
 
     def initialize_home(self):
-        home_id = requests.post(
-            self._build_request_url('create_home'), json=self.device_config).json()
+        create_url = self._build_request_url('create_home')
+        home_id = None
+        last_error = None
+        for attempt in range(3):
+            try:
+                resp = requests.post(
+                    create_url,
+                    json=self.device_config,
+                    timeout=DEFAULT_REQUEST_TIMEOUT_SEC,
+                )
+                if not resp.text.strip():
+                    self.logger.warning(
+                        "create_home attempt %d returned empty body"
+                        " (status=%d)",
+                        attempt + 1, resp.status_code,
+                    )
+                    time.sleep(1.0)
+                    continue
+                home_id = resp.json()
+                break
+            except Exception as e:
+                last_error = e
+                status_code = getattr(
+                    resp, 'status_code', None
+                ) if 'resp' in locals() else None
+                body_sample = getattr(
+                    resp, 'text', ''
+                )[:200] if 'resp' in locals() else ''
+                self.logger.warning(
+                    "create_home attempt %d failed: %s (status=%s, body=%r)",
+                    attempt + 1, e, status_code, body_sample,
+                )
+                time.sleep(1.0)
+        if not home_id:
+            raise RuntimeError(
+                f"create_home failed after 3 attempts: {last_error}"
+            )
 
         self.logger.info("home id: %s created!", home_id)
 
@@ -349,17 +433,93 @@ class CHIPVirtualHome:
 
         self.device_ids = list(self.device_config)
         self.non_ap_devices = [device for device in self.device_config.values()
-                               if device['type'] != 'wifi_ap']
-        self.thread_devices = [device for device in self.device_config.values()
-                               if device['capability'].get('Thread', None) is not None]
+                               if device['type'] not in ('wifi_ap', 'APWifi')]
+        self.thread_devices = [
+            device for device in self.device_config.values()
+            if (
+                isinstance(device.get('capability'), dict)
+                and device['capability'].get('Thread') is not None
+            )
+            or (
+                isinstance(device.get('capability'), (list, tuple, set))
+                and 'Thread' in device['capability']
+            )
+        ]
         self.ap_devices = [device for device in self.device_config.values()
-                           if device['type'] == 'wifi_ap']
+                           if device['type'] in ('wifi_ap', 'APWifi')]
+
+    def _save_thread_network_keys(self, log_dir):
+        out_dir = os.environ.get("CIRQUE_PCAP_DIR") or log_dir
+        if not out_dir or not os.path.isdir(out_dir):
+            return
+        candidates = list(getattr(self, "thread_devices", []) or [])
+        seen_ids = {d.get("id") for d in candidates if isinstance(d, dict)}
+        for dev in getattr(self, "non_ap_devices", []) or []:
+            if isinstance(dev, dict) and dev.get("id") not in seen_ids:
+                if dev.get("type") == "ThreadBorderRouter" or "Thread" in str(
+                    dev.get("capability", "")
+                ):
+                    candidates.append(dev)
+                    seen_ids.add(dev.get("id"))
+        if not candidates:
+            return
+        try:
+            from cirque.pcap.thread_keys import (
+                DEFAULT_OT_DATASET_TLVS_HEX,
+                DEFAULT_OT_NETWORK_KEY,
+                THREAD_KEY_FILE,
+                parse_ot_ctl_output,
+                write_thread_key_files,
+            )
+        except ImportError:
+            return
+
+        parsed = {}
+        for dev in candidates:
+            dev_id = dev.get("id") if isinstance(dev, dict) else None
+            if not dev_id:
+                continue
+            try:
+                res = self.execute_device_cmd(
+                    dev_id,
+                    'sh -c "ot-ctl dataset active -x 2>/dev/null; '
+                    'ot-ctl dataset active 2>/dev/null; '
+                    'ot-ctl networkkey 2>/dev/null"',
+                )
+                raw_out = res.get("output", "") if isinstance(res, dict) else ""
+                info = parse_ot_ctl_output(raw_out)
+                if info.get("network_key"):
+                    parsed = info
+                    break
+            except Exception:
+                continue
+
+        try:
+            if parsed.get("network_key"):
+                write_thread_key_files(
+                    out_dir,
+                    network_key=parsed["network_key"],
+                    pan_id=parsed.get("pan_id"),
+                    ext_pan_id=parsed.get("ext_pan_id", ""),
+                    channel=parsed.get("channel"),
+                    dataset_tlvs_hex=parsed.get("dataset_tlvs_hex", ""),
+                )
+            elif not os.path.exists(os.path.join(out_dir, THREAD_KEY_FILE)):
+                write_thread_key_files(
+                    out_dir,
+                    network_key=DEFAULT_OT_NETWORK_KEY,
+                    dataset_tlvs_hex=DEFAULT_OT_DATASET_TLVS_HEX,
+                )
+        except (OSError, ValueError) as exc:
+            self.logger.warning("Failed to save Thread network keys: %s", exc)
 
     def save_device_logs(self):
         timestamp = int(time.time())
         log_dir = os.environ.get("DEVICE_LOG_DIR")
         if log_dir is not None and not os.path.exists(log_dir):
             os.makedirs("logs")
+
+        self._save_thread_network_keys(log_dir)
 
         for device in self.non_ap_devices:
             ret_log = self.get_device_log(device['id'])

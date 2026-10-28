@@ -23,6 +23,19 @@ etc.) to assist with development and code review in the Matter repository.
 -   **Triggers**: Use when building and testing Matter example applications and
     using `chip-tool` for local commissioning and cluster interaction.
 
+### Cirque Virtual Testing
+
+-   **Location**: `.agents/skills/cirque-virtual-testing/`
+-   **Purpose**: End-to-end Matter virtual home testing, Android
+    BLE+Wi-Fi/Thread commissioning, Sleepy LIT ICD radio-gating, decrypted wire
+    flow visualization, and LCOV coverage collection using Cirque.
+-   **Triggers**: Use when orchestrating end-to-end Matter virtual home tests
+    with Cirque, running Android BLE+Thread or BLE+Wi-Fi commissioning, testing
+    Sleepy LIT ICD radio-gating, generating decrypted Matter wire flow
+    visualizations, or collecting LCOV code coverage across Cirque virtual
+    tests. Don't use for non-Matter protocol-agnostic Cirque RF development; use
+    `cirque-virtual-home` in `third_party/cirque/repo` instead.
+
 ### Code-Driven Cluster Development
 
 -   **Location**: `.agents/skills/code-driven-cluster-development/`

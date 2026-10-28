@@ -16,6 +16,7 @@ import("//build_overrides/build.gni")
 import("//build_overrides/chip.gni")
 import("${build_root}/config/compiler/compiler.gni")
 
+import("${chip_root}/src/app/icd/icd.gni")
 import("${chip_root}/src/lib/lib.gni")
 import("${chip_root}/src/platform/device.gni")
 
@@ -201,7 +202,20 @@ group("linux") {
   if (is_libfuzzer) {
     deps += [ ":chip-all-clusters-app-fuzzing" ]
   } else {
-    deps += [ ":chip-all-clusters-app" ]
+    deps += [
+      ":chip-all-clusters-app",
+      "${chip_root}/examples/lighting-app/silabs/linux:chip-silabs-lighting-app",
+    ]
+
+    # The Silabs LIT ICD and Lock apps need the ICD server, so only reference
+    # them from builds that enable it (the ARM32 Cirque build). Referencing them
+    # here is what makes the targets exist under this GN root.
+    if (chip_enable_icd_server) {
+      deps += [
+        "${chip_root}/examples/lit-icd-app/silabs/linux:chip-silabs-lit-icd-app",
+        "${chip_root}/examples/lock-app/silabs/linux:chip-silabs-lock-app",
+      ]
+    }
   }
 }
 

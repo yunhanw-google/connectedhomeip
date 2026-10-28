@@ -23,6 +23,10 @@
 
 #pragma once
 
+#if defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI
+#include <platform/silabs/BLEManagerImpl.h>
+#else
+
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -174,7 +178,7 @@ private:
     // ===== Members that implement virtual methods on BleConnectionDelegate.
 
     void NewConnection(BleLayer * bleLayer, void * appState, const SetupDiscriminator & connDiscriminator) override;
-    void NewConnection(BleLayer * bleLayer, void * appState, BLE_CONNECTION_OBJECT connObj) override{};
+    void NewConnection(BleLayer * bleLayer, void * appState, BLE_CONNECTION_OBJECT connObj) override {};
     CHIP_ERROR CancelConnection() override;
 
     // ===== Members that implement virtual methods on ChipDeviceScannerDelegate
@@ -290,3 +294,5 @@ inline bool BLEManagerImpl::_IsAdvertising()
 } // namespace Internal
 } // namespace DeviceLayer
 } // namespace chip
+
+#endif // CHIP_LINUX_USE_SILABS_BLE_WIFI

@@ -24,6 +24,10 @@
 
 #pragma once
 
+#if defined(CHIP_LINUX_USE_SILABS_BLE_WIFI) && CHIP_LINUX_USE_SILABS_BLE_WIFI
+#include <platform/silabs/BlePlatformConfig.h>
+#else
+
 namespace chip {
 namespace DeviceLayer {
 namespace Internal {
@@ -39,3 +43,4 @@ class BluezConnection;
 // ========== Platform-specific Configuration Overrides =========
 
 /* none so far */
+#endif // CHIP_LINUX_USE_SILABS_BLE_WIFI

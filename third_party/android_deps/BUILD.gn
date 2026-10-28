@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# === This BUILD file is auto-generated, modify the GnBuildGenerator task instead of editing this file manually. ===
+# === This BUILD file is auto-generated, modify the GnBuildGenerator task
+# instead of editing this file manually. ===
 
 import("//build_overrides/chip.gni")
 import("${chip_root}/build/chip/java/rules.gni")
