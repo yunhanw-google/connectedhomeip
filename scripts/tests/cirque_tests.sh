@@ -21,7 +21,7 @@
 # Optional environment variables:
 #   CIRQUE_ENABLE_ANDROID_TESTS: Set to 1 (default) to include Android emulator
 #     tests (AndroidBleWiFiMobileDeviceTest, AndroidBleWiFiSilabsLightingTest,
-#     AndroidBleThreadMobileDeviceTest, AndroidBleThreadSilabsLitIcdTest) in
+#     AndroidBleThreadMobileDeviceTest, AndroidBleThreadSilabsLitIcdTest, AndroidTvCastingTest) in
 #     run_all_tests, or 0 to skip.
 #     Requires KVM and cirque-android-runner.
 
@@ -51,6 +51,7 @@ OT_SIMULATION_CACHE_STAMP_FILE="$CIRQUE_CACHE_PATH/ot-simulation.commit"
 #   internal data model methods (for example it says "CommandExists" for
 #   paths where endpoint/cluster do not)
 CIRQUE_TESTS=(
+    "TvCastingTest"
     "EchoTest"
     "EchoOverTcpTest"
     "FailsafeTest"
@@ -70,6 +71,7 @@ CIRQUE_TESTS=(
 )
 
 CIRQUE_ANDROID_TESTS=(
+    "AndroidTvCastingTest"
     "AndroidBleWiFiMobileDeviceTest"
     "AndroidBleWiFiSilabsLightingTest"
     "AndroidBleThreadMobileDeviceTest"
