@@ -371,6 +371,8 @@ CHIP_ERROR LayerImplSelect::RequestCallbackOnPendingRead(SocketWatchToken token)
         ev_io_modify(&watch->mIoWatcher, evs);
         ev_io_start(mLibEvLoopP, &watch->mIoWatcher);
     }
+#else
+    Signal();
 #endif // CHIP_SYSTEM_CONFIG_USE_LIBEV
 
     return CHIP_NO_ERROR;
@@ -401,6 +403,8 @@ CHIP_ERROR LayerImplSelect::RequestCallbackOnPendingWrite(SocketWatchToken token
         ev_io_modify(&watch->mIoWatcher, evs);
         ev_io_start(mLibEvLoopP, &watch->mIoWatcher);
     }
+#else
+    Signal();
 #endif // CHIP_SYSTEM_CONFIG_USE_LIBEV
 
     return CHIP_NO_ERROR;

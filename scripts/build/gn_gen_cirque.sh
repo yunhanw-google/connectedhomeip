@@ -102,3 +102,9 @@ if command -v ccache >/dev/null 2>&1; then
     ccache --show-stats || true
 fi
 
+
+echo "Build: Build tv-app and tv-casting-app"
+gn --root="$CHIP_ROOT/examples/tv-app/linux" gen out/debug/tv-app --args="${ALL_CLUSTERS_ARGS[*]} chip_crypto=\"mbedtls\""
+ninja -C out/debug/tv-app
+gn --root="$CHIP_ROOT/examples/tv-casting-app/linux" gen out/debug/tv-casting-app --args="${ALL_CLUSTERS_ARGS[*]} chip_crypto=\"mbedtls\""
+ninja -C out/debug/tv-casting-app

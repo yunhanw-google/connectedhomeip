@@ -106,6 +106,159 @@ jobs:
                   if-no-files-found: error
                   overwrite: true
 
+    build_android_tv_server:
+        name: Build Android x64 TvServer
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 90
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: android
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap Android
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh -p all,android \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: Android Build Cache
+              id: android-build-cache
+              uses: actions/cache@v4
+              with:
+                path: |
+                  .ccache
+                  .gradle-cache
+                key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}
+                restore-keys: cirque-android-tv-server-build-cache-${{ runner.os }}-
+            - name: Build Android x64 TvServer APK
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && export CCACHE_MAXSIZE=\"2G\" \
+                       && export CCACHE_COMPILERCHECK=\"content\" \
+                       && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
+                       && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && if command -v ccache >/dev/null 2>&1; then \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-tv-server build'; \
+                          else \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-server build'; \
+                          fi \
+                       && (ccache --show-stats || true) \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-app \
+                      "
+            - name: Save Android Build Cache
+              if: ${{ always() && !env.ACT && steps.android-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: |
+                  .ccache
+                  .gradle-cache
+                key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}
+            - name: Upload Android x64 TvServer APK
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-android-x64-tv-server-apk
+                  path: |
+                      out/android-x64-tv-server/platform-app/outputs/apk/debug/platform-app-debug.apk
+                      out/android-x64-tv-server/content-app/outputs/apk/debug/content-app-debug.apk
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
+    build_android_tv_casting_app:
+        name: Build Android x64 TvCastingApp
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 90
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: android
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap Android
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh -p all,android \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: Android Build Cache
+              id: android-build-cache
+              uses: actions/cache@v4
+              with:
+                path: |
+                  .ccache
+                  .gradle-cache
+                key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}
+                restore-keys: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-
+            - name: Build Android x64 TvCastingApp APK
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && export CCACHE_MAXSIZE=\"2G\" \
+                       && export CCACHE_COMPILERCHECK=\"content\" \
+                       && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
+                       && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && if command -v ccache >/dev/null 2>&1; then \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-tv-casting-app build'; \
+                          else \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-casting-app build'; \
+                          fi \
+                       && (ccache --show-stats || true) \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-casting-app \
+                      "
+            - name: Save Android Build Cache
+              if: ${{ always() && !env.ACT && steps.android-build-cache.outputs.cache-hit != 'true' }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: |
+                  .ccache
+                  .gradle-cache
+                key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}
+            - name: Upload Android x64 TvCastingApp APK
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-android-x64-tv-casting-app-apk
+                  path: |
+                      out/android-x64-tv-casting-app/outputs/apk/debug/app-debug.apk
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
     build_silabs_arm32:
         name: Build ARM32 Silabs Lighting App
 
@@ -470,7 +623,7 @@ jobs:
                   nproc
                   free -m
                   egrep 'hw.cpu.ncore|hw.ramSize|hw.gpu.mode|image.sysdir' "$ANDROID_AVD_HOME/Pixel_6_API_34.avd/config.ini" || true
-            - name: Wait for parallel Build Android x64 CHIPTool job
+            - name: Wait for parallel Build Android jobs
               if: ${{ !env.ACT }}
               timeout-minutes: 60
               env:
@@ -478,6 +631,9 @@ jobs:
               run: |
                   sudo chown -R "$(id -u):$(id -g)" out || true
                   mkdir -p out/android-x64-chip-tool/outputs/apk/debug
+                  mkdir -p out/android-x64-tv-server/platform-app/outputs/apk/debug
+                  mkdir -p out/android-x64-tv-server/content-app/outputs/apk/debug
+                  mkdir -p out/android-x64-tv-casting-app/outputs/apk/debug
                   python3 - <<'PY'
                   import json
                   import os
@@ -495,48 +651,69 @@ jobs:
                       headers["Authorization"] = f"Bearer {token}"
 
                   deadline = time.time() + 3600
+                  target_jobs = ["Build Android x64 CHIPTool", "Build Android x64 TvServer", "Build Android x64 TvCastingApp"]
+                  
                   while time.time() < deadline:
                       req = urllib.request.Request(url, headers=headers)
                       with urllib.request.urlopen(req, timeout=30) as resp:
                           data = json.loads(resp.read().decode("utf-8"))
-                      jobs = [j for j in data.get("jobs", []) if j.get("name") == "Build Android x64 CHIPTool"]
-                      if not jobs:
-                          print("Waiting for 'Build Android x64 CHIPTool' job to register...", flush=True)
+                      jobs = [j for j in data.get("jobs", []) if j.get("name") in target_jobs]
+                      if len(jobs) < 3:
+                          print("Waiting for all Android build jobs to register...", flush=True)
                           time.sleep(10)
                           continue
-                      job = jobs[-1]
-                      status = job.get("status")
-                      conclusion = job.get("conclusion")
-                      upload_steps = [
-                          s for s in job.get("steps", [])
-                          if s.get("name") == "Upload Android x64 CHIPTool APK"
-                      ]
-                      if upload_steps and upload_steps[-1].get("status") == "completed":
-                          step_conclusion = upload_steps[-1].get("conclusion")
-                          if step_conclusion == "success":
-                              print("Android x64 CHIPTool APK artifact upload completed.", flush=True)
-                              sys.exit(0)
-                          print(f"::error::Upload Android x64 CHIPTool APK step failed: {step_conclusion}", flush=True)
-                          sys.exit(1)
-                      if status == "completed":
-                          if conclusion == "success":
-                              print("Build Android x64 CHIPTool job completed.", flush=True)
-                              sys.exit(0)
-                          print(f"::error::Build Android x64 CHIPTool job finished with conclusion={conclusion}", flush=True)
-                          sys.exit(1)
-                      print(f"Build Android x64 CHIPTool status={status}; sleeping 15s...", flush=True)
+                      
+                      all_completed = True
+                      for job in jobs:
+                          status = job.get("status")
+                          conclusion = job.get("conclusion")
+                          if status != "completed":
+                              all_completed = False
+                              print(f"{job.get('name')} status={status}; sleeping 15s...", flush=True)
+                              break
+                          if conclusion != "success":
+                              print(f"::error::{job.get('name')} job finished with conclusion={conclusion}", flush=True)
+                              sys.exit(1)
+                          
+                          upload_steps = [s for s in job.get("steps", []) if "Upload Android x64" in s.get("name", "")]
+                          if upload_steps:
+                              step_conclusion = upload_steps[-1].get("conclusion")
+                              if step_conclusion != "success":
+                                  print(f"::error::{upload_steps[-1].get('name')} failed: {step_conclusion}", flush=True)
+                                  sys.exit(1)
+                                  
+                      if all_completed:
+                          print("All Android build jobs completed.", flush=True)
+                          sys.exit(0)
                       time.sleep(15)
-                  print("::error::Timed out waiting for Build Android x64 CHIPTool job", flush=True)
+                      
+                  print("::error::Timed out waiting for Android build jobs", flush=True)
                   sys.exit(1)
                   PY
                   sudo chown -R "$(id -u):$(id -g)" out || true
                   mkdir -p out/android-x64-chip-tool/outputs/apk/debug
+                  mkdir -p out/android-x64-tv-server/platform-app/outputs/apk/debug
+                  mkdir -p out/android-x64-tv-server/content-app/outputs/apk/debug
+                  mkdir -p out/android-x64-tv-casting-app/outputs/apk/debug
             - name: Download Android x64 CHIPTool APK
               if: ${{ !env.ACT }}
               uses: actions/download-artifact@v8
               with:
                   name: cirque-android-x64-chip-tool-apk
                   path: out/android-x64-chip-tool
+            - name: Download Android x64 TvServer APK
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
+              with:
+                  name: cirque-android-x64-tv-server-apk
+                  path: out/android-x64-tv-server
+            - name: Download Android x64 TvCastingApp APK
+              # A single-file artifact is stored without its directories.
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
+              with:
+                  name: cirque-android-x64-tv-casting-app-apk
+                  path: out/android-x64-tv-casting-app/outputs/apk/debug
             - name: Build Android x64 CHIPTool APK (Local ACT fallback)
               if: ${{ env.ACT }}
               run: |
@@ -560,7 +737,53 @@ jobs:
             - name: Verify Android x64 CHIPTool APK
               run: |
                   test -s out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
-                  ls -lh out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
+            - name: Build Android x64 TvServer APK (Local ACT fallback)
+              if: ${{ env.ACT }}
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && export CCACHE_MAXSIZE=\"2G\" \
+                       && export CCACHE_COMPILERCHECK=\"content\" \
+                       && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
+                       && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && if command -v ccache >/dev/null 2>&1; then \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-tv-server build'; \
+                          else \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-server build'; \
+                          fi \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-app \
+                      "
+            - name: Verify Android x64 TvServer APK
+              run: |
+                  test -s out/android-x64-tv-server/platform-app/outputs/apk/debug/platform-app-debug.apk
+                  test -s out/android-x64-tv-server/content-app/outputs/apk/debug/content-app-debug.apk
+            - name: Build Android x64 TvCastingApp APK (Local ACT fallback)
+              if: ${{ env.ACT }}
+              run: |
+                  integrations/docker/images/stage-3/chip-build-android/run.sh \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && export CCACHE_DIR=\"\$PWD/.ccache\" \
+                       && export CCACHE_MAXSIZE=\"2G\" \
+                       && export CCACHE_COMPILERCHECK=\"content\" \
+                       && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
+                       && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
+                       && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && if command -v ccache >/dev/null 2>&1; then \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-tv-casting-app build'; \
+                          else \
+                            ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-casting-app build'; \
+                          fi \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-casting-app \
+                      "
+            - name: Verify Android x64 TvCastingApp APK
+              run: |
+                  test -s out/android-x64-tv-casting-app/outputs/apk/debug/app-debug.apk
             - name: Wait for parallel ARM32 Silabs build jobs
               if: ${{ !env.ACT }}
               timeout-minutes: 60
