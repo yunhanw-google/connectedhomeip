@@ -66,6 +66,11 @@
             android:name=".clusterclient.OtaTransferService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <receiver android:name=".CoverageReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.chip.chiptool.DUMP_COVERAGE" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <queries>

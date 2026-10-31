@@ -39,6 +39,11 @@
             </intent-filter>
         </receiver>
 
+        <receiver android:name=".CoverageReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.contentapp.DUMP_COVERAGE" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

@@ -526,3 +526,36 @@ JNI_METHOD(void, setServiceResolveListener)
         return;
     }
 }
+
+#if defined(__clang__)
+extern "C" __attribute__((weak)) int __llvm_profile_write_file(void);
+extern "C" __attribute__((weak)) void __llvm_profile_set_filename(const char *);
+extern "C" __attribute__((weak)) uint64_t __llvm_profile_get_size_for_buffer(void);
+extern "C" __attribute__((weak)) int __llvm_profile_write_buffer(char *);
+#endif
+
+JNI_METHOD(void, nativeFlushCoverageProfile)(JNIEnv * env, jclass /* clazz */, jstring profilePath)
+{
+#if defined(__clang__)
+    if (__llvm_profile_set_filename && __llvm_profile_write_file)
+    {
+        const char * path = env->GetStringUTFChars(profilePath, nullptr);
+        __llvm_profile_set_filename(path);
+        uint64_t size = __llvm_profile_get_size_for_buffer();
+        char * buf = new char[size];
+        int rc = __llvm_profile_write_buffer(buf);
+        if (rc == 0) {
+            FILE * f = fopen(path, "w");
+            if (f) {
+                fwrite(buf, 1, size, f);
+                fclose(f);
+            } else {
+                rc = -1;
+            }
+        }
+        delete[] buf;
+        ChipLogProgress(DeviceLayer, "Flushed LLVM coverage profile to %s, rc=%d", path, rc);
+        env->ReleaseStringUTFChars(profilePath, path);
+    }
+#endif
+}

@@ -18,6 +18,30 @@
 package chip.platform;
 
 public final class AndroidChipPlatform {
+  public static native void nativeFlushCoverageProfile(String profilePath);
+
+  public static void flushCoverageProfile(android.content.Context context) {
+      try {
+          String[] libs = {"CHIPController", "TvCastingApp", "TvApp"};
+          for (String lib : libs) {
+              try {
+                  System.loadLibrary(lib);
+              } catch (UnsatisfiedLinkError e) {}
+          }
+          java.io.File tmp = new java.io.File(context.getFilesDir(), "coverage.profraw.tmp");
+          java.io.File out = new java.io.File(context.getFilesDir(), "coverage.profraw");
+          if (tmp.exists()) tmp.delete();
+          android.system.Os.setenv("LLVM_PROFILE_FILE", tmp.getAbsolutePath(), true);
+          nativeFlushCoverageProfile(tmp.getAbsolutePath());
+          if (tmp.exists() && tmp.length() > 0) {
+              tmp.renameTo(out);
+          }
+      } catch (Throwable t) {
+          android.util.Log.w("AndroidChipPlatform", "Coverage flush skipped", t);
+      }
+  }
+
+
   private BleManager mBleManager = null;
   private NfcCommissioningManager mNfcCommissioningManager = null;
 

@@ -1,6 +1,7 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-parcelize'
+apply plugin: 'jacoco'
 
 def enableGms = !project.hasProperty('matterEnableGms') || matterEnableGms.toBoolean()
 
@@ -46,6 +47,8 @@ android {
     }
 
     buildTypes {
+        debug {
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -155,4 +158,118 @@ dependencies {
 
 repositories {
     mavenCentral()
+}
+
+task jacocoTestReport(type: JacocoReport) {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+    def fileFilter = ['**/R.class', '**/R$*.class', '**/BuildConfig.*', '**/Manifest*.*', '**/*Test*.*', 'android/**/*.*']
+    def debugTree = fileTree(dir: "${buildDir}/intermediates/javac/debug/classes", excludes: fileFilter)
+    def kotlinTree = fileTree(dir: "${buildDir}/tmp/kotlin-classes/debug", excludes: fileFilter)
+    def mainSrc = "${project.projectDir}/src/main/java"
+    sourceDirectories.from = files([mainSrc])
+    classDirectories.from = files([debugTree, kotlinTree])
+    executionData.from = fileTree(dir: "${project.rootDir}/../../..", includes: [
+            "out/coverage/android/**/*.ec"
+    ])
+}
+configurations { jacocoAnt }
+dependencies {
+    jacocoAnt 'org.jacoco:org.jacoco.ant:0.8.11'
+    if (System.getenv("CIRQUE_COVERAGE") == "1") {
+        implementation 'org.jacoco:org.jacoco.agent:0.8.11:runtime'
+    }
+}
+
+if (System.getenv("CIRQUE_COVERAGE") == "1") {
+    android.sourceSets.debug.resources.srcDir("$buildDir/generated/jacoco_res")
+    afterEvaluate {
+        def generateJacocoProps = tasks.register("generateJacocoProperties") {
+            def resDir = new File("$buildDir/generated/jacoco_res")
+            outputs.dir(resDir)
+            doLast {
+                resDir.mkdirs()
+                new File(resDir, "jacoco-agent.properties").text = "output=none\n"
+            }
+        }
+        if (tasks.findByName('processDebugJavaRes')) {
+            tasks.named('processDebugJavaRes').configure { dependsOn generateJacocoProps }
+        }
+
+
+        if (tasks.findByName('compileDebugJavaWithJavac')) {
+            tasks.named('compileDebugJavaWithJavac').configure {
+                inputs.property("cirqueCoverage", "1")
+                outputs.upToDateWhen { false }
+                def jacocoAntPath = configurations.jacocoAnt.asPath
+                def buildDirStr = buildDir.absolutePath
+                doLast {
+                    ant.taskdef(name: 'jacocoInstrument', classname: 'org.jacoco.ant.InstrumentTask', classpath: jacocoAntPath)
+                    def rawStageDir = new File("$buildDirStr/instrumented/classes_raw")
+                    rawStageDir.deleteDir()
+                    rawStageDir.mkdirs()
+                    def destDir = new File("$buildDirStr/instrumented/classes")
+                    destDir.deleteDir()
+                    destDir.mkdirs()
+                    def classesDir = destinationDirectory.get().asFile
+                    if (classesDir.exists()) {
+                        ant.copy(todir: rawStageDir.absolutePath, overwrite: true) {
+                            fileset(dir: classesDir.absolutePath, excludes: "**/Cluster*Mapping*.class,**/CoverageReceiver*.class,**/*Companion*.class,**/CHIPToolActivity*.class")
+                        }
+                        rawStageDir.eachFileRecurse { f ->
+                            if (f.isFile() && f.name.endsWith(".class")) {
+                                if (new String(f.bytes, 'ISO-8859-1').contains('$jacocoData')) {
+                                    f.delete()
+                                }
+                            }
+                        }
+                        ant.jacocoInstrument(destdir: destDir.absolutePath) {
+                            fileset(dir: rawStageDir.absolutePath)
+                        }
+                        ant.copy(todir: classesDir.absolutePath, overwrite: true, preservelastmodified: false) {
+                            fileset(dir: destDir.absolutePath)
+                        }
+                    }
+                }
+            }
+        }
+        if (tasks.findByName('compileDebugKotlin')) {
+            tasks.named('compileDebugKotlin').configure {
+                inputs.property("cirqueCoverage", "1")
+                outputs.upToDateWhen { false }
+                def jacocoAntPath = configurations.jacocoAnt.asPath
+                def buildDirStr = buildDir.absolutePath
+                doLast {
+                    ant.taskdef(name: 'jacocoInstrument', classname: 'org.jacoco.ant.InstrumentTask', classpath: jacocoAntPath)
+                    def rawStageDir = new File("$buildDirStr/instrumented/kotlin_raw")
+                    rawStageDir.deleteDir()
+                    rawStageDir.mkdirs()
+                    def destDir = new File("$buildDirStr/instrumented/kotlin")
+                    destDir.deleteDir()
+                    destDir.mkdirs()
+                    def classesDir = destinationDirectory.get().asFile
+                    if (classesDir.exists()) {
+                        ant.copy(todir: rawStageDir.absolutePath, overwrite: true) {
+                            fileset(dir: classesDir.absolutePath, excludes: "**/Cluster*Mapping*.class,**/CoverageReceiver*.class,**/*Companion*.class,**/CHIPToolActivity*.class")
+                        }
+                        rawStageDir.eachFileRecurse { f ->
+                            if (f.isFile() && f.name.endsWith(".class")) {
+                                if (new String(f.bytes, 'ISO-8859-1').contains('$jacocoData')) {
+                                    f.delete()
+                                }
+                            }
+                        }
+                        ant.jacocoInstrument(destdir: destDir.absolutePath) {
+                            fileset(dir: rawStageDir.absolutePath)
+                        }
+                        ant.copy(todir: classesDir.absolutePath, overwrite: true, preservelastmodified: false) {
+                            fileset(dir: destDir.absolutePath)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
