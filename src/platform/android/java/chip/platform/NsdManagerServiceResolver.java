@@ -187,6 +187,7 @@ public class NsdManagerServiceResolver implements ServiceResolver {
       if (active.port == port && active.txtAttributes.equals(currentTxt)) {
         active.pendingRemoval = false;
         Log.i(TAG, "publish: Re-using existing registration for " + mapKey);
+        Log.i(TAG, "publish serviceName=" + effectiveServiceName + " type=" + type + " port=" + port);
         return;
       } else {
         nsdManager.unregisterService(active.listener);
@@ -208,8 +209,10 @@ public class NsdManagerServiceResolver implements ServiceResolver {
     }
 
     serviceInfo.setPort(port);
+    Log.i(TAG, "publish serviceName=" + effectiveServiceName + " type=" + serviceInfo.getServiceType() + " port=" + port);
     for (java.util.Map.Entry<String, String> entry : currentTxt.entrySet()) {
       serviceInfo.setAttribute(entry.getKey(), entry.getValue());
+      Log.i(TAG, "     " + entry.getKey() + "=" + entry.getValue());
     }
 
     NsdManager.RegistrationListener registrationListener =
