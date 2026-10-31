@@ -101,6 +101,8 @@ jobs:
                   name: cirque-android-x64-chip-tool-apk
                   path: |
                       out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
+                      out/android-x64-chip-tool/intermediates/javac/debug/classes/
+                      out/android-x64-chip-tool/tmp/kotlin-classes/debug/
                       out/android-x64-chip-tool/lib/jni/x86_64/libCHIPController.so
                   retention-days: 1
                   if-no-files-found: error
@@ -179,6 +181,9 @@ jobs:
                   path: |
                       out/android-x64-tv-server/platform-app/outputs/apk/debug/platform-app-debug.apk
                       out/android-x64-tv-server/content-app/outputs/apk/debug/content-app-debug.apk
+                      out/android-x64-tv-server/platform-app/build/intermediates/javac/debug/classes/
+                      out/android-x64-tv-server/content-app/build/intermediates/javac/debug/classes/
+                      out/android-x64-tv-server/lib/jni/x86_64/libTvApp.so
                   retention-days: 1
                   if-no-files-found: error
                   overwrite: true
@@ -255,6 +260,9 @@ jobs:
                   name: cirque-android-x64-tv-casting-app-apk
                   path: |
                       out/android-x64-tv-casting-app/outputs/apk/debug/app-debug.apk
+                      out/android-x64-tv-casting-app/intermediates/javac/debug/classes/
+                      out/android-x64-tv-casting-app/tmp/kotlin-classes/debug/
+                      out/android-x64-tv-casting-app/lib/jni/x86_64/libTvCastingApp.so
                   retention-days: 1
                   if-no-files-found: error
                   overwrite: true
@@ -713,7 +721,7 @@ jobs:
               uses: actions/download-artifact@v8
               with:
                   name: cirque-android-x64-tv-casting-app-apk
-                  path: out/android-x64-tv-casting-app/outputs/apk/debug
+                  path: out/android-x64-tv-casting-app
             - name: Build Android x64 CHIPTool APK (Local ACT fallback)
               if: ${{ env.ACT }}
               run: |

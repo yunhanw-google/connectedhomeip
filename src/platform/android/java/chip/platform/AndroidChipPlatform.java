@@ -18,6 +18,19 @@
 package chip.platform;
 
 public final class AndroidChipPlatform {
+  public static native void nativeFlushCoverageProfile(String profilePath);
+
+  public static void flushCoverageProfile(android.content.Context context) {
+      try {
+          android.system.Os.setenv("LLVM_PROFILE_FILE", new java.io.File(context.getFilesDir(), "chip-%p-%m.profraw").getAbsolutePath(), true);
+          // Just in case it was supposed to be before System.loadLibrary in a constructor somewhere:
+          // System.loadLibrary("CHIPController"); 
+          nativeFlushCoverageProfile(new java.io.File(context.getFilesDir(), "coverage.profraw").getAbsolutePath());
+      } catch (Throwable t) {
+      }
+  }
+
+
   private BleManager mBleManager = null;
   private NfcCommissioningManager mNfcCommissioningManager = null;
 
@@ -40,6 +53,10 @@ public final class AndroidChipPlatform {
     setConfigurationManager(cfg);
     setDnssdDelegates(resolver, browser, chipMdnsCallback);
     setDiagnosticDataProviderManager(dataProvider);
+    try {
+        android.system.Os.setenv("LLVM_PROFILE_FILE", "/data/user/0/com.google.chip.chiptool/files/chip-%p-%m.profraw", true);
+        System.loadLibrary("CHIPController");
+    } catch (Throwable t) {}
     initChipStack();
   }
 

@@ -526,3 +526,21 @@ JNI_METHOD(void, setServiceResolveListener)
         return;
     }
 }
+
+
+#if defined(__clang__)
+extern "C" __attribute__((weak)) int __llvm_profile_write_file(void);
+extern "C" __attribute__((weak)) void __llvm_profile_set_filename(const char *);
+#endif
+
+extern "C" JNIEXPORT void JNICALL Java_chip_platform_AndroidChipPlatform_nativeFlushCoverageProfile(JNIEnv * env, jclass clazz, jstring profilePath)
+{
+#if defined(__clang__)
+    if (__llvm_profile_set_filename && __llvm_profile_write_file) {
+        const char * path = env->GetStringUTFChars(profilePath, nullptr);
+        __llvm_profile_set_filename(path);
+        __llvm_profile_write_file();
+        env->ReleaseStringUTFChars(profilePath, path);
+    }
+#endif
+}

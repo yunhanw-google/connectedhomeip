@@ -1,5 +1,6 @@
 plugins {
     id 'com.android.application'
+    id 'jacoco'
 }
 
 // Read the size optimization flag passed from the build system.
@@ -31,6 +32,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            testCoverageEnabled (System.getenv("CIRQUE_COVERAGE") == "1")
+        }
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -109,4 +113,20 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     implementation 'com.google.zxing:core:3.3.0'
+}
+
+task jacocoTestReport(type: JacocoReport) {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+    def fileFilter = ['**/R.class', '**/R$*.class', '**/BuildConfig.*', '**/Manifest*.*', '**/*Test*.*', 'android/**/*.*']
+    def debugTree = fileTree(dir: "${buildDir}/intermediates/javac/debug/classes", excludes: fileFilter)
+    def kotlinTree = fileTree(dir: "${buildDir}/tmp/kotlin-classes/debug", excludes: fileFilter)
+    def mainSrc = "${project.projectDir}/src/main/java"
+    sourceDirectories.from = files([mainSrc])
+    classDirectories.from = files([debugTree, kotlinTree])
+    executionData.from = fileTree(dir: "${project.rootDir}/../../..", includes: [
+            "out/coverage/android/**/*.ec"
+    ])
 }

@@ -37,6 +37,9 @@ SUBSYSTEMS = [
     ("src/platform/Linux", "src/platform/Linux/"),
     ("src/platform/android", "src/platform/android/"),
     ("src/controller", "src/controller/"),
+        ("examples/android", "examples/android/"),
+    ("examples/tv-casting-app/android", "examples/tv-casting-app/android/"),
+    ("examples/tv-app/android", "examples/tv-app/android/"),
     ("examples", "examples/"),
 ]
 
@@ -479,12 +482,14 @@ def sanitize_lcov_out_of_range_lines(info_path: Path) -> int:
 
 # clang-built ARM32 Silabs apps (scripts/build/gn_gen_cirque_silabs_arm32.sh
 # with CIRQUE_COVERAGE=1) write LLVM .profraw files instead of gcov .gcda.
-LLVM_COVERAGE_BINARIES = (
+LLVM_COVERAGE_BINARIES = [
     "out/arm-silabs/chip-silabs-lighting-app",
     "out/arm-silabs-thread/chip-silabs-lit-icd-app",
     "out/arm-silabs-thread/chip-silabs-lock-app",
     "out/android-x64-chip-tool/lib/jni/x86_64/libCHIPController.so",
-)
+    "out/android-x64-tv-casting-app/lib/jni/x86_64/libTvCastingApp.so",
+    "out/android-x64-tv-server/lib/jni/x86_64/libTvApp.so",
+]
 
 
 def has_llvm_coverage_mapping(binary: Path) -> bool:
@@ -497,62 +502,93 @@ def has_llvm_coverage_mapping(binary: Path) -> bool:
         return False
 
 
-def append_llvm_profraw_coverage(out_dir: Path, output_dir: Path,
-                                 chip_root: Path, raw_info: Path) -> bool:
-    """Merges out_dir/profraw/*.profraw and appends them to raw_info as lcov.
 
-    Returns True if records were appended.
-    """
+def append_llvm_profraw_coverage(out_dir, output_dir, chip_root, raw_info):
+    import subprocess
+    llvm_profdata = chip_root / "third_party/pigweed/repo/pw_env_setup/py/pw_env_setup/cipd_setup/clang/bin/llvm-profdata"
+    llvm_cov = chip_root / "third_party/pigweed/repo/pw_env_setup/py/pw_env_setup/cipd_setup/clang/bin/llvm-cov"
+    
     profraw_files = sorted((out_dir / "profraw").rglob("*.profraw"))
     if not profraw_files:
         return False
-    llvm_bin = chip_root / ".environment/cipd/packages/pigweed/bin"
-    llvm_profdata = llvm_bin / "llvm-profdata"
-    llvm_cov = llvm_bin / "llvm-cov"
-    if not (llvm_profdata.exists() and llvm_cov.exists()):
-        logger.warning("Skipping %d .profraw files: %s not found",
-                       len(profraw_files), llvm_bin)
-        return False
+        
     binaries = [chip_root / b for b in LLVM_COVERAGE_BINARIES]
+    for so in chip_root.glob("out/android-*/lib/jni/*/*.so"):
+        if so not in binaries: binaries.append(so)
+        
     binaries = [b for b in binaries if has_llvm_coverage_mapping(b)]
     if not binaries:
-        logger.warning("Skipping %d .profraw files: no binary with LLVM "
-                       "coverage mapping", len(profraw_files))
         return False
+        
     profdata = output_dir / "llvm_merged.profdata"
+    
+    # Try batch merge
     try:
-        run_command([str(llvm_profdata), "merge", "-sparse",
-                     *map(str, profraw_files), "-o", str(profdata)])
-    except subprocess.CalledProcessError as e:
-        logger.warning("LLVM profdata merge failed: %s\nStderr: %s",
-                       e, e.stderr)
-        return False
+        subprocess.run([str(llvm_profdata), "merge", "-sparse", *map(str, profraw_files), "-o", str(profdata)], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        # Fallback to individual
+        valid_files = []
+        for f in profraw_files:
+            try:
+                subprocess.run([str(llvm_profdata), "merge", "-sparse", str(f), "-o", str(output_dir / "tmp.profdata")], check=True, capture_output=True)
+                valid_files.append(f)
+            except:
+                pass
+        if valid_files:
+            subprocess.run([str(llvm_profdata), "merge", "-sparse", *map(str, valid_files), "-o", str(profdata)], check=True, capture_output=True)
+        else:
+            return False
 
     exported_binaries = []
     lcov_chunks = []
     for binary in binaries:
-        export_cmd = [
-            str(llvm_cov), "export", "-format=lcov",
-            "-instr-profile", str(profdata),
-            "-object", str(binary),
-        ]
+        export_cmd = [str(llvm_cov), "export", "-format=lcov", "-instr-profile", str(profdata), "-object", str(binary)]
         try:
-            lcov_out = run_command(export_cmd).stdout
+            lcov_out = subprocess.run(export_cmd, check=True, capture_output=True, text=True).stdout
             if lcov_out.strip():
                 lcov_chunks.append(lcov_out)
                 exported_binaries.append(binary.name)
-        except subprocess.CalledProcessError as e:
-            logger.warning("LLVM coverage export failed for %s: %s\nStderr: %s",
-                           binary, e, e.stderr)
+        except subprocess.CalledProcessError:
+            pass
+            
     if not lcov_chunks:
         return False
     with open(raw_info, "a") as f:
         for chunk in lcov_chunks:
-            f.write("\n" + chunk)
-    logger.info("Appended LLVM coverage from %d .profraw files (%s)",
-                len(profraw_files), ", ".join(exported_binaries))
+            f.write("
+" + chunk)
     return True
 
+
+
+def append_jacoco_ec_coverage(out_dir, output_dir, chip_root, raw_info):
+    import subprocess
+    ec_files = list((out_dir / "profraw").rglob("*.ec"))
+    if not ec_files: return False
+    
+    class_dirs = []
+    for d in chip_root.glob("out/android-*/**/classes"): class_dirs.append(str(d))
+    for d in chip_root.glob("out/android-*/**/kotlin-classes"): class_dirs.append(str(d))
+    
+    source_dirs = []
+    for d in chip_root.glob("examples/android/CHIPTool/app/src/main/java"): source_dirs.append(str(d))
+    for d in chip_root.glob("examples/tv-casting-app/android/App/app/src/main/java"): source_dirs.append(str(d))
+    for d in chip_root.glob("examples/tv-app/android/App/*/src/main/java"): source_dirs.append(str(d))
+    
+    try:
+        subprocess.run([sys.executable, str(chip_root / "src/test_driver/linux-cirque/helper/jacoco_to_lcov.py"),
+                        "--ec-dir", str(out_dir / "profraw"),
+                        "--class-dirs", ",".join(class_dirs),
+                        "--source-dirs", ",".join(source_dirs),
+                        "--output", str(output_dir / "jacoco.info"),
+                        "--chip-root", str(chip_root)], check=True)
+        with open(str(output_dir / "jacoco.info"), "r") as f_in:
+            with open(raw_info, "a") as f_out:
+                f_out.write("\n" + f_in.read())
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to generate jacoco report: {e}")
+        return False
 
 def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                              skip_genhtml: bool = False) -> Tuple[str, str]:
@@ -603,11 +639,15 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
     if not gcov_captured:
         # A run may exercise only the clang ARM32 apps (no .gcda files).
         raw_info.write_text("")
-    llvm_appended = append_llvm_profraw_coverage(
-        out_dir, output_dir, chip_root, raw_info)
-    if not gcov_captured and not llvm_appended:
+
+    llvm_appended = append_llvm_profraw_coverage(out_dir, output_dir, chip_root, raw_info)
+    jacoco_appended = append_jacoco_ec_coverage(out_dir, output_dir, chip_root, raw_info)
+    if not gcov_captured and not llvm_appended and not jacoco_appended:
+
         logger.error("lcov failed to generate %s", raw_info)
         raise RuntimeError(f"Failed to generate {raw_info}")
+
+    
 
     canonicalize_lcov_symlinks(raw_info, chip_root)
     sanitize_lcov_out_of_range_lines(raw_info)

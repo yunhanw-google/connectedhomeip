@@ -65,6 +65,11 @@
             </intent-filter>
         </service>
 
+        <receiver android:name=".CoverageReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.matter.tv.server.DUMP_COVERAGE" />
+            </intent-filter>
+        </receiver>
     </application>
 
 

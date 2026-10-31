@@ -1,6 +1,7 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-parcelize'
+apply plugin: 'jacoco'
 
 def enableGms = !project.hasProperty('matterEnableGms') || matterEnableGms.toBoolean()
 
@@ -46,6 +47,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            testCoverageEnabled (System.getenv("CIRQUE_COVERAGE") == "1")
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -155,4 +159,20 @@ dependencies {
 
 repositories {
     mavenCentral()
+}
+
+task jacocoTestReport(type: JacocoReport) {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+    def fileFilter = ['**/R.class', '**/R$*.class', '**/BuildConfig.*', '**/Manifest*.*', '**/*Test*.*', 'android/**/*.*']
+    def debugTree = fileTree(dir: "${buildDir}/intermediates/javac/debug/classes", excludes: fileFilter)
+    def kotlinTree = fileTree(dir: "${buildDir}/tmp/kotlin-classes/debug", excludes: fileFilter)
+    def mainSrc = "${project.projectDir}/src/main/java"
+    sourceDirectories.from = files([mainSrc])
+    classDirectories.from = files([debugTree, kotlinTree])
+    executionData.from = fileTree(dir: "${project.rootDir}/../../..", includes: [
+            "out/coverage/android/**/*.ec"
+    ])
 }
