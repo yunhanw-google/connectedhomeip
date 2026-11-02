@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 from helper.CHIPTestBase import CHIPVirtualHome, TestResult
 from helper.paths import (
@@ -103,6 +104,28 @@ DEVICE_CONFIG = {
     },
 }
 
+
+def casting_ui_shows_connected(xml_content):
+  """Returns True if a casting app uiautomator dump shows connection success."""
+  start = xml_content.find('<?xml')
+  end = xml_content.rfind('</hierarchy>')
+  if start < 0 or end < start:
+    return False
+  try:
+    root = ET.fromstring(xml_content[start:end + len('</hierarchy>')])
+  except ET.ParseError:
+    return False
+  for node in root.iter('node'):
+    resource_id = node.get('resource-id', '')
+    if (resource_id.endswith('connectionFragmentStatusText')
+        and 'Successfully connected' in node.get('text', '')):
+      return True
+    if (resource_id.endswith('connectionFragmentNextButton')
+        and node.get('enabled') == 'true'):
+      return True
+  return False
+
+
 class AndroidTvCastingTest(CHIPVirtualHome):
   def __init__(self, device_config):
     super().__init__(CIRQUE_URL, device_config)
@@ -137,6 +160,32 @@ class AndroidTvCastingTest(CHIPVirtualHome):
       time.sleep(2)
     self.logger.error("Timeout waiting for logcat pattern %s", pattern)
     return False, ""
+
+  def _wait_for_casting_connection(self, container_id, timeout_sec):
+    # logd can drop the success line under heavy log bursts, so also accept
+    # the casting app's UI success state (every 3rd poll, as uiautomator is
+    # expensive).
+    pattern = r'Successfully connected to CastingPlayer'
+    logcat_cmd = f'adb logcat -d -e {shlex.quote(pattern)}'
+    dump_cmd = ('adb shell "uiautomator dump /data/local/tmp/dump.xml'
+                ' && cat /data/local/tmp/dump.xml"')
+    start_time = time.time()
+    poll = 0
+    while time.time() - start_time < timeout_sec:
+      res = self.execute_device_cmd(container_id, logcat_cmd)
+      if str(res['return_code']) == '0' and re.search(pattern, res['output']):
+        self.logger.info("CastingPlayer connection success matched via logcat")
+        return True
+      poll += 1
+      if poll % 3 == 0:
+        dump_res = self.execute_device_cmd(container_id, dump_cmd)
+        if (str(dump_res['return_code']) == '0'
+            and casting_ui_shows_connected(dump_res['output'])):
+          self.logger.info("CastingPlayer connection success matched via ui")
+          return True
+      time.sleep(2)
+    self.logger.error("Timeout waiting for CastingPlayer connection success")
+    return False
 
   def _click_ui_element(self, container_id, resource_id=None, text=None):
     dump_res = self.execute_device_cmd(container_id, 'adb shell "uiautomator dump /data/local/tmp/dump.xml && cat /data/local/tmp/dump.xml"')
@@ -217,7 +266,8 @@ class AndroidTvCastingTest(CHIPVirtualHome):
                self._click_ui_element(tv_server['id'], text='OK')
     
     # Wait for connection success
-    success, _ = self._wait_for_logcat(casting_client['id'], r'Successfully connected to CastingPlayer', ANDROID_COMMISSION_TIMEOUT_SEC)
+    success = self._wait_for_casting_connection(
+        casting_client['id'], ANDROID_COMMISSION_TIMEOUT_SEC)
     self.assertTrue(success, "Failed to connect to CastingPlayer")
 
     time.sleep(2)
