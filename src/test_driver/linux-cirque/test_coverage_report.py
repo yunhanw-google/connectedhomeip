@@ -495,6 +495,22 @@ class TestRunWithSupportedIgnoreErrors(unittest.TestCase):
         self.assertEqual(res.returncode, 1)
         self.assertEqual(len(self.calls.read_text().splitlines()), 2)
 
+    def test_run_genhtml_includes_mismatch_in_ignore_errors(self):
+        from helper.coverage_report import _run_genhtml
+        html_dir = self.root / "html"
+        html_dir.mkdir()
+        (html_dir / "index.html").write_text("<html></html>")
+        self._tool("exit 0\n")
+        saved_path = os.environ["PATH"]
+        os.environ["PATH"] = f"{self.root}{os.pathsep}{saved_path}"
+        try:
+            _run_genhtml(self.root / "lcov.info", html_dir, [], timeout=60)
+        finally:
+            os.environ["PATH"] = saved_path
+        calls = self.calls.read_text().splitlines()
+        self.assertEqual(len(calls), 1)
+        self.assertIn("mismatch", calls[0])
+
 
 class TestLcovParallelDetection(unittest.TestCase):
     """Verifies lcov --parallel feature detection and overrides."""

@@ -911,9 +911,11 @@ jobs:
             - name: Prepare Shard Coverage Tracefile
               if: ${{ always() && !env.ACT }}
               run: |
+                  sudo chown -R "$(id -u):$(id -g)" /tmp/cirque_test_output || true
                   sudo chmod -R a+rX /tmp/cirque_test_output || true
                   cp -f /tmp/cirque_test_output/aggregated_coverage/lcov.info \
                     /tmp/cirque_test_output/aggregated_coverage/lcov-${{ matrix.shard }}.info
+                  chmod 0644 /tmp/cirque_test_output/aggregated_coverage/lcov-${{ matrix.shard }}.info
                   test -s /tmp/cirque_test_output/aggregated_coverage/lcov-${{ matrix.shard }}.info
 
             - name: Upload Shard Coverage Tracefile
@@ -928,6 +930,7 @@ jobs:
             - name: Make logs readable for upload
               if: ${{ always() }}
               run: |
+                  sudo chown -R "$(id -u):$(id -g)" /tmp/cirque_test_output || true
                   sudo chmod -R a+rX /tmp/cirque_test_output || true
                   sudo find /tmp/cirque_test_output -type f -name 'lcov_raw.info' -delete 2>/dev/null || true
                   sudo rm -rf /tmp/cirque_test_output/coverage_report/html /tmp/cirque_test_output/coverage_report/lcov.info 2>/dev/null || true
@@ -980,19 +983,17 @@ jobs:
             - name: Merge Coverage and Generate HTML
               if: ${{ !env.ACT }}
               run: |
-                  if [ "${{ needs.cirque_test.result }}" = "success" ]; then
-                    for shard in linux android_a android_b android_c; do
-                      tf="coverage-tracefiles/cirque-coverage-${shard}/lcov-${shard}.info"
-                      if [ ! -s "$tf" ]; then
-                        echo "::error::Missing or empty coverage tracefile: $tf"
-                        exit 1
-                      fi
-                    done
-                  fi
                   TRACEFILES=()
-                  for tf in coverage-tracefiles/cirque-coverage-*/lcov-*.info; do
+                  for shard in linux android_a android_b android_c; do
+                    tf="coverage-tracefiles/cirque-coverage-${shard}/lcov-${shard}.info"
+                    if [ ! -s "$tf" ] && [ -s "coverage-tracefiles/lcov-${shard}.info" ]; then
+                      tf="coverage-tracefiles/lcov-${shard}.info"
+                    fi
                     if [ -s "$tf" ]; then
                       TRACEFILES+=("$tf")
+                    elif [ "${{ needs.cirque_test.result }}" = "success" ]; then
+                      echo "::error::Missing or empty coverage tracefile: $tf"
+                      exit 1
                     fi
                   done
                   if [ "${#TRACEFILES[@]}" -eq 0 ]; then
@@ -1009,6 +1010,8 @@ jobs:
                         --merge-tracefiles ${TRACEFILES[*]} \
                       && chown -R $(id -u):$(id -g) out/coverage_final \
                     "
+                  sudo chown -R "$(id -u):$(id -g)" out/coverage_final || true
+                  sudo chmod -R a+rX out/coverage_final || true
                   test -s out/coverage_final/html/index.html
                   test -s out/coverage_final/coverage_summary.md
                   cat out/coverage_final/coverage_summary.md >> "$GITHUB_STEP_SUMMARY"

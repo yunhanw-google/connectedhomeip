@@ -833,6 +833,7 @@ def _run_genhtml(
         "range",
         "source",
         "count",
+        "mismatch",
         "category",
     ]
     base_genhtml_cmd = [
