@@ -63,6 +63,7 @@ jobs:
                 path: |
                   .ccache
                   .gradle-cache
+                  third_party/java_deps/artifacts
                 key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}-${{ github.run_id }}
                 restore-keys: |
                   cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}-
@@ -88,7 +89,7 @@ jobs:
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-chip-tool build'; \
                           fi \
                        && (ccache --show-stats || true) \
-                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/android/CHIPTool \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out third_party/java_deps examples/android/CHIPTool \
                       "
             - name: Save Android Build Cache
               if: ${{ always() && !env.ACT }}
@@ -98,6 +99,7 @@ jobs:
                 path: |
                   .ccache
                   .gradle-cache
+                  third_party/java_deps/artifacts
                 key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}-${{ github.run_id }}
             - name: Upload Android x64 CHIPTool APK
               if: ${{ !env.ACT }}
@@ -147,6 +149,7 @@ jobs:
                 path: |
                   .ccache
                   .gradle-cache
+                  third_party/java_deps/artifacts
                 key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}-${{ github.run_id }}
                 restore-keys: |
                   cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}-
@@ -172,7 +175,7 @@ jobs:
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-server build'; \
                           fi \
                        && (ccache --show-stats || true) \
-                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-app \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out third_party/java_deps examples/tv-app \
                       "
             - name: Save Android Build Cache
               if: ${{ always() && !env.ACT }}
@@ -182,6 +185,7 @@ jobs:
                 path: |
                   .ccache
                   .gradle-cache
+                  third_party/java_deps/artifacts
                 key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}-${{ github.run_id }}
             - name: Upload Android x64 TvServer APK
               if: ${{ !env.ACT }}
@@ -232,6 +236,7 @@ jobs:
                 path: |
                   .ccache
                   .gradle-cache
+                  third_party/java_deps/artifacts
                 key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}-${{ github.run_id }}
                 restore-keys: |
                   cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}-
@@ -257,7 +262,7 @@ jobs:
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-casting-app build'; \
                           fi \
                        && (ccache --show-stats || true) \
-                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-casting-app \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out third_party/java_deps examples/tv-casting-app \
                       "
             - name: Save Android Build Cache
               if: ${{ always() && !env.ACT }}
@@ -267,6 +272,7 @@ jobs:
                 path: |
                   .ccache
                   .gradle-cache
+                  third_party/java_deps/artifacts
                 key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}-${{ github.run_id }}
             - name: Upload Android x64 TvCastingApp APK
               if: ${{ !env.ACT }}
@@ -780,7 +786,7 @@ jobs:
                           else \
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-chip-tool build'; \
                           fi \
-                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/android/CHIPTool \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out third_party/java_deps examples/android/CHIPTool \
                       "
             - name: Verify Android x64 CHIPTool APK
               if: ${{ matrix.shard != 'linux' }}
@@ -804,7 +810,7 @@ jobs:
                           else \
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-server build'; \
                           fi \
-                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-app \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out third_party/java_deps examples/tv-app \
                       "
             - name: Verify Android x64 TvServer APK
               if: ${{ matrix.shard != 'linux' }}
@@ -829,7 +835,7 @@ jobs:
                           else \
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --target android-x64-tv-casting-app build'; \
                           fi \
-                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-casting-app \
+                       && chown -R $(id -u):$(id -g) .ccache .gradle-cache out third_party/java_deps examples/tv-casting-app \
                       "
             - name: Verify Android x64 TvCastingApp APK
               if: ${{ matrix.shard != 'linux' }}
