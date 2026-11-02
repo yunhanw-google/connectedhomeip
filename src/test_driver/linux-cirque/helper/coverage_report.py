@@ -23,6 +23,8 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -419,6 +421,9 @@ def sanitize_lcov_out_of_range_lines(info_path: Path) -> int:
     block_removed = 0
     block_da_total = 0
     block_da_hit = 0
+    stripped_funcs: set = set()
+    block_fn_total = 0
+    block_fn_hit = 0
 
     for line in content.splitlines():
         stripped = line.strip()
@@ -428,6 +433,9 @@ def sanitize_lcov_out_of_range_lines(info_path: Path) -> int:
             block_removed = 0
             block_da_total = 0
             block_da_hit = 0
+            stripped_funcs.clear()
+            block_fn_total = 0
+            block_fn_hit = 0
             out_lines.append(line)
         elif current_max_line is not None and stripped.startswith("DA:"):
             parts = stripped[3:].split(",")
@@ -445,11 +453,35 @@ def sanitize_lcov_out_of_range_lines(info_path: Path) -> int:
             if hit > 0:
                 block_da_hit += 1
             out_lines.append(line)
-        elif current_max_line is not None and (
-            stripped.startswith("BRDA:") or stripped.startswith("FN:")
-        ):
-            prefix_len = 5 if stripped.startswith("BRDA:") else 3
-            first_field = stripped[prefix_len:].split(",", 1)[0]
+        elif current_max_line is not None and stripped.startswith("FN:"):
+            parts = stripped[3:].split(",", 1)
+            try:
+                lineno = int(parts[0])
+            except ValueError:
+                out_lines.append(line)
+                continue
+            if lineno > current_max_line or lineno < 1:
+                if len(parts) > 1:
+                    stripped_funcs.add(parts[1])
+                removed += 1
+                block_removed += 1
+                continue
+            block_fn_total += 1
+            out_lines.append(line)
+        elif current_max_line is not None and stripped.startswith("FNDA:"):
+            parts = stripped[5:].split(",", 1)
+            if len(parts) > 1 and parts[1] in stripped_funcs:
+                removed += 1
+                block_removed += 1
+                continue
+            try:
+                if int(parts[0]) > 0:
+                    block_fn_hit += 1
+            except ValueError:
+                pass
+            out_lines.append(line)
+        elif current_max_line is not None and stripped.startswith("BRDA:"):
+            first_field = stripped[5:].split(",", 1)[0]
             try:
                 lineno = int(first_field)
             except ValueError:
@@ -460,6 +492,10 @@ def sanitize_lcov_out_of_range_lines(info_path: Path) -> int:
                 block_removed += 1
                 continue
             out_lines.append(line)
+        elif stripped.startswith("FNF:") and stripped_funcs:
+            out_lines.append(f"FNF:{block_fn_total}")
+        elif stripped.startswith("FNH:") and stripped_funcs:
+            out_lines.append(f"FNH:{block_fn_hit}")
         elif stripped.startswith("LF:") and block_removed > 0:
             out_lines.append(f"LF:{block_da_total}")
         elif stripped.startswith("LH:") and block_removed > 0:
@@ -467,6 +503,9 @@ def sanitize_lcov_out_of_range_lines(info_path: Path) -> int:
         elif stripped == "end_of_record":
             current_max_line = None
             block_removed = 0
+            stripped_funcs.clear()
+            block_fn_total = 0
+            block_fn_hit = 0
             out_lines.append(line)
         else:
             out_lines.append(line)
@@ -502,32 +541,30 @@ def has_llvm_coverage_mapping(binary: Path) -> bool:
 
 
 def append_llvm_profraw_coverage(out_dir, output_dir, chip_root, raw_info):
-    import subprocess
-    import shutil
-    import os
-    
     llvm_profdata = chip_root / ".environment/cipd/packages/pigweed/bin/llvm-profdata"
     if not os.access(str(llvm_profdata), os.X_OK):
         llvm_profdata = shutil.which("llvm-profdata") or shutil.which("llvm-profdata-18") or shutil.which("llvm-profdata-14") or shutil.which("llvm-profdata-13") or chip_root / "third_party/pigweed/repo/pw_env_setup/py/pw_env_setup/cipd_setup/clang/bin/llvm-profdata"
-    
+
     llvm_cov = chip_root / ".environment/cipd/packages/pigweed/bin/llvm-cov"
     if not os.access(str(llvm_cov), os.X_OK):
         llvm_cov = shutil.which("llvm-cov") or shutil.which("llvm-cov-18") or shutil.which("llvm-cov-14") or shutil.which("llvm-cov-13") or chip_root / "third_party/pigweed/repo/pw_env_setup/py/pw_env_setup/cipd_setup/clang/bin/llvm-cov"
-    
+
     profraw_files = sorted((out_dir / "profraw").rglob("*.profraw"))
     if not profraw_files:
         return False
-        
+
     binaries = [chip_root / b for b in LLVM_COVERAGE_BINARIES]
     for so in chip_root.glob("out/android-*/lib/jni/*/*.so"):
-        if so not in binaries: binaries.append(so)
-        
+        if so not in binaries:
+            binaries.append(so)
+
     binaries = [b for b in binaries if has_llvm_coverage_mapping(b)]
     if not binaries:
         return False
-        
+
     profdata = output_dir / "llvm_merged.profdata"
-    
+
+    t_merge = time.monotonic()
     # Try batch merge
     try:
         subprocess.run([str(llvm_profdata), "merge", "-sparse", *map(str, profraw_files), "-o", str(profdata)], check=True, capture_output=True)
@@ -538,25 +575,63 @@ def append_llvm_profraw_coverage(out_dir, output_dir, chip_root, raw_info):
             try:
                 subprocess.run([str(llvm_profdata), "merge", "-sparse", str(f), "-o", str(output_dir / "tmp.profdata")], check=True, capture_output=True)
                 valid_files.append(f)
-            except:
+            except subprocess.SubprocessError:
                 pass
         if valid_files:
             subprocess.run([str(llvm_profdata), "merge", "-sparse", *map(str, valid_files), "-o", str(profdata)], check=True, capture_output=True)
         else:
             return False
+    logger.info(
+        "CIRQUE_COVERAGE_TIMINGS: llvm merge=%.2fs", time.monotonic() - t_merge
+    )
 
-    exported_binaries = []
-    lcov_chunks = []
-    for binary in binaries:
-        export_cmd = [str(llvm_cov), "export", "-format=lcov", "-instr-profile", str(profdata), "-object", str(binary)]
+    ignore_regex = "|".join([
+        f"^{re.escape(str(chip_root.resolve()))}/third_party/.*",
+        r".*/third_party/connectedhomeip/third_party/.*",
+        r".*/zzz_generated/.*",
+        r"^/usr/include/.*",
+        r"^/usr/lib/.*",
+        r".*/src/app/util/mock/.*",
+        r".*/src/.*/tests/.*",
+        r".*/src/.*/testing/.*",
+    ])
+
+    def _export_binary(binary: Path) -> str:
+        export_cmd = [
+            str(llvm_cov),
+            "export",
+            "-format=lcov",
+            "-ignore-filename-regex",
+            ignore_regex,
+            "-instr-profile",
+            str(profdata),
+            "-object",
+            str(binary),
+        ]
         try:
-            lcov_out = subprocess.run(export_cmd, check=True, capture_output=True, text=True).stdout
-            if lcov_out.strip():
-                lcov_chunks.append(lcov_out)
-                exported_binaries.append(binary.name)
-        except subprocess.CalledProcessError:
-            pass
-            
+            return subprocess.run(
+                export_cmd, check=True, capture_output=True, text=True
+            ).stdout
+        except subprocess.CalledProcessError as e:
+            logger.warning(
+                "llvm-cov export failed for %s: %s\nStderr: %s",
+                binary,
+                e,
+                e.stderr,
+            )
+            return ""
+
+    t_export = time.monotonic()
+    max_workers = min(len(binaries), os.cpu_count() or 1)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        lcov_chunks = [
+            out for out in executor.map(_export_binary, binaries) if out.strip()
+        ]
+    logger.info(
+        "CIRQUE_COVERAGE_TIMINGS: llvm export=%.2fs",
+        time.monotonic() - t_export,
+    )
+
     if not lcov_chunks:
         return False
     with open(raw_info, "a") as f:
@@ -565,22 +640,26 @@ def append_llvm_profraw_coverage(out_dir, output_dir, chip_root, raw_info):
     return True
 
 
-
 def append_jacoco_ec_coverage(out_dir, output_dir, chip_root, raw_info):
-    import subprocess
     ec_files = list((out_dir / "profraw").rglob("*.ec"))
-    if not ec_files: return False
-    
+    if not ec_files:
+        return False
+
+    t_jacoco = time.monotonic()
     class_dirs = []
     for d in chip_root.glob("out/android-*/**/classes"):
-        if "/instrumented/" not in str(d): class_dirs.append(str(d))
+        if "/instrumented/" not in str(d):
+            class_dirs.append(str(d))
     for d in chip_root.glob("out/android-*/**/kotlin-classes"):
-        if "/instrumented/" not in str(d): class_dirs.append(str(d))
+        if "/instrumented/" not in str(d):
+            class_dirs.append(str(d))
     for d in chip_root.glob("examples/**/classes"):
-        if "/instrumented/" not in str(d): class_dirs.append(str(d))
+        if "/instrumented/" not in str(d):
+            class_dirs.append(str(d))
     for d in chip_root.glob("examples/**/kotlin-classes"):
-        if "/instrumented/" not in str(d): class_dirs.append(str(d))
-    
+        if "/instrumented/" not in str(d):
+            class_dirs.append(str(d))
+
     source_dirs = []
     for p in [
         "examples/android/CHIPTool/app/src/main/java",
@@ -595,7 +674,7 @@ def append_jacoco_ec_coverage(out_dir, output_dir, chip_root, raw_info):
     ]:
         for d in chip_root.glob(p):
             source_dirs.append(str(d))
-            
+
     try:
         subprocess.run([sys.executable, str(chip_root / "src/test_driver/linux-cirque/helper/jacoco_to_lcov.py"),
                         "--ec-dir", str(out_dir / "profraw"),
@@ -606,10 +685,15 @@ def append_jacoco_ec_coverage(out_dir, output_dir, chip_root, raw_info):
         with open(str(output_dir / "jacoco.info"), "r") as f_in:
             with open(raw_info, "a") as f_out:
                 f_out.write("\n" + f_in.read())
+        logger.info(
+            "CIRQUE_COVERAGE_TIMINGS: jacoco=%.2fs",
+            time.monotonic() - t_jacoco,
+        )
         return True
     except Exception as e:
         logger.warning(f"Failed to generate jacoco report: {e}")
         return False
+
 
 def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                              skip_genhtml: bool = False) -> Tuple[str, str]:
@@ -638,6 +722,7 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                 jobs or "disabled", timeout)
 
     # Step 1: Capture coverage data
+    t_capture = time.monotonic()
     raw_info.unlink(missing_ok=True)
     capture_cmd = [
         "lcov", "--capture",
@@ -655,6 +740,10 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
         raise
     except subprocess.CalledProcessError as e:
         logger.warning("lcov capture warning/error (continuing if info created): %s\nStderr: %s", e, e.stderr)
+    logger.info(
+        "CIRQUE_COVERAGE_TIMINGS: lcov capture=%.2fs",
+        time.monotonic() - t_capture,
+    )
 
     gcov_captured = raw_info.exists() and raw_info.stat().st_size > 0
     if not gcov_captured:
@@ -667,8 +756,6 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
 
         logger.error("lcov failed to generate %s", raw_info)
         raise RuntimeError(f"Failed to generate {raw_info}")
-
-    
 
     canonicalize_lcov_symlinks(raw_info, chip_root)
     sanitize_lcov_out_of_range_lines(raw_info)
@@ -688,6 +775,7 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
     ]
 
     # Step 2: Remove excluded patterns
+    t_remove = time.monotonic()
     remove_cmd = [
         "lcov", "--remove", str(raw_info),
         *exclude_patterns,
@@ -703,6 +791,10 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
         logger.warning("lcov remove warning: %s\nStderr: %s", e, e.stderr)
         # If remove fails, fallback to raw_info
         shutil.copyfile(raw_info, filtered_info)
+    logger.info(
+        "CIRQUE_COVERAGE_TIMINGS: lcov remove=%.2fs",
+        time.monotonic() - t_remove,
+    )
 
     # Remove the large unfiltered intermediate tracefile (~31 MB) once
     # filtered_info has been written so CI log archives stay under Chrome's
@@ -715,6 +807,7 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
 
     # Step 3: Run genhtml
     if not skip_genhtml:
+        t_genhtml = time.monotonic()
         # lcov 2.0 rejects 'range' (it is dropped there); out-of-range records
         # were already removed by sanitize_lcov_out_of_range_lines().
         genhtml_ignore_errors = [
@@ -755,6 +848,10 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
                 )
         except Exception as e:
             logger.warning("genhtml failed: %s", e)
+        logger.info(
+            "CIRQUE_COVERAGE_TIMINGS: genhtml=%.2fs",
+            time.monotonic() - t_genhtml,
+        )
 
     # Step 4: Parse info and generate json & markdown
     info_content = filtered_info.read_text(errors="replace")

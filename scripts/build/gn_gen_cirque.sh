@@ -56,7 +56,10 @@ if command -v ccache >/dev/null 2>&1; then
     export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-3G}"
     export CCACHE_COMPILERCHECK="content"
     export CCACHE_SLOPPINESS="include_file_mtime,time_macros"
+    export CCACHE_BASEDIR="$CHIP_ROOT"
+    export CCACHE_NOHASHDIR=1
     mkdir -p "$CCACHE_DIR"
+    ccache -z || true
     gn_args+=" pw_command_launcher=\"ccache\""
     ALL_CLUSTERS_ARGS+=('pw_command_launcher="ccache"')
 fi
@@ -98,13 +101,12 @@ if [ "${CIRQUE_BUILD_ARM32_SILABS:-0}" = "1" ]; then
     "$CHIP_ROOT/scripts/build/gn_gen_cirque_silabs_arm32.sh"
 fi
 
-if command -v ccache >/dev/null 2>&1; then
-    ccache --show-stats || true
-fi
-
-
 echo "Build: Build tv-app and tv-casting-app"
 gn --root="$CHIP_ROOT/examples/tv-app/linux" gen out/debug/tv-app --args="${ALL_CLUSTERS_ARGS[*]} chip_crypto=\"mbedtls\""
 ninja -C out/debug/tv-app
 gn --root="$CHIP_ROOT/examples/tv-casting-app/linux" gen out/debug/tv-casting-app --args="${ALL_CLUSTERS_ARGS[*]} chip_crypto=\"mbedtls\""
 ninja -C out/debug/tv-casting-app
+
+if command -v ccache >/dev/null 2>&1; then
+    ccache --show-stats || true
+fi

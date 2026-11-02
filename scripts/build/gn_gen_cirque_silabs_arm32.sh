@@ -62,7 +62,10 @@ if command -v ccache >/dev/null 2>&1; then
     export CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-2G}"
     export CCACHE_COMPILERCHECK="content"
     export CCACHE_SLOPPINESS="include_file_mtime,time_macros"
+    export CCACHE_BASEDIR="$CHIP_ROOT"
+    export CCACHE_NOHASHDIR=1
     mkdir -p "$CCACHE_DIR"
+    ccache -z || true
     CCACHE_ARGS=('pw_command_launcher="ccache"')
 fi
 

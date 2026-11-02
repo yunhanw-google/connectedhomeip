@@ -58,13 +58,15 @@ jobs:
                     "
             - name: Android Build Cache
               id: android-build-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                 path: |
                   .ccache
                   .gradle-cache
-                key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}
-                restore-keys: cirque-android-build-cache-${{ runner.os }}-
+                key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}-
+                  cirque-android-build-cache-${{ runner.os }}-
             - name: Build Android x64 CHIPTool APK
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
@@ -77,6 +79,9 @@ jobs:
                        && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
                        && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
                        && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && export CCACHE_BASEDIR=\"\$PWD\" \
+                       && export CCACHE_NOHASHDIR=1 \
+                       && (ccache -z || true) \
                        && if command -v ccache >/dev/null 2>&1; then \
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-chip-tool build'; \
                           else \
@@ -86,14 +91,14 @@ jobs:
                        && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/android/CHIPTool \
                       "
             - name: Save Android Build Cache
-              if: ${{ always() && !env.ACT && steps.android-build-cache.outputs.cache-hit != 'true' }}
+              if: ${{ always() && !env.ACT }}
               continue-on-error: true
               uses: actions/cache/save@v4
               with:
                 path: |
                   .ccache
                   .gradle-cache
-                key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}
+                key: cirque-android-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/android/CHIPTool/**') }}-${{ github.run_id }}
             - name: Upload Android x64 CHIPTool APK
               if: ${{ !env.ACT }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -137,13 +142,15 @@ jobs:
                     "
             - name: Android Build Cache
               id: android-build-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                 path: |
                   .ccache
                   .gradle-cache
-                key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}
-                restore-keys: cirque-android-tv-server-build-cache-${{ runner.os }}-
+                key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}-
+                  cirque-android-tv-server-build-cache-${{ runner.os }}-
             - name: Build Android x64 TvServer APK
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
@@ -156,6 +163,9 @@ jobs:
                        && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
                        && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
                        && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && export CCACHE_BASEDIR=\"\$PWD\" \
+                       && export CCACHE_NOHASHDIR=1 \
+                       && (ccache -z || true) \
                        && if command -v ccache >/dev/null 2>&1; then \
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-tv-server build'; \
                           else \
@@ -165,14 +175,14 @@ jobs:
                        && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-app \
                       "
             - name: Save Android Build Cache
-              if: ${{ always() && !env.ACT && steps.android-build-cache.outputs.cache-hit != 'true' }}
+              if: ${{ always() && !env.ACT }}
               continue-on-error: true
               uses: actions/cache/save@v4
               with:
                 path: |
                   .ccache
                   .gradle-cache
-                key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}
+                key: cirque-android-tv-server-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-app/**') }}-${{ github.run_id }}
             - name: Upload Android x64 TvServer APK
               if: ${{ !env.ACT }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -217,13 +227,15 @@ jobs:
                     "
             - name: Android Build Cache
               id: android-build-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                 path: |
                   .ccache
                   .gradle-cache
-                key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}
-                restore-keys: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-
+                key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}-
+                  cirque-android-tv-casting-app-build-cache-${{ runner.os }}-
             - name: Build Android x64 TvCastingApp APK
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
@@ -236,6 +248,9 @@ jobs:
                        && export CCACHE_SLOPPINESS=\"include_file_mtime,time_macros\" \
                        && export GRADLE_USER_HOME=\"\$PWD/.gradle-cache\" \
                        && mkdir -p \"\$CCACHE_DIR\" \"\$GRADLE_USER_HOME\" \
+                       && export CCACHE_BASEDIR=\"\$PWD\" \
+                       && export CCACHE_NOHASHDIR=1 \
+                       && (ccache -z || true) \
                        && if command -v ccache >/dev/null 2>&1; then \
                             ./scripts/run_in_build_env.sh './scripts/build/build_examples.py --pw-command-launcher=ccache --target android-x64-tv-casting-app build'; \
                           else \
@@ -245,14 +260,14 @@ jobs:
                        && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-casting-app \
                       "
             - name: Save Android Build Cache
-              if: ${{ always() && !env.ACT && steps.android-build-cache.outputs.cache-hit != 'true' }}
+              if: ${{ always() && !env.ACT }}
               continue-on-error: true
               uses: actions/cache/save@v4
               with:
                 path: |
                   .ccache
                   .gradle-cache
-                key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}
+                key: cirque-android-tv-casting-app-build-cache-${{ runner.os }}-${{ hashFiles('build_overrides/**', 'third_party/android_deps/**', 'examples/tv-casting-app/**') }}-${{ github.run_id }}
             - name: Upload Android x64 TvCastingApp APK
               if: ${{ !env.ACT }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -294,11 +309,13 @@ jobs:
                     "
             - name: ARM32 Silabs Build Cache
               id: silabs-arm32-build-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                 path: .ccache
-                key: cirque-silabs-arm32-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lighting-app/silabs/**') }}
-                restore-keys: cirque-silabs-arm32-build-cache-${{ runner.os }}-
+                key: cirque-silabs-arm32-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lighting-app/silabs/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-silabs-arm32-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lighting-app/silabs/**') }}-
+                  cirque-silabs-arm32-build-cache-${{ runner.os }}-
             - name: Install static qemu-arm
               # Copied into CHIPEndDevice containers, so it must be static.
               run: |
@@ -324,12 +341,12 @@ jobs:
                   file out/host_libs/pty_bridge_linux | tee /dev/stderr | grep -q "ELF 64-bit LSB.*x86-64"
                   file -L out/host_libs/qemu-arm | tee /dev/stderr | grep -q "static"
             - name: Save ARM32 Silabs Build Cache
-              if: ${{ always() && !env.ACT && steps.silabs-arm32-build-cache.outputs.cache-hit != 'true' }}
+              if: ${{ always() && !env.ACT }}
               continue-on-error: true
               uses: actions/cache/save@v4
               with:
                 path: .ccache
-                key: cirque-silabs-arm32-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lighting-app/silabs/**') }}
+                key: cirque-silabs-arm32-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lighting-app/silabs/**') }}-${{ github.run_id }}
             - name: Upload ARM32 Silabs artifacts
               if: ${{ !env.ACT }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -371,11 +388,13 @@ jobs:
                     "
             - name: ARM32 Silabs LIT ICD Build Cache
               id: silabs-arm32-thread-build-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                 path: .ccache
-                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}
-                restore-keys: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-
+                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}-
+                  cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-
             - name: Build ARM32 chip-silabs-lit-icd-app
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
@@ -391,12 +410,12 @@ jobs:
               run: |
                   file out/arm-silabs-thread/chip-silabs-lit-icd-app | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
             - name: Save ARM32 Silabs LIT ICD Build Cache
-              if: ${{ always() && !env.ACT && steps.silabs-arm32-thread-build-cache.outputs.cache-hit != 'true' }}
+              if: ${{ always() && !env.ACT }}
               continue-on-error: true
               uses: actions/cache/save@v4
               with:
                 path: .ccache
-                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}
+                key: cirque-silabs-arm32-thread-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lit-icd-app/silabs/**') }}-${{ github.run_id }}
             - name: Upload ARM32 Silabs LIT ICD artifact
               if: ${{ !env.ACT }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -435,11 +454,13 @@ jobs:
                     "
             - name: ARM32 Silabs Lock Build Cache
               id: silabs-arm32-lock-build-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                 path: .ccache
-                key: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lock-app/silabs/**') }}
-                restore-keys: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-
+                key: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lock-app/silabs/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lock-app/silabs/**') }}-
+                  cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-
             - name: Build ARM32 chip-silabs-lock-app
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
@@ -455,12 +476,12 @@ jobs:
               run: |
                   file out/arm-silabs-thread/chip-silabs-lock-app | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
             - name: Save ARM32 Silabs Lock Build Cache
-              if: ${{ always() && !env.ACT && steps.silabs-arm32-lock-build-cache.outputs.cache-hit != 'true' }}
+              if: ${{ always() && !env.ACT }}
               continue-on-error: true
               uses: actions/cache/save@v4
               with:
                 path: .ccache
-                key: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lock-app/silabs/**') }}
+                key: cirque-silabs-arm32-lock-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque_silabs_arm32.sh', 'build_overrides/**', 'examples/lock-app/silabs/**') }}-${{ github.run_id }}
             - name: Upload ARM32 Silabs Lock artifact
               if: ${{ !env.ACT }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -563,11 +584,13 @@ jobs:
                   if_false: "pull-${{ github.event.pull_request.number }}"
             - name: Cirque Build Cache
               id: cirque-build-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                 path: .ccache
-                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}
-                restore-keys: cirque-linux-build-cache-${{ runner.os }}-
+                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-
+                  cirque-linux-build-cache-${{ runner.os }}-
 
             - name: Build Binaries
               run: |
@@ -584,12 +607,12 @@ jobs:
             # test failure or cancellation does not discard it (the implicit
             # post-step save of actions/cache is skipped on cancellation).
             - name: Save Cirque Build Cache
-              if: ${{ always() && !env.ACT && steps.cirque-build-cache.outputs.cache-hit != 'true' }}
+              if: ${{ always() && !env.ACT }}
               continue-on-error: true
               uses: actions/cache/save@v4
               with:
                 path: .ccache
-                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}
+                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-${{ github.run_id }}
             - name: Setup Android Emulator and AVD
               run: |
                   echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
