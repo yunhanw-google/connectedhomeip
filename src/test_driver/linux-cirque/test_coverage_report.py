@@ -240,6 +240,95 @@ class TestCoverageReport(unittest.TestCase):
             self.assertIn("LF:2\n", sanitized)
             self.assertIn("LH:2\n", sanitized)
 
+    def test_sanitize_lcov_drops_matching_fnda_and_updates_fn_counts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src_file = Path(tmpdir) / "Server.cpp"
+            src_file.write_text("line1\nline2\nline3\n")
+            raw_info = Path(tmpdir) / "lcov_raw.info"
+            raw_info.write_text(
+                "TN:\n"
+                f"SF:{src_file}\n"
+                "FN:1,chip::app::Keep<int, bool>(int, bool)\n"
+                "FN:5,chip::app::OutOfRange(int)\n"
+                "FNDA:2,chip::app::Keep<int, bool>(int, bool)\n"
+                "FNDA:1,chip::app::OutOfRange(int)\n"
+                "FNF:2\n"
+                "FNH:2\n"
+                "DA:1,2\n"
+                "LF:1\n"
+                "LH:1\n"
+                "end_of_record\n"
+            )
+            removed = sanitize_lcov_out_of_range_lines(raw_info)
+            self.assertEqual(removed, 2)
+            sanitized = raw_info.read_text()
+            self.assertIn("FN:1,chip::app::Keep<int, bool>(int, bool)\n", sanitized)
+            self.assertIn("FNDA:2,chip::app::Keep<int, bool>(int, bool)\n", sanitized)
+            self.assertNotIn("OutOfRange", sanitized)
+            self.assertIn("FNF:1\n", sanitized)
+            self.assertIn("FNH:1\n", sanitized)
+
+    def test_merge_coverage_tracefiles_validation_errors(self):
+        from helper.coverage_report import merge_coverage_tracefiles
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with self.assertRaises(ValueError):
+                merge_coverage_tracefiles([], root / "cov", root, skip_genhtml=True)
+            missing = root / "missing.info"
+            with self.assertRaises(FileNotFoundError):
+                merge_coverage_tracefiles([missing], root / "cov", root, skip_genhtml=True)
+            empty = root / "empty.info"
+            empty.write_text("")
+            with self.assertRaises(FileNotFoundError):
+                merge_coverage_tracefiles([empty], root / "cov", root, skip_genhtml=True)
+
+    @unittest.skipUnless(shutil.which("lcov"), "lcov not installed")
+    def test_merge_coverage_tracefiles_overlapping_sf(self):
+        from helper.coverage_report import merge_coverage_tracefiles
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            chip_root = root / "connectedhomeip"
+            src = chip_root / "src" / "app" / "CommandSender.cpp"
+            src.parent.mkdir(parents=True)
+            src.write_text("line1\nline2\nline3\nline4\n")
+            shard_a = root / "shard_a.info"
+            shard_b = root / "shard_b.info"
+            shard_a.write_text(
+                "TN:\n"
+                f"SF:{src}\n"
+                "FN:1,CommandSender::Init\n"
+                "FNDA:1,CommandSender::Init\n"
+                "FNF:1\n"
+                "FNH:1\n"
+                "DA:1,1\n"
+                "DA:2,0\n"
+                "LF:2\n"
+                "LH:1\n"
+                "end_of_record\n"
+            )
+            shard_b.write_text(
+                "TN:\n"
+                f"SF:{src}\n"
+                "FN:1,CommandSender::Init\n"
+                "FNDA:0,CommandSender::Init\n"
+                "FNF:1\n"
+                "FNH:0\n"
+                "DA:1,0\n"
+                "DA:2,3\n"
+                "LF:2\n"
+                "LH:1\n"
+                "end_of_record\n"
+            )
+            json_path, md_path = merge_coverage_tracefiles(
+                [shard_a, shard_b], root / "merged", chip_root, skip_genhtml=True
+            )
+            metrics = json.loads(Path(json_path).read_text())
+            self.assertEqual(metrics["overall"]["total_files"], 1)
+            self.assertEqual(metrics["overall"]["lines_found"], 2)
+            self.assertEqual(metrics["overall"]["lines_hit"], 2)
+            self.assertTrue(Path(md_path).is_file())
+            self.assertTrue((root / "merged" / "lcov.info").is_file())
+
 
 class TestAppendLlvmProfrawCoverage(unittest.TestCase):
     """Verifies ARM32 .profraw files are merged into the lcov tracefile."""
@@ -320,8 +409,8 @@ class TestAppendLlvmProfrawCoverage(unittest.TestCase):
         self.assertTrue(self._append())
         lines = self.cov_args.read_text().splitlines()
         self.assertEqual(len(lines), 2)
-        self.assertIn(f"-object {lit_icd}", lines[0])
-        self.assertIn(f"-object {android_jni}", lines[1])
+        self.assertTrue(any(f"-object {lit_icd}" in line for line in lines))
+        self.assertTrue(any(f"-object {android_jni}" in line for line in lines))
 
     @unittest.skipUnless(shutil.which("lcov"), "lcov not installed")
     def test_report_from_profraw_only_run(self):

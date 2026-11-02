@@ -492,22 +492,103 @@ jobs:
                   if-no-files-found: error
                   overwrite: true
 
-    cirque:
-        name: Cirque
+    build_cirque:
+        name: Build Cirque Linux
+
+        runs-on: ubuntu-latest
+        if: github.actor != 'restyled-io[bot]'
+        timeout-minutes: 120
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Maximize runner disk
+              uses: ./.github/actions/maximize-runner-disk
+            - name: Checkout submodules
+              uses: ./.github/actions/checkout-submodules
+              with:
+                platform: linux
+            - name: Bootstrap Cache
+              uses: ./.github/actions/bootstrap-cache
+            - name: Bootstrap Cirque
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && bash scripts/bootstrap.sh \
+                       && chown -R $(id -u):$(id -g) .environment \
+                    "
+            - name: Cirque Build Cache
+              id: cirque-build-cache
+              uses: actions/cache/restore@v4
+              with:
+                path: .ccache
+                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-${{ github.run_id }}
+                restore-keys: |
+                  cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-
+                  cirque-linux-build-cache-${{ runner.os }}-
+            - name: Build Binaries
+              run: |
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    --env GITHUB_ACTION_RUN=1 \
+                    --env CIRQUE_COVERAGE=1 \
+                    -- sh -c " \
+                       git config --global --add safe.directory '*' \
+                       && mkdir -p .ccache \
+                       && scripts/build/gn_gen_cirque.sh \
+                       && chown -R $(id -u):$(id -g) .ccache out \
+                      "
+            # Save the build cache as soon as the builds finish so a later
+            # test failure or cancellation does not discard it (the implicit
+            # post-step save of actions/cache is skipped on cancellation).
+            - name: Save Cirque Build Cache
+              if: ${{ always() && !env.ACT }}
+              continue-on-error: true
+              uses: actions/cache/save@v4
+              with:
+                path: .ccache
+                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-${{ github.run_id }}
+            - name: Prune build intermediates
+              run: |
+                  find out/debug \( -name '*.o' -o -name '*.a' -o -name '*.d' -o -name '.ninja_deps' -o -name '.ninja_log' \) -delete
+                  test -x out/debug/standalone/chip-all-clusters-app
+                  test -x out/debug/tv-app/chip-tv-app
+                  test -x out/debug/tv-casting-app/chip-tv-casting-app
+                  test -x out/debug/lit_icd/lit-icd-app
+                  test -x out/debug/linux_x64_gcc/chip-echo-requester
+            - name: Upload Cirque Linux Binaries
+              if: ${{ !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-linux-binaries
+                  path: out/debug
+                  retention-days: 1
+                  if-no-files-found: error
+                  overwrite: true
+
+    cirque_test:
+        name: Cirque (${{ matrix.shard }})
+
+        needs:
+            - build_cirque
+            - build_android_chiptool
+            - build_android_tv_server
+            - build_android_tv_casting_app
+            - build_silabs_arm32
+            - build_silabs_arm32_thread
+            - build_silabs_arm32_lock
+
+        strategy:
+            fail-fast: false
+            matrix:
+                shard: [linux, android_a, android_b, android_c]
 
         env:
             GITHUB_CACHE_PATH: /tmp/cirque-cache
 
         runs-on: ubuntu-latest
         if: github.actor != 'restyled-io[bot]'
-        # Budget: ~40 min of bootstrap and Linux builds (with Android CHIPTool
-        # built in parallel on build_android_chiptool, the ARM32 Silabs
-        # lighting-app on build_silabs_arm32, the ARM32 Silabs LIT ICD app on
-        # build_silabs_arm32_thread, and the ARM32 Silabs Lock app on
-        # build_silabs_arm32_lock), ~30 min of tests, and
-        # one end-of-suite coverage capture. Keep generous headroom so a cold
-        # cache never cancels the run before logs are uploaded.
-        timeout-minutes: 180
+        timeout-minutes: 120
 
         # need to run with privilege, which isn't supported by job.XXX.contaner
         #  https://github.com/actions/container-action/issues/2
@@ -524,12 +605,15 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Verify shard assignment
+              run: scripts/tests/cirque_tests.sh check_assignment
             - name: Maximize runner disk
               uses: ./.github/actions/maximize-runner-disk
               with:
-                # The Android emulator steps below use the runner's
-                # preinstalled SDK, NDK and cmdline-tools from ANDROID_HOME.
-                prune-android: "false"
+                # The Android emulator shards use the runner's preinstalled
+                # SDK, NDK and cmdline-tools from ANDROID_HOME; the Linux
+                # shard prunes them to reclaim disk space.
+                prune-android: ${{ matrix.shard == 'linux' && 'true' || 'false' }}
             - name: Checkout submodules
               uses: ./.github/actions/checkout-submodules
               with:
@@ -582,17 +666,23 @@ jobs:
                   cond: ${{ github.event.pull_request.number == '' }}
                   if_true: "${{ github.sha }}"
                   if_false: "pull-${{ github.event.pull_request.number }}"
-            - name: Cirque Build Cache
-              id: cirque-build-cache
-              uses: actions/cache/restore@v4
+            - name: Download Cirque Linux Binaries
+              if: ${{ !env.ACT }}
+              uses: actions/download-artifact@v8
               with:
-                path: .ccache
-                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-${{ github.run_id }}
-                restore-keys: |
-                  cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-
-                  cirque-linux-build-cache-${{ runner.os }}-
-
-            - name: Build Binaries
+                  name: cirque-linux-binaries
+                  path: out/debug
+            - name: Restore Cirque Linux Binary Permissions
+              if: ${{ !env.ACT }}
+              run: |
+                  chmod +x \
+                    out/debug/lit_icd/lit-icd-app \
+                    out/debug/linux_x64_gcc/chip-* \
+                    out/debug/standalone/chip-all-clusters-app \
+                    out/debug/tv-app/chip-tv-app \
+                    out/debug/tv-casting-app/chip-tv-casting-app
+            - name: Build Binaries (Local ACT fallback)
+              if: ${{ env.ACT }}
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
                     --env GITHUB_ACTION_RUN=1 \
@@ -603,17 +693,8 @@ jobs:
                        && scripts/build/gn_gen_cirque.sh \
                        && chown -R $(id -u):$(id -g) .ccache out \
                       "
-            # Save the build cache as soon as the builds finish so a later
-            # test failure or cancellation does not discard it (the implicit
-            # post-step save of actions/cache is skipped on cancellation).
-            - name: Save Cirque Build Cache
-              if: ${{ always() && !env.ACT }}
-              continue-on-error: true
-              uses: actions/cache/save@v4
-              with:
-                path: .ccache
-                key: cirque-linux-build-cache-${{ runner.os }}-${{ hashFiles('scripts/build/gn_gen_cirque.sh', 'build_overrides/**') }}-${{ github.run_id }}
             - name: Setup Android Emulator and AVD
+              if: ${{ matrix.shard != 'linux' }}
               run: |
                   echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
                   echo "ANDROID_NDK_LATEST_HOME=${ANDROID_NDK_LATEST_HOME:-<unset>}"
@@ -653,99 +734,36 @@ jobs:
                   nproc
                   free -m
                   egrep 'hw.cpu.ncore|hw.ramSize|hw.gpu.mode|image.sysdir' "$ANDROID_AVD_HOME/Pixel_6_API_34.avd/config.ini" || true
-            - name: Wait for parallel Build Android jobs
-              if: ${{ !env.ACT }}
-              timeout-minutes: 60
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Prepare Android artifact directories
+              if: ${{ matrix.shard != 'linux' && !env.ACT }}
               run: |
                   sudo chown -R "$(id -u):$(id -g)" out || true
                   mkdir -p out/android-x64-chip-tool/outputs/apk/debug
                   mkdir -p out/android-x64-tv-server/platform-app/outputs/apk/debug
                   mkdir -p out/android-x64-tv-server/content-app/outputs/apk/debug
                   mkdir -p out/android-x64-tv-casting-app/outputs/apk/debug
-                  python3 - <<'PY'
-                  import json
-                  import os
-                  import sys
-                  import time
-                  import urllib.request
-
-                  repo = os.environ["GITHUB_REPOSITORY"]
-                  run_id = os.environ["GITHUB_RUN_ID"]
-                  token = os.environ.get("GH_TOKEN", "")
-                  url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
-
-                  headers = {"Accept": "application/vnd.github+json", "User-Agent": "cirque-ci-wait"}
-                  if token:
-                      headers["Authorization"] = f"Bearer {token}"
-
-                  deadline = time.time() + 3600
-                  target_jobs = ["Build Android x64 CHIPTool", "Build Android x64 TvServer", "Build Android x64 TvCastingApp"]
-                  
-                  while time.time() < deadline:
-                      req = urllib.request.Request(url, headers=headers)
-                      with urllib.request.urlopen(req, timeout=30) as resp:
-                          data = json.loads(resp.read().decode("utf-8"))
-                      jobs = [j for j in data.get("jobs", []) if j.get("name") in target_jobs]
-                      if len(jobs) < 3:
-                          print("Waiting for all Android build jobs to register...", flush=True)
-                          time.sleep(10)
-                          continue
-                      
-                      all_completed = True
-                      for job in jobs:
-                          status = job.get("status")
-                          conclusion = job.get("conclusion")
-                          if status != "completed":
-                              all_completed = False
-                              print(f"{job.get('name')} status={status}; sleeping 15s...", flush=True)
-                              break
-                          if conclusion != "success":
-                              print(f"::error::{job.get('name')} job finished with conclusion={conclusion}", flush=True)
-                              sys.exit(1)
-                          
-                          upload_steps = [s for s in job.get("steps", []) if "Upload Android x64" in s.get("name", "")]
-                          if upload_steps:
-                              step_conclusion = upload_steps[-1].get("conclusion")
-                              if step_conclusion != "success":
-                                  print(f"::error::{upload_steps[-1].get('name')} failed: {step_conclusion}", flush=True)
-                                  sys.exit(1)
-                                  
-                      if all_completed:
-                          print("All Android build jobs completed.", flush=True)
-                          sys.exit(0)
-                      time.sleep(15)
-                      
-                  print("::error::Timed out waiting for Android build jobs", flush=True)
-                  sys.exit(1)
-                  PY
-                  sudo chown -R "$(id -u):$(id -g)" out || true
-                  mkdir -p out/android-x64-chip-tool/outputs/apk/debug
-                  mkdir -p out/android-x64-tv-server/platform-app/outputs/apk/debug
-                  mkdir -p out/android-x64-tv-server/content-app/outputs/apk/debug
-                  mkdir -p out/android-x64-tv-casting-app/outputs/apk/debug
+                  mkdir -p out/arm-silabs out/arm-silabs-thread out/host_libs
             - name: Download Android x64 CHIPTool APK
-              if: ${{ !env.ACT }}
+              if: ${{ matrix.shard != 'linux' && !env.ACT }}
               uses: actions/download-artifact@v8
               with:
                   name: cirque-android-x64-chip-tool-apk
                   path: out/android-x64-chip-tool
             - name: Download Android x64 TvServer APK
-              if: ${{ !env.ACT }}
+              if: ${{ matrix.shard != 'linux' && !env.ACT }}
               uses: actions/download-artifact@v8
               with:
                   name: cirque-android-x64-tv-server-apk
                   path: out/android-x64-tv-server
             - name: Download Android x64 TvCastingApp APK
               # A single-file artifact is stored without its directories.
-              if: ${{ !env.ACT }}
+              if: ${{ matrix.shard != 'linux' && !env.ACT }}
               uses: actions/download-artifact@v8
               with:
                   name: cirque-android-x64-tv-casting-app-apk
                   path: out/android-x64-tv-casting-app
             - name: Build Android x64 CHIPTool APK (Local ACT fallback)
-              if: ${{ env.ACT }}
+              if: ${{ matrix.shard != 'linux' && env.ACT }}
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
                     --env CIRQUE_COVERAGE=1 \
@@ -765,10 +783,11 @@ jobs:
                        && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/android/CHIPTool \
                       "
             - name: Verify Android x64 CHIPTool APK
+              if: ${{ matrix.shard != 'linux' }}
               run: |
                   test -s out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk
             - name: Build Android x64 TvServer APK (Local ACT fallback)
-              if: ${{ env.ACT }}
+              if: ${{ matrix.shard != 'linux' && env.ACT }}
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
                     --env CIRQUE_COVERAGE=1 \
@@ -788,11 +807,12 @@ jobs:
                        && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-app \
                       "
             - name: Verify Android x64 TvServer APK
+              if: ${{ matrix.shard != 'linux' }}
               run: |
                   test -s out/android-x64-tv-server/platform-app/outputs/apk/debug/platform-app-debug.apk
                   test -s out/android-x64-tv-server/content-app/outputs/apk/debug/content-app-debug.apk
             - name: Build Android x64 TvCastingApp APK (Local ACT fallback)
-              if: ${{ env.ACT }}
+              if: ${{ matrix.shard != 'linux' && env.ACT }}
               run: |
                   integrations/docker/images/stage-3/chip-build-android/run.sh \
                     --env CIRQUE_COVERAGE=1 \
@@ -812,86 +832,30 @@ jobs:
                        && chown -R $(id -u):$(id -g) .ccache .gradle-cache out examples/tv-casting-app \
                       "
             - name: Verify Android x64 TvCastingApp APK
+              if: ${{ matrix.shard != 'linux' }}
               run: |
                   test -s out/android-x64-tv-casting-app/outputs/apk/debug/app-debug.apk
-            - name: Wait for parallel ARM32 Silabs build jobs
-              if: ${{ !env.ACT }}
-              timeout-minutes: 60
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              run: |
-                  python3 - <<'PY'
-                  import json
-                  import os
-                  import sys
-                  import time
-                  import urllib.request
-
-                  # (job name, upload step name) of each parallel ARM32 build.
-                  PENDING = {
-                      "Build ARM32 Silabs Lighting App": "Upload ARM32 Silabs artifacts",
-                      "Build ARM32 Silabs LIT ICD App": "Upload ARM32 Silabs LIT ICD artifact",
-                      "Build ARM32 Silabs Lock App": "Upload ARM32 Silabs Lock artifact",
-                  }
-                  repo = os.environ["GITHUB_REPOSITORY"]
-                  run_id = os.environ["GITHUB_RUN_ID"]
-                  token = os.environ.get("GH_TOKEN", "")
-                  url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
-                  headers = {"Accept": "application/vnd.github+json", "User-Agent": "cirque-ci-wait"}
-                  if token:
-                      headers["Authorization"] = f"Bearer {token}"
-
-                  deadline = time.time() + 3600
-                  while time.time() < deadline:
-                      req = urllib.request.Request(url, headers=headers)
-                      with urllib.request.urlopen(req, timeout=30) as resp:
-                          data = json.loads(resp.read().decode("utf-8"))
-                      for job_name, step_name in list(PENDING.items()):
-                          jobs = [j for j in data.get("jobs", []) if j.get("name") == job_name]
-                          if not jobs:
-                              print(f"Waiting for '{job_name}' job to register...", flush=True)
-                              continue
-                          job = jobs[-1]
-                          steps = [s for s in job.get("steps", []) if s.get("name") == step_name]
-                          if steps and steps[-1].get("status") == "completed":
-                              if steps[-1].get("conclusion") == "success":
-                                  print(f"{step_name} completed.", flush=True)
-                                  del PENDING[job_name]
-                                  continue
-                              print(f"::error::{step_name} failed: {steps[-1].get('conclusion')}", flush=True)
-                              sys.exit(1)
-                          if job.get("status") == "completed":
-                              print(f"::error::{job_name} finished with conclusion={job.get('conclusion')} before uploading", flush=True)
-                              sys.exit(1)
-                          print(f"{job_name} status={job.get('status')}", flush=True)
-                      if not PENDING:
-                          sys.exit(0)
-                      time.sleep(15)
-                  print(f"::error::Timed out waiting for {sorted(PENDING)}", flush=True)
-                  sys.exit(1)
-                  PY
-                  sudo chown -R "$(id -u):$(id -g)" out
             - name: Download ARM32 Silabs artifacts
-              if: ${{ !env.ACT }}
+              if: ${{ matrix.shard != 'linux' && !env.ACT }}
               uses: actions/download-artifact@v8
               with:
                   name: cirque-silabs-arm32-lighting-app
                   path: out
             - name: Download ARM32 Silabs LIT ICD artifact
               # A single-file artifact is stored without its directories.
-              if: ${{ !env.ACT }}
+              if: ${{ matrix.shard != 'linux' && !env.ACT }}
               uses: actions/download-artifact@v8
               with:
                   name: cirque-silabs-arm32-lit-icd-app
                   path: out/arm-silabs-thread
             - name: Download ARM32 Silabs Lock artifact
-              if: ${{ !env.ACT }}
+              if: ${{ matrix.shard != 'linux' && !env.ACT }}
               uses: actions/download-artifact@v8
               with:
                   name: cirque-silabs-arm32-lock-app
                   path: out/arm-silabs-thread
             - name: Build ARM32 Silabs artifacts (Local ACT fallback)
-              if: ${{ env.ACT }}
+              if: ${{ matrix.shard != 'linux' && env.ACT }}
               run: |
                   sudo apt-get update && sudo apt-get install -y qemu-user-static
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
@@ -904,6 +868,7 @@ jobs:
             - name: Verify ARM32 Silabs artifacts
               # upload-artifact drops the executable bit; restore it, then
               # fail loudly if anything the Silabs E2E test needs is missing.
+              if: ${{ matrix.shard != 'linux' }}
               run: |
                   chmod 755 out/arm-silabs/chip-silabs-lighting-app out/arm-silabs-thread/chip-silabs-lit-icd-app out/arm-silabs-thread/chip-silabs-lock-app out/host_libs/pty_bridge_linux out/host_libs/qemu-arm
                   file out/arm-silabs/chip-silabs-lighting-app | grep -q "ELF 32-bit LSB.*ARM"
@@ -915,19 +880,26 @@ jobs:
             - name: Run Tests
               timeout-minutes: 100
               run: |
+                  mkdir -p "${HOME}/.android/avd"
+                  ANDROID_VOL_ARGS=()
+                  if [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}" ]; then
+                    ANDROID_VOL_ARGS+=(--volume "${ANDROID_HOME}:${ANDROID_HOME}:ro")
+                  fi
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
                      --env LOG_DIR=/tmp/cirque_test_output \
                      --env CLEANUP_DOCKER_FOR_CI=1 \
                      --env GITHUB_ACTION_RUN=1 \
                      --env CIRQUE_COVERAGE=1 \
-                     --env CIRQUE_ENABLE_ANDROID_TESTS=1 \
-                     --env ANDROID_HOME="${ANDROID_HOME}" \
-                     --env ANDROID_SDK_ROOT="${ANDROID_HOME}" \
+                     --env CIRQUE_SHARD=${{ matrix.shard }} \
+                     --env CIRQUE_SKIP_GENHTML=1 \
+                     --env CIRQUE_ENABLE_ANDROID_TESTS=${{ matrix.shard != 'linux' && '1' || '0' }} \
+                     --env ANDROID_HOME="${ANDROID_HOME:-}" \
+                     --env ANDROID_SDK_ROOT="${ANDROID_HOME:-}" \
                      --env ANDROID_AVD_HOME="${HOME}/.android/avd" \
                      --privileged \
                      --volume /tmp:/tmp \
                      --volume /dev/pts:/dev/pts \
-                     --volume "${ANDROID_HOME}:${ANDROID_HOME}:ro" \
+                     "${ANDROID_VOL_ARGS[@]}" \
                      --volume "${HOME}/.android/avd:${HOME}/.android/avd:rw" \
                      -- sh -c " \
                        git config --global --add safe.directory '*' \
@@ -936,6 +908,22 @@ jobs:
                        && scripts/tests/cirque_tests.sh run_all_tests \
                       "
 
+            - name: Prepare Shard Coverage Tracefile
+              if: ${{ always() && !env.ACT }}
+              run: |
+                  sudo chmod -R a+rX /tmp/cirque_test_output || true
+                  cp -f /tmp/cirque_test_output/aggregated_coverage/lcov.info \
+                    /tmp/cirque_test_output/aggregated_coverage/lcov-${{ matrix.shard }}.info
+                  test -s /tmp/cirque_test_output/aggregated_coverage/lcov-${{ matrix.shard }}.info
+
+            - name: Upload Shard Coverage Tracefile
+              if: ${{ always() && !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque-coverage-${{ matrix.shard }}
+                  path: /tmp/cirque_test_output/aggregated_coverage/lcov-${{ matrix.shard }}.info
+                  retention-days: 1
+                  if-no-files-found: error
 
             - name: Make logs readable for upload
               if: ${{ always() }}
@@ -943,6 +931,7 @@ jobs:
                   sudo chmod -R a+rX /tmp/cirque_test_output || true
                   sudo find /tmp/cirque_test_output -type f -name 'lcov_raw.info' -delete 2>/dev/null || true
                   sudo rm -rf /tmp/cirque_test_output/coverage_report/html /tmp/cirque_test_output/coverage_report/lcov.info 2>/dev/null || true
+                  sudo rm -f /tmp/cirque_test_output/aggregated_coverage/lcov*.info 2>/dev/null || true
                   while IFS= read -r -d '' f; do
                     sudo mv -f "$f" "${f}.txt" 2>/dev/null || true
                   done < <(sudo find /tmp/cirque_test_output -type f \( \
@@ -954,10 +943,78 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               if: ${{ always() && !env.ACT }}
               with:
-                  name: cirque_log-${{steps.outsuffix.outputs.value}}-logs
+                  name: cirque_log-${{ matrix.shard }}-${{steps.outsuffix.outputs.value}}-logs
                   path: /tmp/cirque_test_output/
             - name: Notify Slack on Failure
               if: failure()
               uses: ./.github/actions/notify-slack-failure
               with:
                 slack-webhook: ${{ secrets.SWTT_SLACK_WEBHOOK }}
+
+    cirque_coverage:
+        name: Cirque Coverage
+        needs: [cirque_test]
+        if: ${{ !cancelled() && github.actor != 'restyled-io[bot]' && (needs.cirque_test.result == 'success' || needs.cirque_test.result == 'failure') }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Artifact suffix
+              id: outsuffix
+              uses: haya14busa/action-cond@94f77f7a80cd666cb3155084e428254fea4281fd # v1
+              if: ${{ !env.ACT }}
+              with:
+                  cond: ${{ github.event.pull_request.number == '' }}
+                  if_true: "${{ github.sha }}"
+                  if_false: "pull-${{ github.event.pull_request.number }}"
+            - name: Download Coverage Tracefiles
+              if: ${{ !env.ACT }}
+              continue-on-error: ${{ needs.cirque_test.result != 'success' }}
+              uses: actions/download-artifact@v8
+              with:
+                  pattern: cirque-coverage-*
+                  path: coverage-tracefiles
+                  merge-multiple: false
+            - name: Merge Coverage and Generate HTML
+              if: ${{ !env.ACT }}
+              run: |
+                  if [ "${{ needs.cirque_test.result }}" = "success" ]; then
+                    for shard in linux android_a android_b android_c; do
+                      tf="coverage-tracefiles/cirque-coverage-${shard}/lcov-${shard}.info"
+                      if [ ! -s "$tf" ]; then
+                        echo "::error::Missing or empty coverage tracefile: $tf"
+                        exit 1
+                      fi
+                    done
+                  fi
+                  TRACEFILES=()
+                  for tf in coverage-tracefiles/cirque-coverage-*/lcov-*.info; do
+                    if [ -s "$tf" ]; then
+                      TRACEFILES+=("$tf")
+                    fi
+                  done
+                  if [ "${#TRACEFILES[@]}" -eq 0 ]; then
+                    echo "::warning::No non-empty shard coverage tracefiles found to merge."
+                    exit 0
+                  fi
+                  mkdir -p out/coverage_final
+                  integrations/docker/images/stage-2/chip-build-cirque/run.sh \
+                    -- sh -c " \
+                      git config --global --add safe.directory '*' \
+                      && python3 src/test_driver/linux-cirque/helper/coverage_report.py \
+                        --chip-root \"\$PWD\" \
+                        --output-dir out/coverage_final \
+                        --merge-tracefiles ${TRACEFILES[*]} \
+                      && chown -R $(id -u):$(id -g) out/coverage_final \
+                    "
+                  test -s out/coverage_final/html/index.html
+                  test -s out/coverage_final/coverage_summary.md
+                  cat out/coverage_final/coverage_summary.md >> "$GITHUB_STEP_SUMMARY"
+            - name: Upload Final Coverage
+              if: ${{ always() && !env.ACT }}
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+              with:
+                  name: cirque_coverage-${{ steps.outsuffix.outputs.value }}
+                  path: out/coverage_final/

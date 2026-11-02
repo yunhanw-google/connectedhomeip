@@ -81,6 +81,25 @@ CIRQUE_ANDROID_TESTS=(
     "AndroidBleThreadSilabsLockRfRssiTest"
 )
 
+CIRQUE_TESTS_LINUX=("${CIRQUE_TESTS[@]}")
+
+CIRQUE_TESTS_ANDROID_A=(
+    "AndroidBleThreadSilabsLitIcdSupervisionRestartTest"
+    "AndroidBleThreadMobileDeviceTest"
+    "AndroidBleWiFiMobileDeviceTest"
+)
+
+CIRQUE_TESTS_ANDROID_B=(
+    "AndroidBleThreadSilabsLitIcdNoSupervisionRestartTest"
+    "AndroidBleThreadSilabsLitIcdTest"
+    "AndroidBleWiFiSilabsLightingTest"
+)
+
+CIRQUE_TESTS_ANDROID_C=(
+    "AndroidTvCastingTest"
+    "AndroidBleThreadSilabsLockRfRssiTest"
+)
+
 BOLD_GREEN_TEXT="\033[1;32m"
 BOLD_YELLOW_TEXT="\033[1;33m"
 BOLD_RED_TEXT="\033[1;31m"
@@ -434,6 +453,41 @@ function prewarm_cirque_device_base_wheels() {
     fi
 }
 
+function cirquetest_check_assignment() {
+    local expected=("${CIRQUE_TESTS[@]}" "${CIRQUE_ANDROID_TESTS[@]}")
+    local actual=(
+        "${CIRQUE_TESTS_LINUX[@]}"
+        "${CIRQUE_TESTS_ANDROID_A[@]}"
+        "${CIRQUE_TESTS_ANDROID_B[@]}"
+        "${CIRQUE_TESTS_ANDROID_C[@]}"
+    )
+    python3 - "${#expected[@]}" "${expected[@]}" "${actual[@]}" <<'EOF'
+import sys
+
+n_expected = int(sys.argv[1])
+expected = sys.argv[2 : 2 + n_expected]
+actual = sys.argv[2 + n_expected :]
+
+if sorted(expected) != sorted(actual):
+    missing = sorted(set(expected) - set(actual))
+    extra = sorted(set(actual) - set(expected))
+    sys.stderr.write(
+        f"Shard assignment mismatch: expected={len(expected)}, "
+        f"actual={len(actual)}, missing={missing}, extra={extra}\n"
+    )
+    sys.exit(1)
+
+if len(set(actual)) != len(actual) or len(actual) != 25:
+    sys.stderr.write(
+        f"Shard assignment duplicate or count error: "
+        f"unique={len(set(actual))}, total={len(actual)} (expected 25)\n"
+    )
+    sys.exit(1)
+
+print(f"Verified Cirque shard assignment: {len(actual)} unique tests.")
+EOF
+}
+
 function cirquetest_run_all_tests() {
     # Ensure cirque-device-base:latest and cirque-virtual-rf-node:latest are tagged
     if docker image inspect project-chip/chip-cirque-device-base:latest >/dev/null 2>&1; then
@@ -455,6 +509,25 @@ function cirquetest_run_all_tests() {
     local tests_to_run=("${CIRQUE_TESTS[@]}")
     if [[ -n "${CIRQUE_TESTS_OVERRIDE:-}" ]]; then
         read -r -a tests_to_run <<< "$CIRQUE_TESTS_OVERRIDE"
+    elif [[ -n "${CIRQUE_SHARD:-}" ]]; then
+        case "${CIRQUE_SHARD}" in
+            linux)
+                tests_to_run=("${CIRQUE_TESTS_LINUX[@]}")
+                ;;
+            android_a)
+                tests_to_run=("${CIRQUE_TESTS_ANDROID_A[@]}")
+                ;;
+            android_b)
+                tests_to_run=("${CIRQUE_TESTS_ANDROID_B[@]}")
+                ;;
+            android_c)
+                tests_to_run=("${CIRQUE_TESTS_ANDROID_C[@]}")
+                ;;
+            *)
+                echo "Unknown CIRQUE_SHARD: ${CIRQUE_SHARD}" >&2
+                return 1
+                ;;
+        esac
     elif [[ "${CIRQUE_ENABLE_ANDROID_TESTS:-1}" = "1" ]]; then
         tests_to_run+=("${CIRQUE_ANDROID_TESTS[@]}")
     fi

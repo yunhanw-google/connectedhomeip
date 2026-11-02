@@ -807,53 +807,86 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
 
     # Step 3: Run genhtml
     if not skip_genhtml:
-        t_genhtml = time.monotonic()
-        # lcov 2.0 rejects 'range' (it is dropped there); out-of-range records
-        # were already removed by sanitize_lcov_out_of_range_lines().
-        genhtml_ignore_errors = [
-            "inconsistent", "corrupt", "unsupported", "empty", "format",
-            "range", "source", "count", "category",
-        ]
-        base_genhtml_cmd = [
-            "genhtml", str(filtered_info),
-            "--output-directory", str(html_dir),
-            "--rc", "max_message_count=1000",
-            "--header-title", "Matter Cirque Virtual-Home Coverage",
-        ]
-        genhtml_cmd = [*base_genhtml_cmd, *parallel_args]
-        try:
-            res = run_with_supported_ignore_errors(
-                genhtml_cmd, genhtml_ignore_errors, check=False,
-                timeout=timeout)
-            if (
-                (res.returncode != 0 or not (html_dir / "index.html").is_file())
-                and parallel_args
-            ):
-                logger.warning(
-                    "genhtml with %s did not produce index.html "
-                    "(returncode=%s); retrying without --parallel.\nStderr: %s",
-                    " ".join(parallel_args),
-                    res.returncode,
-                    res.stderr,
-                )
-                res = run_with_supported_ignore_errors(
-                    base_genhtml_cmd, genhtml_ignore_errors, check=False,
-                    timeout=timeout)
-            if not (html_dir / "index.html").is_file():
-                logger.warning(
-                    "genhtml did not produce %s (returncode=%s)\nStderr: %s",
-                    html_dir / "index.html",
-                    res.returncode,
-                    res.stderr,
-                )
-        except Exception as e:
-            logger.warning("genhtml failed: %s", e)
-        logger.info(
-            "CIRQUE_COVERAGE_TIMINGS: genhtml=%.2fs",
-            time.monotonic() - t_genhtml,
-        )
+        _run_genhtml(filtered_info, html_dir, parallel_args, timeout)
 
     # Step 4: Parse info and generate json & markdown
+    return _write_coverage_summaries(
+        filtered_info, output_dir, chip_root, str(out_dir)
+    )
+
+
+def _run_genhtml(
+    filtered_info: Path,
+    html_dir: Path,
+    parallel_args: List[str],
+    timeout: int,
+) -> None:
+    t_genhtml = time.monotonic()
+    # lcov 2.0 rejects 'range' (it is dropped there); out-of-range records
+    # were already removed by sanitize_lcov_out_of_range_lines().
+    genhtml_ignore_errors = [
+        "inconsistent",
+        "corrupt",
+        "unsupported",
+        "empty",
+        "format",
+        "range",
+        "source",
+        "count",
+        "category",
+    ]
+    base_genhtml_cmd = [
+        "genhtml",
+        str(filtered_info),
+        "--output-directory",
+        str(html_dir),
+        "--rc",
+        "max_message_count=1000",
+        "--header-title",
+        "Matter Cirque Virtual-Home Coverage",
+    ]
+    genhtml_cmd = [*base_genhtml_cmd, *parallel_args]
+    try:
+        res = run_with_supported_ignore_errors(
+            genhtml_cmd, genhtml_ignore_errors, check=False, timeout=timeout
+        )
+        if (
+            res.returncode != 0 or not (html_dir / "index.html").is_file()
+        ) and parallel_args:
+            logger.warning(
+                "genhtml with %s did not produce index.html "
+                "(returncode=%s); retrying without --parallel.\nStderr: %s",
+                " ".join(parallel_args),
+                res.returncode,
+                res.stderr,
+            )
+            res = run_with_supported_ignore_errors(
+                base_genhtml_cmd,
+                genhtml_ignore_errors,
+                check=False,
+                timeout=timeout,
+            )
+        if not (html_dir / "index.html").is_file():
+            logger.warning(
+                "genhtml did not produce %s (returncode=%s)\nStderr: %s",
+                html_dir / "index.html",
+                res.returncode,
+                res.stderr,
+            )
+    except Exception as e:
+        logger.warning("genhtml failed: %s", e)
+    logger.info(
+        "CIRQUE_COVERAGE_TIMINGS: genhtml=%.2fs",
+        time.monotonic() - t_genhtml,
+    )
+
+
+def _write_coverage_summaries(
+    filtered_info: Path,
+    output_dir: Path,
+    chip_root: Path,
+    source_desc: str,
+) -> Tuple[str, str]:
     info_content = filtered_info.read_text(errors="replace")
     file_stats = parse_lcov_info(info_content)
     metrics = compute_metrics(file_stats, chip_root=chip_root)
@@ -862,9 +895,9 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
     if total_files == 0:
         logger.warning(
             "::warning::Coverage report generated 0 instrumented files! "
-            "Check path normalization, lcov exclude filters, and .gcda files "
+            "Check path normalization, lcov exclude filters, and inputs "
             "in %s",
-            out_dir,
+            source_desc,
         )
 
     json_path = output_dir / "coverage_summary.json"
@@ -878,16 +911,133 @@ def generate_coverage_report(out_dir: Path, output_dir: Path, chip_root: Path,
     return str(json_path), str(md_path)
 
 
+def merge_coverage_tracefiles(
+    tracefiles: List[Path],
+    output_dir: Path,
+    chip_root: Path,
+    skip_genhtml: bool = False,
+) -> Tuple[str, str]:
+    """Merges pre-captured tracefiles, runs genhtml, and writes summaries."""
+    if not tracefiles:
+        raise ValueError("No tracefiles provided to merge_coverage_tracefiles")
+    for tf in tracefiles:
+        if not tf.is_file() or tf.stat().st_size == 0:
+            raise FileNotFoundError(
+                f"Coverage tracefile missing or empty: {tf}"
+            )
+
+    chip_root = chip_root.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filtered_info = output_dir / "lcov.info"
+    html_dir = output_dir / "html"
+
+    lcov_ignore_errors = [
+        "format",
+        "unsupported",
+        "inconsistent",
+        "unused",
+        "gcov",
+        "negative",
+        "version",
+        "empty",
+        "source",
+        "count",
+        "mismatch",
+        "corrupt",
+    ]
+    jobs = detect_lcov_parallel_jobs()
+    timeout = coverage_capture_timeout()
+    parallel_args = ["--parallel", str(jobs)] if jobs else []
+    logger.info(
+        "lcov parallel jobs: %s, per-command timeout: %ss",
+        jobs or "disabled",
+        timeout,
+    )
+
+    t_merge = time.monotonic()
+    add_args = sum([["--add-tracefile", str(tf)] for tf in tracefiles], [])
+    merge_cmd = ["lcov", *add_args, "--output-file", str(filtered_info)]
+    run_with_supported_ignore_errors(
+        merge_cmd, lcov_ignore_errors, check=True, timeout=timeout
+    )
+    logger.info(
+        "CIRQUE_COVERAGE_TIMINGS: lcov merge=%.2fs",
+        time.monotonic() - t_merge,
+    )
+
+    canonicalize_lcov_symlinks(filtered_info, chip_root)
+    sanitize_lcov_out_of_range_lines(filtered_info)
+
+    if os.environ.get("CIRQUE_SKIP_GENHTML", "0") == "1":
+        skip_genhtml = True
+
+    if not skip_genhtml:
+        _run_genhtml(filtered_info, html_dir, parallel_args, timeout)
+
+    return _write_coverage_summaries(
+        filtered_info,
+        output_dir,
+        chip_root,
+        ", ".join(str(tf) for tf in tracefiles),
+    )
+
+
 def main():
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-    parser = argparse.ArgumentParser(description="Cirque Code Coverage Report Generator")
-    parser.add_argument("--out-dir", required=True, type=Path, help="Directory containing .gcda/.gcno files")
-    parser.add_argument("--output-dir", required=True, type=Path, help="Target directory for coverage artifacts")
-    parser.add_argument("--chip-root", type=Path, default=Path(__file__).parents[3], help="CHIP repo root directory")
-    parser.add_argument("--skip-genhtml", action="store_true", help="Skip genhtml execution")
+    logging.basicConfig(
+        level=logging.INFO, format="[%(levelname)s] %(message)s"
+    )
+    parser = argparse.ArgumentParser(
+        description="Cirque Code Coverage Report Generator"
+    )
+    parser.add_argument(
+        "--out-dir",
+        required=False,
+        type=Path,
+        help="Directory containing .gcda/.gcno files",
+    )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        type=Path,
+        help="Target directory for coverage artifacts",
+    )
+    parser.add_argument(
+        "--chip-root",
+        type=Path,
+        default=Path(__file__).parents[3],
+        help="CHIP repo root directory",
+    )
+    parser.add_argument(
+        "--skip-genhtml",
+        action="store_true",
+        help="Skip genhtml execution",
+    )
+    parser.add_argument(
+        "--merge-tracefiles",
+        nargs="+",
+        type=Path,
+        help="Merge pre-captured lcov tracefiles into output-dir",
+    )
 
     args = parser.parse_args()
-    generate_coverage_report(args.out_dir, args.output_dir, args.chip_root, args.skip_genhtml)
+    if args.merge_tracefiles:
+        merge_coverage_tracefiles(
+            args.merge_tracefiles,
+            args.output_dir,
+            args.chip_root,
+            args.skip_genhtml,
+        )
+    else:
+        if args.out_dir is None:
+            parser.error(
+                "--out-dir is required unless --merge-tracefiles is specified"
+            )
+        generate_coverage_report(
+            args.out_dir,
+            args.output_dir,
+            args.chip_root,
+            args.skip_genhtml,
+        )
 
 
 if __name__ == "__main__":
