@@ -44,7 +44,7 @@ sh.setFormatter(
 )
 logger.addHandler(sh)
 
-CIRQUE_URL = 'http://localhost:5000'
+CIRQUE_URL = os.environ.get('CIRQUE_URL', 'http://localhost:5000')
 TEST_WIFI_SSID = 'CHIP-VirtualWiFi-AP'
 TEST_WIFI_PSK = 'ChipWiFiPassword123'
 
@@ -126,6 +126,44 @@ def casting_ui_shows_connected(xml_content):
   return False
 
 
+def casting_ui_shows_discovered(xml_content):
+  """Returns True if uiautomator dump shows a discovered CastingPlayer item."""
+  start = xml_content.find('<?xml')
+  end = xml_content.rfind('</hierarchy>')
+  if start < 0 or end < start:
+    return False
+  try:
+    root = ET.fromstring(xml_content[start:end + len('</hierarchy>')])
+  except ET.ParseError:
+    return False
+  for node in root.iter('node'):
+    resource_id = node.get('resource-id', '')
+    if (
+        resource_id.endswith('commissionable_player_description')
+        and node.get('text', '').strip()
+    ):
+      return True
+  return False
+
+
+def connectivity_has_wifi_connected(dumpsys_output):
+  """Returns True if dumpsys connectivity shows an active WIFI network."""
+  active_section = re.split(
+      r'\n\s*(?:Network Connectivity Log|ConnectivityService events|'
+      r'mEventLog|Historical)',
+      dumpsys_output,
+      maxsplit=1,
+  )[0]
+  return bool(
+      re.search(
+          r'(?:NetworkAgentInfo\{[^\n]*\bWIFI\b[^\n]*\bCONNECTED\b|'
+          r'NetworkAgentInfo\s*\[WIFI[^\n]*\bCONNECTED\b|'
+          r'\bWIFI\b[^\n]*state:\s*CONNECTED)',
+          active_section,
+      )
+  )
+
+
 class AndroidTvCastingTest(CHIPVirtualHome):
   def __init__(self, device_config):
     super().__init__(CIRQUE_URL, device_config)
@@ -144,6 +182,205 @@ class AndroidTvCastingTest(CHIPVirtualHome):
 
   def _guest_shell_arg(self, value: str) -> str:
     return shlex.quote(shlex.quote(str(value)))
+
+  def _apply_emulator_wifi_routes(
+      self, container_id, ip_addr, interface='wlan0'
+  ):
+    route_rules = '; '.join([
+        f'ip route replace 10.0.1.0/24 dev {interface} src {ip_addr} '
+        '2>/dev/null || true',
+        f'ip route replace 224.0.0.0/4 dev {interface} 2>/dev/null || true',
+        'ip rule add to 10.0.1.0/24 lookup local_network pref 91 '
+        '2>/dev/null || true',
+        f'ip rule add to 10.0.1.0/24 lookup {interface} pref 92 '
+        '2>/dev/null || true',
+        'ip rule add to 224.0.0.0/4 lookup local_network pref 93 '
+        '2>/dev/null || true',
+        f'ip rule add to 224.0.0.0/4 lookup {interface} pref 94 '
+        '2>/dev/null || true',
+        'ip rule add to 10.0.1.0/24 lookup main pref 101 2>/dev/null || true',
+        'ip rule add to 224.0.0.0/4 lookup main pref 102 2>/dev/null || true',
+        f'ip route replace 10.0.1.0/24 dev {interface} table {interface} '
+        '2>/dev/null || true',
+        f'ip route replace 224.0.0.0/4 dev {interface} table {interface} '
+        '2>/dev/null || true',
+        f'ip route replace 10.0.1.0/24 dev {interface} table local_network '
+        '2>/dev/null || true',
+        f'ip route replace 224.0.0.0/4 dev {interface} table local_network '
+        '2>/dev/null || true',
+        f'ip route replace 10.0.1.0/24 dev {interface} src {ip_addr} '
+        'table eth0 2>/dev/null || true',
+        f'ip route replace 224.0.0.0/4 dev {interface} table eth0 '
+        '2>/dev/null || true',
+        f'iptables -I INPUT -i {interface} -j ACCEPT 2>/dev/null || true',
+        f'iptables -I OUTPUT -o {interface} -j ACCEPT 2>/dev/null || true',
+    ])
+    self.execute_device_cmd(container_id, f'adb shell "{route_rules}"')
+
+  def _ensure_emulator_wifi_ready(
+      self, container_id, expected_ip=None, timeout_sec=30.0
+  ):
+    self.execute_device_cmd(
+        container_id,
+        'adb shell "settings put global captive_portal_mode 0 '
+        '2>/dev/null || true; '
+        'settings put global captive_portal_detection_enabled 0 '
+        '2>/dev/null || true"',
+    )
+    start_time = time.time()
+    while time.time() - start_time < timeout_sec:
+      wifi_res = self.execute_device_cmd(
+          container_id, 'adb shell cmd wifi status'
+      )
+      conn_res = self.execute_device_cmd(
+          container_id, 'adb shell dumpsys connectivity'
+      )
+      addr_res = self.execute_device_cmd(
+          container_id, 'adb shell "ip -4 addr show dev wlan0"'
+      )
+      wifi_output = str(wifi_res.get('output', ''))
+      conn_output = str(conn_res.get('output', ''))
+      addr_output = str(addr_res.get('output', ''))
+
+      wifi_connected = 'Wifi is connected' in wifi_output
+      cs_connected = connectivity_has_wifi_connected(conn_output)
+      ip_match = re.search(r'inet\s+(10\.0\.1\.\d+)', addr_output)
+      if wifi_connected and cs_connected and ip_match:
+        active_ip = ip_match.group(1)
+        self._apply_emulator_wifi_routes(container_id, active_ip)
+        self.logger.info(
+            'Emulator %s WIFI CONNECTED ready with IP %s',
+            container_id,
+            active_ip,
+        )
+        return True
+
+      self.execute_device_cmd(
+          container_id,
+          'adb shell "killall dhcpclient 2>/dev/null || true; '
+          'settings put global captive_portal_mode 0 2>/dev/null || true; '
+          'settings put global captive_portal_detection_enabled 0 '
+          '2>/dev/null || true; '
+          'svc wifi enable 2>/dev/null || true; '
+          'cmd wifi set-wifi-enabled enabled 2>/dev/null || true; '
+          'cmd wifi connect-network AndroidWifi open 2>/dev/null || true; '
+          'ip link set dev wlan0 up 2>/dev/null || true"',
+      )
+      if wifi_connected and not ip_match:
+        self.execute_device_cmd(
+            container_id,
+            'adb shell "nohup /vendor/bin/dhcpclient -i wlan0 '
+            '>/dev/null 2>&1 &"',
+        )
+      time.sleep(2)
+
+    if expected_ip:
+      self._apply_emulator_wifi_routes(container_id, expected_ip)
+    self.logger.error(
+        'Timeout waiting for WIFI CONNECTED state on %s', container_id
+    )
+    return False
+
+  def _wait_for_tv_mdns_ready(
+      self, container_id, timeout_sec=45.0, settle_sec=3.0
+  ):
+    pattern = (
+        r'InitCommissioner|initCommissioner|MdnsAdvertiser|'
+        r'MdnsInterfaceSocket|_matterd\._udp'
+    )
+    logcat_cmd = f'adb logcat -d -e {shlex.quote(pattern)}'
+    start_time = time.time()
+    prev_adv_events = None
+    while time.time() - start_time < timeout_sec:
+      log_res = self.execute_device_cmd(container_id, logcat_cmd)
+      log_output = (
+          str(log_res.get('output', ''))
+          if str(log_res.get('return_code')) == '0'
+          else ''
+      )
+      has_commissioner = bool(
+          re.search(r'InitCommissioner|initCommissioner', log_output)
+      )
+      has_matterd = bool(
+          re.search(
+              r'Adding service[^\n]*_matterd\._udp|'
+              r'Registering service[^\n]*_matterd\._udp|_matterd\._udp',
+              log_output,
+          )
+      )
+      wlan0_probing = bool(
+          re.search(r'MdnsAdvertiser\.wlan0|MdnsInterfaceSocket', log_output)
+      )
+      adv_events = len(
+          re.findall(
+              r'\[MdnsAdvertiser\][^\n]*(?:Adding|Removing) service',
+              log_output,
+          )
+      )
+      if has_commissioner and has_matterd:
+        if prev_adv_events is not None and adv_events == prev_adv_events:
+          if settle_sec > 0:
+            time.sleep(settle_sec)
+          self.logger.info(
+              'TV app mDNS ready on %s (wlan0_probing=%s, adv_events=%d)',
+              container_id,
+              wlan0_probing,
+              adv_events,
+          )
+          return True
+        prev_adv_events = adv_events
+      else:
+        prev_adv_events = None
+      time.sleep(2)
+
+    self.logger.error(
+        'Timeout waiting for TV mDNS readiness on %s', container_id
+    )
+    return False
+
+  def _wait_for_casting_discovery(
+      self, container_id, timeout_sec, rediscover_interval_sec=20.0
+  ):
+    pattern = r'Discovered CastingPlayer deviceId:'
+    logcat_cmd = f'adb logcat -d -e {shlex.quote(pattern)}'
+    dump_cmd = (
+        'adb shell "uiautomator dump /data/local/tmp/dump.xml'
+        ' && cat /data/local/tmp/dump.xml"'
+    )
+    start_time = time.time()
+    last_discovery_time = start_time
+    while True:
+      now = time.time()
+      if now - start_time >= timeout_sec:
+        break
+      log_res = self.execute_device_cmd(container_id, logcat_cmd)
+      if str(log_res.get('return_code')) == '0' and re.search(
+          pattern, str(log_res.get('output', ''))
+      ):
+        self.logger.info('CastingPlayer discovery matched via logcat')
+        return True
+
+      dump_res = self.execute_device_cmd(container_id, dump_cmd)
+      dump_ok = str(dump_res.get('return_code')) == '0'
+      dump_output = str(dump_res.get('output', ''))
+      if dump_ok and casting_ui_shows_discovered(dump_output):
+        self.logger.info('CastingPlayer discovery matched via UI')
+        return True
+
+      if now - last_discovery_time >= rediscover_interval_sec:
+        self.logger.info(
+            'Re-triggering CastingPlayer mDNS browse via startDiscoveryButton'
+        )
+        if not self._click_ui_element(
+            container_id, resource_id='startDiscoveryButton'
+        ):
+          self._click_ui_element(container_id, text='Start Discovery')
+        last_discovery_time = now
+
+      time.sleep(2)
+
+    self.logger.error('Timeout waiting for CastingPlayer discovery')
+    return False
 
   def _wait_for_logcat(self, container_id, pattern, timeout_sec, since_timestamp=None):
     start_time = time.time()
@@ -209,7 +446,9 @@ class AndroidTvCastingTest(CHIPVirtualHome):
     casting_client = next(d for d in self.non_ap_devices if 'casting-app' in d.get('description', {}).get('chiptool_apk', ''))
 
     for dev in [tv_server, casting_client]:
-      self.logger.info(f"Initializing Android emulator environment on {dev['id']}")
+      self.logger.info(
+          'Initializing Android emulator environment on %s', dev['id']
+      )
       try:
         init_res = self.query_api(
             'init_android_emulator',
@@ -218,14 +457,20 @@ class AndroidTvCastingTest(CHIPVirtualHome):
         )
       except Exception as e:
         self.assertTrue(False, f'REST init_android_emulator failed: {e}')
-      
+
       if isinstance(init_res, dict) and init_res.get('status') == 'success':
         self.logger.info('Android emulator initialized via REST API: %s', init_res)
       else:
         self.assertTrue(False, f'REST init_android_emulator returned: {init_res}')
 
-
-
+    for dev in [tv_server, casting_client]:
+      expected_ip = dev.get('description', {}).get('ipv4_addr')
+      wifi_ready = self._ensure_emulator_wifi_ready(
+          dev['id'], expected_ip=expected_ip
+      )
+      self.assertTrue(
+          wifi_ready, f"Failed to verify WIFI CONNECTED state on {dev['id']}"
+      )
 
     # Start tv-app
     self.logger.info("Starting TV App")
@@ -233,8 +478,20 @@ class AndroidTvCastingTest(CHIPVirtualHome):
     self.execute_device_cmd(tv_server['id'], 'adb shell "pm disable-user com.google.android.bluetooth || pm disable-user com.android.bluetooth"')
     self.execute_device_cmd(tv_server['id'], 'adb shell am start -n com.matter.tv.server/.MainActivity')
 
-    # Wait a bit for TV app to initialize and advertise (and finish rapidly changing its mDNS name)
-    time.sleep(15)
+    mdns_ready = self._wait_for_tv_mdns_ready(tv_server['id'])
+    self.assertTrue(
+        mdns_ready, 'TV app mDNS advertisement did not become ready'
+    )
+
+    casting_id = casting_client['id']
+    casting_wifi_ready = self._ensure_emulator_wifi_ready(
+        casting_id,
+        expected_ip=casting_client.get('description', {}).get('ipv4_addr'),
+    )
+    self.assertTrue(
+        casting_wifi_ready,
+        f'Casting client Wi-Fi not ready before launch on {casting_id}',
+    )
 
     # Start casting-app
     self.logger.info("Starting Casting App")
@@ -242,9 +499,10 @@ class AndroidTvCastingTest(CHIPVirtualHome):
     self.execute_device_cmd(casting_client['id'], 'adb shell "pm disable-user com.google.android.bluetooth || pm disable-user com.android.bluetooth"')
     self.execute_device_cmd(casting_client['id'], 'adb shell am start -n com.chip.casting/com.matter.casting.MainActivity')
 
-    # Wait for DiscoveryExampleFragment onAdded() Discovered CastingPlayer deviceId:
-    success, _ = self._wait_for_logcat(casting_client['id'], r'Discovered CastingPlayer deviceId:', ANDROID_COMMISSION_TIMEOUT_SEC)
-    self.assertTrue(success, "Failed to discover CastingPlayer")
+    discovered = self._wait_for_casting_discovery(
+        casting_client['id'], ANDROID_COMMISSION_TIMEOUT_SEC
+    )
+    self.assertTrue(discovered, "Failed to discover CastingPlayer")
 
     time.sleep(2) # Give UI time to update
     self.assertTrue(self._click_ui_element(casting_client['id'], resource_id='commissionable_player_description'), "Failed to click player description")
