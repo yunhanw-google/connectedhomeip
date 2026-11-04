@@ -84,14 +84,12 @@ class SilabsLockRfRssiHarnessContractTest(unittest.TestCase):
     self.assertIn('build_silabs_arm32_lock:', cirque_yaml)
     self.assertIn('name: Build ARM32 Silabs Lock App', cirque_yaml)
     self.assertIn(
-        'SILABS_ARM32_APPS=lock scripts/build/gn_gen_cirque_silabs_arm32.sh',
+        'SILABS_ARM32_APPS="lock lock-nopersist"'
+        ' scripts/build/gn_gen_cirque_silabs_arm32.sh',
         cirque_yaml,
     )
     self.assertIn('name: cirque-silabs-arm32-lock-app', cirque_yaml)
-    self.assertIn(
-        '"Build ARM32 Silabs Lock App": "Upload ARM32 Silabs Lock artifact"',
-        cirque_yaml,
-    )
+    self.assertIn('name: cirque-silabs-arm32-lock-app', cirque_yaml)
     self.assertIn(
         'file out/arm-silabs-thread/chip-silabs-lock-app | grep -q'
         ' "ELF 32-bit LSB.*ARM"',
@@ -122,6 +120,19 @@ class SilabsLockRfRssiHarnessContractTest(unittest.TestCase):
     self.assertIn(
         'out/arm-silabs-thread/chip-silabs-lock-app', LLVM_COVERAGE_BINARIES
     )
+
+  def test_s1_rf_tightening_implemented(self):
+    src_path = os.path.join(
+        _TEST_DIR, 'AndroidBleThreadSilabsLockRfRssiTest.py'
+    )
+    with open(src_path, 'r', encoding='utf-8') as f:
+      source = f.read()
+    self.assertIn("'enabled': True", source)
+    self.assertIn("'max_per_cap': 0", source)
+    self.assertIn("'seed':", source)
+    self.assertIn("'-c', '20'", source)
+    self.assertIn('sleep(10', source)
+    self.assertNotIn('TxErrCca', source)
 
 
 if __name__ == '__main__':

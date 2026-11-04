@@ -78,7 +78,7 @@ CIRQUE_ANDROID_TESTS=(
     "AndroidBleThreadSilabsLitIcdTest"
     "AndroidBleThreadSilabsLitIcdSupervisionRestartTest"
     "AndroidBleThreadSilabsLitIcdNoSupervisionRestartTest"
-    "AndroidBleThreadSilabsLockRfRssiTest"
+    "AndroidBleThreadSilabsLockRfRssiTest" "AndroidBleThreadSilabsLockBusyTest" "AndroidBleThreadSilabsLockPersistSubTest"
 )
 
 CIRQUE_TESTS_LINUX=("${CIRQUE_TESTS[@]}")
@@ -97,7 +97,7 @@ CIRQUE_TESTS_ANDROID_B=(
 
 CIRQUE_TESTS_ANDROID_C=(
     "AndroidTvCastingTest"
-    "AndroidBleThreadSilabsLockRfRssiTest"
+    "AndroidBleThreadSilabsLockRfRssiTest" "AndroidBleThreadSilabsLockBusyTest" "AndroidBleThreadSilabsLockPersistSubTest"
 )
 
 BOLD_GREEN_TEXT="\033[1;32m"

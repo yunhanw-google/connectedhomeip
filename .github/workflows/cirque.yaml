@@ -475,12 +475,13 @@ jobs:
                        git config --global --add safe.directory '*' \
                        && export CCACHE_DIR=\"\$PWD/.ccache\" \
                        && mkdir -p \"\$CCACHE_DIR\" \
-                       && SILABS_ARM32_APPS=lock scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && SILABS_ARM32_APPS="lock lock-nopersist" scripts/build/gn_gen_cirque_silabs_arm32.sh \
                        && chown -R $(id -u):$(id -g) .ccache out .environment \
                       "
             - name: Verify ARM32 Lock artifact
               run: |
                   file out/arm-silabs-thread/chip-silabs-lock-app | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
+                  file out/arm-silabs-thread/chip-silabs-lock-app-nopersist | tee /dev/stderr | grep -q "ELF 32-bit LSB.*ARM"
             - name: Save ARM32 Silabs Lock Build Cache
               if: ${{ always() && !env.ACT }}
               continue-on-error: true
@@ -493,7 +494,9 @@ jobs:
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
               with:
                   name: cirque-silabs-arm32-lock-app
-                  path: out/arm-silabs-thread/chip-silabs-lock-app
+                  path: |
+                    out/arm-silabs-thread/chip-silabs-lock-app
+                    out/arm-silabs-thread/chip-silabs-lock-app-nopersist
                   retention-days: 1
                   if-no-files-found: error
                   overwrite: true

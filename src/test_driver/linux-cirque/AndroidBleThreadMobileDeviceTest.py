@@ -14,22 +14,22 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-import re
 import base64
 import logging
 import os
+import re
 import shlex
 import subprocess
 import sys
 import time
 
+from helper.android_emulator_logs import save_android_emulator_diagnostics
 from helper.CHIPTestBase import CHIPVirtualHome, TestResult
 from helper.paths import (
     CHIP_ALL_CLUSTERS_APP_ESC,
     CHIP_REPO_STR,
     CHIP_TOOL_APK_PATH,
 )
-from helper.android_emulator_logs import save_android_emulator_diagnostics
 from helper.session_keylog import (
     RESET_SESSION_KEYLOG_CMD,
     SESSION_KEYLOG_ENV,
@@ -85,6 +85,9 @@ END_DEVICE_DIAG_CMDS = (
 )
 TBR_DIAG_CMDS = (
     'cat /tmp/otbr-agent.log',
+    'cat /tmp/srp_bridger.log',
+    'cat /etc/avahi/services/*',
+    'cat /etc/avahi/hosts',
     'ip -6 route show table all',
     'ss -lunp',
     'ot-ctl child table',
@@ -126,7 +129,7 @@ ANDROID_FULL_LOGCAT_CMD = 'adb logcat -d -v threadtime'
 #     CHIPTool as commissioning intent extras (or typed in by the UI
 #     fallback), instead of through the Play Services Thread credential API.
 
-THREAD_END_DEVICE_JOINER_HELPER = r'''
+THREAD_END_DEVICE_JOINER_HELPER = r"""
 import subprocess
 import sys
 import time
@@ -190,7 +193,7 @@ sh("ot-ctl srp client autostart enable")
 print("[SRP-Shim] SRP registration requested", flush=True)
 while True:
   time.sleep(3600)
-'''
+"""
 
 
 DEVICE_CONFIG = {
@@ -282,9 +285,7 @@ def _check_android_preconditions() -> bool:
       )
       return False
   except (subprocess.SubprocessError, FileNotFoundError) as e:
-    sys.stderr.write(
-        f'Precondition failed: docker inspect failed: {e}\n'
-    )
+    sys.stderr.write(f'Precondition failed: docker inspect failed: {e}\n')
     return False
   return True
 
@@ -422,15 +423,21 @@ class TestAndroidBleThreadMobileDevice(CHIPVirtualHome):
         self.execute_device_cmd(
             dev_id,
             'sh -c "sed -i'
-            ' \'s/.*allow-interfaces=.*/allow-interfaces=eth0,wlan0,wpan0/;'
+            " 's/.*allow-interfaces=.*/allow-interfaces=eth0,wlan0,wpan0/;"
             ' s/.*enable-reflector=.*/enable-reflector=yes/;'
             ' s/.*use-ipv6=.*/use-ipv6=yes/;'
-            ' s/.*disable-unicast-responses=.*/disable-unicast-responses=yes/\''
-            ' /etc/avahi/avahi-daemon.conf 2>/dev/null || true;'
-            ' grep -q disable-unicast-responses /etc/avahi/avahi-daemon.conf || sed -i \'/^\\[server\\]/a disable-unicast-responses=yes\' /etc/avahi/avahi-daemon.conf;'
-            ' mkdir -p /var/run/dbus;'
-            ' if ! pidof dbus-daemon >/dev/null; then dbus-daemon --system --fork 2>/dev/null || true; fi;'
-            ' if ! pidof avahi-daemon >/dev/null; then avahi-daemon --daemonize --no-drop-root 2>/dev/null || true; else kill -HUP $(cat /var/run/avahi-daemon/pid 2>/dev/null) 2>/dev/null || true; fi; killall -9 ot-rcp otbr-agent 2>/dev/null || true; otbr-agent -I wpan0 spinel+hdlc+uart:///dev/ttyUSB0 >/tmp/otbr-agent.log 2>&1 &"',
+            " s/.*disable-unicast-responses=.*/disable-unicast-responses=yes/'"
+            ' /etc/avahi/avahi-daemon.conf 2>/dev/null || true; grep -q'
+            ' disable-unicast-responses /etc/avahi/avahi-daemon.conf || sed -i'
+            " '/^\\[server\\]/a disable-unicast-responses=yes'"
+            ' /etc/avahi/avahi-daemon.conf; mkdir -p /var/run/dbus; if ! pidof'
+            ' dbus-daemon >/dev/null; then dbus-daemon --system --fork'
+            ' 2>/dev/null || true; fi; if ! pidof avahi-daemon >/dev/null; then'
+            ' avahi-daemon --daemonize --no-drop-root 2>/dev/null || true; else'
+            ' kill -HUP $(cat /var/run/avahi-daemon/pid 2>/dev/null)'
+            ' 2>/dev/null || true; fi; killall -9 ot-rcp otbr-agent 2>/dev/null'
+            ' || true; otbr-agent -I wpan0 spinel+hdlc+uart:///dev/ttyUSB0'
+            ' >/tmp/otbr-agent.log 2>&1 &"',
         )
       else:
         # CHIPEndDevice (pure BLE+Thread without wlan0)
@@ -441,28 +448,27 @@ class TestAndroidBleThreadMobileDevice(CHIPVirtualHome):
         )
         self.execute_device_cmd(
             dev_id,
-            'sh -c "sed -i'
-            ' \'s/.*allow-interfaces=.*/allow-interfaces=wpan0/;'
+            'sh -c "sed -i \'s/.*allow-interfaces=.*/allow-interfaces=wpan0/;'
             ' s/.*enable-reflector=.*/enable-reflector=no/;'
-            ' s/.*use-ipv6=.*/use-ipv6=yes/\''
-            ' /etc/avahi/avahi-daemon.conf 2>/dev/null || true;'
-            ' mkdir -p /var/run/dbus;'
-            ' if ! pidof dbus-daemon >/dev/null; then dbus-daemon --system --fork 2>/dev/null || true; fi;'
-            ' if ! pidof avahi-daemon >/dev/null; then avahi-daemon --daemonize --no-drop-root 2>/dev/null || true; else kill -HUP $(cat /var/run/avahi-daemon/pid 2>/dev/null) 2>/dev/null || true; fi; killall -9 ot-rcp otbr-agent 2>/dev/null || true; otbr-agent -I wpan0 spinel+hdlc+uart:///dev/ttyUSB0 >/tmp/otbr-agent.log 2>&1 &"',
+            " s/.*use-ipv6=.*/use-ipv6=yes/' /etc/avahi/avahi-daemon.conf"
+            ' 2>/dev/null || true; mkdir -p /var/run/dbus; if ! pidof'
+            ' dbus-daemon >/dev/null; then dbus-daemon --system --fork'
+            ' 2>/dev/null || true; fi; if ! pidof avahi-daemon >/dev/null; then'
+            ' avahi-daemon --daemonize --no-drop-root 2>/dev/null || true; else'
+            ' kill -HUP $(cat /var/run/avahi-daemon/pid 2>/dev/null)'
+            ' 2>/dev/null || true; fi; killall -9 ot-rcp otbr-agent 2>/dev/null'
+            ' || true; otbr-agent -I wpan0 spinel+hdlc+uart:///dev/ttyUSB0'
+            ' >/tmp/otbr-agent.log 2>&1 &"',
         )
 
   def _get_tbr_active_dataset(self, tbr_id) -> dict:
     res_txt = self.execute_device_cmd(tbr_id, 'ot-ctl dataset active')
     out_txt = (
-        res_txt.get('output', '')
-        if isinstance(res_txt, dict)
-        else str(res_txt)
+        res_txt.get('output', '') if isinstance(res_txt, dict) else str(res_txt)
     )
     res_hex = self.execute_device_cmd(tbr_id, 'ot-ctl dataset active -x')
     out_hex = (
-        res_hex.get('output', '')
-        if isinstance(res_hex, dict)
-        else str(res_hex)
+        res_hex.get('output', '') if isinstance(res_hex, dict) else str(res_hex)
     )
     dataset_tlvs_hex = ''
     for line in out_hex.splitlines():
@@ -479,9 +485,7 @@ class TestAndroidBleThreadMobileDevice(CHIPVirtualHome):
     channel = int(chan_m.group(1)) if chan_m else int(TEST_CHANNEL)
     pan_id = pan_m.group(1) if pan_m else TEST_PANID.replace('0x', '')
     xpan_id = xpan_m.group(1) if xpan_m else TEST_EXTPANID
-    master_key = (
-        key_m.group(1) if key_m else '00112233445566778899aabbccddeeff'
-    )
+    master_key = key_m.group(1) if key_m else '00112233445566778899aabbccddeeff'
 
     return {
         'channel': channel,
@@ -555,30 +559,33 @@ class TestAndroidBleThreadMobileDevice(CHIPVirtualHome):
         time.sleep(0.5)
       self.assertTrue(
           leader_formed,
-          f'ThreadBorderRouter {tbr_id} failed to become leader within'
-          ' timeout',
+          f'ThreadBorderRouter {tbr_id} failed to become leader within timeout',
       )
 
       # 3. Register prefixes and routes, assign fd11:33::1/64 on wpan0 and
       # fd11:22::2/64 on wlan0
       net_cmds = [
-          'sh -c "ip6tables -F 2>/dev/null || true; ip6tables -P FORWARD ACCEPT 2>/dev/null || true"',
+          (
+              'sh -c "ip6tables -F 2>/dev/null || true; ip6tables -P FORWARD'
+              ' ACCEPT 2>/dev/null || true"'
+          ),
           'ot-ctl prefix add fd11:33::/64 pasor',
           'ot-ctl route add fd11:22::/64 s med',
           'ot-ctl netdata register',
-          'sh -c "sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 ||'
-          ' true; ip -6 addr replace fd11:22::2/64 dev wlan0 nodad 2>/dev/null'
-          ' || true; ip -6 addr replace fd11:33::1/64 dev wpan0 nodad'
-          ' 2>/dev/null || true; ip -6 route replace fd11:33::/64 dev wpan0'
-          ' 2>/dev/null || true"',
+          (
+              'sh -c "sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1'
+              ' || true; ip -6 addr replace fd11:22::2/64 dev wlan0 nodad'
+              ' 2>/dev/null || true; ip -6 addr replace fd11:33::1/64 dev wpan0'
+              ' nodad 2>/dev/null || true; ip -6 route replace fd11:33::/64 dev'
+              ' wpan0 2>/dev/null || true"'
+          ),
       ]
       for cmd in net_cmds:
         self.execute_device_cmd(tbr_id, cmd)
 
       # 4. Enable SRP server on TBR
       self.execute_device_cmd(
-          tbr_id,
-          'sh -c "ot-ctl srp server enable 2>/dev/null || true"'
+          tbr_id, 'sh -c "ot-ctl srp server enable 2>/dev/null || true"'
       )
 
       # 5. Start SRP to Avahi bridger on TBR
@@ -632,10 +639,14 @@ while True:
     print("Error:", e)
   time.sleep(2)
 '''
-      b64_bridger = base64.b64encode(srp_bridger.encode('utf-8')).decode('ascii')
+      b64_bridger = base64.b64encode(srp_bridger.encode('utf-8')).decode(
+          'ascii'
+      )
       self.execute_device_cmd(
           tbr_id,
-          f'sh -c "echo \\"{b64_bridger}\\" | base64 -d > /tmp/srp_bridger.py && nohup python3 -u /tmp/srp_bridger.py > /tmp/srp_bridger.log 2>&1 &"'
+          f'sh -c "echo \\"{b64_bridger}\\" | base64 -d > /tmp/srp_bridger.py'
+          ' && nohup python3 -u /tmp/srp_bridger.py > /tmp/srp_bridger.log'
+          ' 2>&1 &"',
       )
       time.sleep(2)
 
@@ -693,16 +704,16 @@ while True:
       )
       self.execute_device_cmd(server_id, RESET_SESSION_KEYLOG_CMD)
       gdb_wrapper = (
-          'gdb -batch -return-child-result -q -ex \'set pagination off\' -ex'
-          ' run -ex \'thread apply all bt\' --args'
+          "gdb -batch -return-child-result -q -ex 'set pagination off' -ex"
+          " run -ex 'thread apply all bt' --args"
       )
       if os.environ.get('CIRQUE_COVERAGE') == '1':
         gdb_wrapper = ''
       self.execute_device_cmd(
           server_id,
-          'CHIPCirqueDaemon.py -- run sh -c "'
-          f'env LD_LIBRARY_PATH={host_libs_dir} {SESSION_KEYLOG_ENV}'
-          f' {gdb_wrapper} {CHIP_ALL_CLUSTERS_APP_ESC} --thread --ble-controller'
+          'CHIPCirqueDaemon.py -- run sh -c "env'
+          f' LD_LIBRARY_PATH={host_libs_dir} {SESSION_KEYLOG_ENV} {gdb_wrapper}'
+          f' {CHIP_ALL_CLUSTERS_APP_ESC} --thread --ble-controller'
           f' {ble_adapt_id} --discriminator {TEST_DISCRIMINATOR} 2>&1 | tee -a'
           ' /tmp/chip-all-clusters.log"',
       )
@@ -796,6 +807,29 @@ while True:
         '/tmp/CHIPTool.apk',
     ]
     apk_target = None
+
+    try:
+      import subprocess
+      # Find the container name for the emulator
+      cmd = (
+          "docker ps --format '{{.Names}}' | awk '/"
+          + req_device_id
+          + "/ {print $1; exit}'"
+      )
+      res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+      container_name = res.stdout.strip()
+      if container_name:
+        host_apk_path = f'{CHIP_REPO_STR}/out/android-x64-chip-tool/outputs/apk/debug/app-debug.apk'
+        subprocess.run([
+            'docker',
+            'cp',
+            host_apk_path,
+            f'{container_name}:/tmp/CHIPTool.apk',
+        ])
+        self.logger.info(f'Copied APK to {container_name}:/tmp/CHIPTool.apk')
+    except Exception as e:
+      self.logger.warning(f'Failed to copy APK: {e}')
+
     for cand in apk_candidates:
       chk = self.execute_device_cmd(req_device_id, f'test -f {cand}')
       if chk.get('return_code') == '0':
@@ -896,11 +930,13 @@ while True:
     # Add explicit IPv6 route to Thread Mesh-Local via TBR's wlan0 IP
     self.execute_device_cmd(
         req_device_id,
-        'adb shell su root ip -6 addr add fd11:22::3/64 dev wlan0 nodad 2>/dev/null || true'
+        'adb shell su root ip -6 addr add fd11:22::3/64 dev wlan0 nodad'
+        ' 2>/dev/null || true',
     )
     self.execute_device_cmd(
         req_device_id,
-        'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2 dev wlan0 2>/dev/null || true'
+        'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2'
+        ' dev wlan0 2>/dev/null || true',
     )
     time.sleep(1.0)
 
@@ -930,9 +966,7 @@ while True:
           'stop_screen_recording endpoint not available or failed: %s', e
       )
 
-  def _commission_and_interact_chiptool(
-      self, req_device_id, tbr_dataset=None
-  ):
+  def _commission_and_interact_chiptool(self, req_device_id, tbr_dataset=None):
     self.logger.info('Driving CHIPTool commissioning over BLE + Thread')
     commissioned_via_rest = False
     rest_endpoint_available = False
@@ -1072,16 +1106,12 @@ while True:
         if chan is not None and str(chan) != '15':
           self.execute_device_cmd(req_device_id, 'adb shell input tap 540 650')
           time.sleep(0.5)
-          self.execute_device_cmd(
-              req_device_id, f'adb shell input text {chan}'
-          )
+          self.execute_device_cmd(req_device_id, f'adb shell input text {chan}')
         pan = tbr_dataset.get('pan_id')
         if pan is not None and str(pan) != '1234':
           self.execute_device_cmd(req_device_id, 'adb shell input tap 540 800')
           time.sleep(0.5)
-          self.execute_device_cmd(
-              req_device_id, f'adb shell input text {pan}'
-          )
+          self.execute_device_cmd(req_device_id, f'adb shell input text {pan}')
 
       # Tap saveNetworkBtn / SAVE NETWORK (fallback coords 858, 2227)
       self.execute_device_cmd(req_device_id, 'adb shell input tap 858 2227')
@@ -1096,7 +1126,7 @@ while True:
         res = self.execute_device_cmd(
             req_device_id,
             'adb shell "logcat -d | grep -E'
-            ' \'onCommissioningComplete|Device commissioning completed|'
+            " 'onCommissioningComplete|Device commissioning completed|"
             'Commissioning complete\'"',
         )
         out = res.get('output', '') if isinstance(res, dict) else str(res)
@@ -1133,10 +1163,7 @@ while True:
           if isinstance(dump_res, dict)
           else str(dump_res)
       )
-      if (
-          'onOffClusterBtn' not in dump_out
-          and 'LIGHT ON/OFF' not in dump_out
-      ):
+      if 'onOffClusterBtn' not in dump_out and 'LIGHT ON/OFF' not in dump_out:
         self.execute_device_cmd(
             req_device_id,
             'adb shell am start --activity-clear-top --activity-single-top'
@@ -1155,16 +1182,25 @@ while True:
 
       logcat_cmd = 'adb shell "logcat -d"'
       log_check = self.execute_device_cmd(req_device_id, logcat_cmd)
-      logcat_out = log_check.get('output', '') if isinstance(log_check, dict) else str(log_check)
-      
-      toggle_ok = 'Toggle command success' in logcat_out or 'command 2, Code : 0' in logcat_out
-      val_match = re.search(r'On/Off attribute value:\s*(true|1|True|false|0|False)', logcat_out)
+      logcat_out = (
+          log_check.get('output', '')
+          if isinstance(log_check, dict)
+          else str(log_check)
+      )
+
+      toggle_ok = (
+          'Toggle command success' in logcat_out
+          or 'command 2, Code : 0' in logcat_out
+      )
+      val_match = re.search(
+          r'On/Off attribute value:\s*(true|1|True|false|0|False)', logcat_out
+      )
       read_ok = False
       if val_match:
         val = val_match.group(1).lower()
         if val in ('true', '1'):
           read_ok = True
-          
+
       return toggle_ok, read_ok
     finally:
       if started_rec:
@@ -1181,61 +1217,110 @@ while True:
 
     for tbr_id in tbr_ids:
       reply = self.execute_device_cmd(tbr_id, 'ot-ctl state')
-      out = reply.get('output', '').strip() if isinstance(reply, dict) else str(reply)
+      out = (
+          reply.get('output', '').strip()
+          if isinstance(reply, dict)
+          else str(reply)
+      )
       tbr_state = out.split()[0].strip() if out else ''
       self.assertEqual(
           tbr_state,
           'leader',
           f'ThreadBorderRouter {tbr_id} expected leader state, got {tbr_state}',
       )
-      
+
       # Extract TBR partition ID
       leaderdata = self.execute_device_cmd(tbr_id, 'ot-ctl leaderdata')
-      ld_out = leaderdata.get('output', '') if isinstance(leaderdata, dict) else str(leaderdata)
+      ld_out = (
+          leaderdata.get('output', '')
+          if isinstance(leaderdata, dict)
+          else str(leaderdata)
+      )
       m = re.search(r'Partition ID:\s*(\d+)', ld_out)
-      if m: tbr_part_id = m.group(1)
-      
+      if m:
+        tbr_part_id = m.group(1)
+
       # Extract TBR RLOC16
       state = self.execute_device_cmd(tbr_id, 'ot-ctl rloc16')
-      tbr_rloc16 = state.get('output', '').strip() if isinstance(state, dict) else str(state)
-      tbr_rloc16 = tbr_rloc16.replace('\r', '').replace('\nDone', '').replace('Done', '').strip()
-      
+      tbr_rloc16 = (
+          state.get('output', '').strip()
+          if isinstance(state, dict)
+          else str(state)
+      )
+      tbr_rloc16 = (
+          tbr_rloc16.replace('\r', '')
+          .replace('\nDone', '')
+          .replace('Done', '')
+          .strip()
+      )
+
       # Extract network name and extpanid
       nn = self.execute_device_cmd(tbr_id, 'ot-ctl networkname')
-      tbr_net_name = nn.get('output', '').strip() if isinstance(nn, dict) else str(nn)
+      tbr_net_name = (
+          nn.get('output', '').strip() if isinstance(nn, dict) else str(nn)
+      )
       ep = self.execute_device_cmd(tbr_id, 'ot-ctl extpanid')
-      tbr_ext_pan = ep.get('output', '').strip() if isinstance(ep, dict) else str(ep)
+      tbr_ext_pan = (
+          ep.get('output', '').strip() if isinstance(ep, dict) else str(ep)
+      )
 
     for server_id in server_ids:
       reply = self.execute_device_cmd(server_id, 'ot-ctl state')
-      out = reply.get('output', '').strip() if isinstance(reply, dict) else str(reply)
+      out = (
+          reply.get('output', '').strip()
+          if isinstance(reply, dict)
+          else str(reply)
+      )
       end_state = out.split()[0].strip() if out else ''
       self.assertIn(
           end_state,
           ['child', 'router'],
-          f'CHIPEndDevice {server_id} expected child/router state, got {end_state}',
+          f'CHIPEndDevice {server_id} expected child/router state, got'
+          f' {end_state}',
       )
-      
+
       if tbr_part_id:
         leaderdata = self.execute_device_cmd(server_id, 'ot-ctl leaderdata')
-        ld_out = leaderdata.get('output', '') if isinstance(leaderdata, dict) else str(leaderdata)
+        ld_out = (
+            leaderdata.get('output', '')
+            if isinstance(leaderdata, dict)
+            else str(leaderdata)
+        )
         m = re.search(r'Partition ID:\s*(\d+)', ld_out)
-        self.assertEqual(m.group(1) if m else None, tbr_part_id, 'Partition ID mismatch')
-        
+        self.assertEqual(
+            m.group(1) if m else None, tbr_part_id, 'Partition ID mismatch'
+        )
+
       if tbr_net_name:
         nn = self.execute_device_cmd(server_id, 'ot-ctl networkname')
-        self.assertEqual(nn.get('output', '').strip() if isinstance(nn, dict) else str(nn), tbr_net_name, 'Network name mismatch')
-        
+        self.assertEqual(
+            nn.get('output', '').strip() if isinstance(nn, dict) else str(nn),
+            tbr_net_name,
+            'Network name mismatch',
+        )
+
       if tbr_ext_pan:
         ep = self.execute_device_cmd(server_id, 'ot-ctl extpanid')
-        self.assertEqual(ep.get('output', '').strip() if isinstance(ep, dict) else str(ep), tbr_ext_pan, 'Extpanid mismatch')
-        
+        self.assertEqual(
+            ep.get('output', '').strip() if isinstance(ep, dict) else str(ep),
+            tbr_ext_pan,
+            'Extpanid mismatch',
+        )
+
       if tbr_rloc16:
         parent = self.execute_device_cmd(server_id, 'ot-ctl parent')
-        parent_out = parent.get('output', '') if isinstance(parent, dict) else str(parent)
+        parent_out = (
+            parent.get('output', '')
+            if isinstance(parent, dict)
+            else str(parent)
+        )
         neighbor = self.execute_device_cmd(server_id, 'ot-ctl neighbor table')
-        neighbor_out = neighbor.get('output', '') if isinstance(neighbor, dict) else str(neighbor)
-        
+        neighbor_out = (
+            neighbor.get('output', '')
+            if isinstance(neighbor, dict)
+            else str(neighbor)
+        )
+
         # Check if tbr_rloc16 is the parent or a neighbor. Compare numerically:
         # `ot-ctl rloc16` prints "0400", `ot-ctl parent` prints "Rloc: 400"
         # and the neighbor table prints "0x0400".
@@ -1249,7 +1334,11 @@ while True:
             for v in re.findall(r'\|\s*0x([0-9a-fA-F]{1,4})\s*\|', neighbor_out)
         )
         found = tbr_rloc in rlocs
-        self.assertTrue(found, f"TBR RLOC16 {tbr_rloc16} not found in EndDevice parent or neighbor table")
+        self.assertTrue(
+            found,
+            f'TBR RLOC16 {tbr_rloc16} not found in EndDevice parent or neighbor'
+            ' table',
+        )
 
   def _assert_ble_thread_device_logs(self, server_ids):
     # Wait for device to achieve Thread attached role (child, router)
@@ -1257,7 +1346,9 @@ while True:
         server_ids[0], expected_role=['child', 'router'], timeout=10
     )
     for device_id in server_ids:
-      end_device_log = self.get_device_log(device_id).decode('utf-8', errors='replace')
+      end_device_log = self.get_device_log(device_id).decode(
+          'utf-8', errors='replace'
+      )
       self.logger.info(
           '===== CHIPEndDevice (%s) Log =====\n%s',
           self.get_device_pretty_id(device_id),
@@ -1267,8 +1358,14 @@ while True:
           self.sequenceMatch(
               end_device_log,
               [
-                  'Received command for Endpoint=0 Cluster=0x0000_0031 Command=0x0000_0003',
-                  'Received command for Endpoint=0 Cluster=0x0000_0031 Command=0x0000_0006',
+                  (
+                      'Received command for Endpoint=0 Cluster=0x0000_0031'
+                      ' Command=0x0000_0003'
+                  ),
+                  (
+                      'Received command for Endpoint=0 Cluster=0x0000_0031'
+                      ' Command=0x0000_0006'
+                  ),
                   'GeneralCommissioning: Received CommissioningComplete',
                   '[ZCL] Toggle ep1 on/off from state 0 to 1',
                   'Type 0001:02 (IM:ReadRequest)',
@@ -1280,9 +1377,7 @@ while True:
 
   def run_android_ble_thread_commissioning_test(self):
     all_devs = list(self.device_config.values())
-    tbr_devices = [
-        d for d in all_devs if d.get('type') == 'ThreadBorderRouter'
-    ]
+    tbr_devices = [d for d in all_devs if d.get('type') == 'ThreadBorderRouter']
     server_devices = [d for d in all_devs if d.get('type') == 'CHIPEndDevice']
     req_devices = [
         d
@@ -1321,28 +1416,57 @@ while True:
         f'Invalid ThreadBorderRouter IP on wlan0: {tbr_ip}',
     )
 
-    self.logger.info("Android IPv6 Address:")
+    self.logger.info('Android IPv6 Address:')
     addr_out = self.execute_device_cmd(req_device_id, 'adb shell ip -6 addr')
     self.logger.info(addr_out)
 
-    self.logger.info("Injecting static route for fdde:ad00:beef:0::/64 on Android")
-    self.execute_device_cmd(req_device_id, 'adb shell su root ip -6 addr add fd11:22::3/64 dev wlan0 nodad 2>/dev/null || true')
-    self.execute_device_cmd(req_device_id, 'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2 dev wlan0 2>/dev/null || true')
-    self.execute_device_cmd(req_device_id, 'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2 dev wlan0 table wlan0 2>/dev/null || true')
-    self.execute_device_cmd(req_device_id, 'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2 dev wlan0 table eth0 2>/dev/null || true')
-    
-    self.execute_device_cmd(req_device_id, 'adb shell su root ip -6 route add ff02::fb/128 dev wlan0 table eth0 2>/dev/null || true')
+    self.logger.info(
+        'Injecting static route for fdde:ad00:beef:0::/64 on Android'
+    )
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell su root ip -6 addr add fd11:22::3/64 dev wlan0 nodad'
+        ' 2>/dev/null || true',
+    )
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2'
+        ' dev wlan0 2>/dev/null || true',
+    )
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2'
+        ' dev wlan0 table wlan0 2>/dev/null || true',
+    )
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell su root ip -6 route add fdde:ad00:beef:0::/64 via fd11:22::2'
+        ' dev wlan0 table eth0 2>/dev/null || true',
+    )
 
-    self.logger.info("Android IPv6 Routes:")
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell su root ip -6 route add ff02::fb/128 dev wlan0 table eth0'
+        ' 2>/dev/null || true',
+    )
+
+    self.logger.info('Android IPv6 Routes:')
     route_out = self.execute_device_cmd(req_device_id, 'adb shell ip -6 route')
     self.logger.info(route_out)
-    
-    self.logger.info("Pinging TBR fd11:22::2 from Android:")
-    ping_out = self.execute_device_cmd(req_device_id, 'adb shell ping6 -c 3 fd11:22::2')
+
+    self.logger.info('Pinging TBR fd11:22::2 from Android:')
+    ping_out = self.execute_device_cmd(
+        req_device_id, 'adb shell ping6 -c 3 fd11:22::2'
+    )
     self.logger.info(ping_out)
 
-    self.logger.info("Pinging EndDevice fdde:ad00:beef:0:: (we don't know the full IP but we can ping all nodes or check route):")
-    route_get_out = self.execute_device_cmd(req_device_id, 'adb shell ip -6 route get fdde:ad00:beef:0:1:2:3:4')
+    self.logger.info(
+        "Pinging EndDevice fdde:ad00:beef:0:: (we don't know the full IP but we"
+        ' can ping all nodes or check route):'
+    )
+    route_get_out = self.execute_device_cmd(
+        req_device_id, 'adb shell ip -6 route get fdde:ad00:beef:0:1:2:3:4'
+    )
     self.logger.info(route_get_out)
 
     comm_ok, toggle_ok, read_ok = self._commission_and_interact_chiptool(
@@ -1352,18 +1476,31 @@ while True:
     # 1. Dump and assert adb logcat shows commissioning, toggle, read
     logcat_cmd = 'adb shell "logcat -d"'
     logcat_res = self.execute_device_cmd(req_device_id, logcat_cmd)
-    logcat_out = logcat_res.get('output', '') if isinstance(logcat_res, dict) else str(logcat_res)
-    self.logger.info('===== Android Logcat Snippet =====\n%s', logcat_out[-3000:])
+    logcat_out = (
+        logcat_res.get('output', '')
+        if isinstance(logcat_res, dict)
+        else str(logcat_res)
+    )
+    self.logger.info(
+        '===== Android Logcat Snippet =====\n%s', logcat_out[-3000:]
+    )
     self.assertTrue(comm_ok, 'Commissioning did not succeed')
     self.assertTrue(toggle_ok, 'Toggle command was not observed in logcat')
     self.assertTrue(read_ok, 'Read command was not observed in logcat')
-    
-    if re.search(r'onCommissioningComplete.*?errorCode:\s*[^0]', logcat_out, re.IGNORECASE | re.DOTALL):
+
+    if re.search(
+        r'onCommissioningComplete.*?errorCode:\s*[^0]',
+        logcat_out,
+        re.IGNORECASE | re.DOTALL,
+    ):
       self.fail('onCommissioningComplete returned a non-zero errorCode')
-      
-    if 'failsafe arming' in logcat_out.lower() and 'expired' in logcat_out.lower(): # Basic check
-      pass # Actually the prompt just says 'failsafe expiry'
-      
+
+    if (
+        'failsafe arming' in logcat_out.lower()
+        and 'expired' in logcat_out.lower()
+    ):  # Basic check
+      pass  # Actually the prompt just says 'failsafe expiry'
+
     self.assertTrue(
         'onCommissioningComplete' in logcat_out
         or 'Device commissioning completed' in logcat_out
@@ -1372,11 +1509,17 @@ while True:
         'adb logcat missing commissioning complete marker',
     )
     self.assertTrue(
-        'Toggle command success' in logcat_out or 'command 2, Code : 0' in logcat_out,
+        'Toggle command success' in logcat_out
+        or 'command 2, Code : 0' in logcat_out,
         'adb logcat missing Toggle command success marker',
     )
-    val_match = re.search(r'On/Off attribute value:\s*(true|1|True)', logcat_out)
-    self.assertTrue(bool(val_match), 'adb logcat missing actual post-toggle OnOff value: true')
+    val_match = re.search(
+        r'On/Off attribute value:\s*(true|1|True)', logcat_out
+    )
+    self.assertTrue(
+        bool(val_match),
+        'adb logcat missing actual post-toggle OnOff value: true',
+    )
 
     # 2. Verify post-commissioning Thread state
     self._verify_post_commissioning_thread_state(tbr_ids, server_ids)

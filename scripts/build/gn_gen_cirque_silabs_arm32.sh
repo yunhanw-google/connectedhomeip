@@ -37,12 +37,12 @@ set -e
 CHIP_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "${ROOT_PATH:-$CHIP_ROOT}"
 
-SILABS_ARM32_APPS="${SILABS_ARM32_APPS:-lighting lit-icd lock}"
+SILABS_ARM32_APPS="${SILABS_ARM32_APPS:-lighting lit-icd lock lock-nopersist}"
 for app in $SILABS_ARM32_APPS; do
     case "$app" in
-        lighting | lit-icd | lock) ;;
+        lighting | lit-icd | lock | lock-nopersist) ;;
         *)
-            echo "ERROR: unknown app '$app' in SILABS_ARM32_APPS (expected: lighting lit-icd lock)" >&2
+            echo "ERROR: unknown app '$app' in SILABS_ARM32_APPS (expected: lighting lit-icd lock lock-nopersist)" >&2
             exit 1
             ;;
     esac
@@ -142,7 +142,7 @@ build_thread_apps() {
         'chip_enable_session_keylog=true'
         'chip_im_force_fabric_quota_check=true'
         'chip_build_tests=false'
-        'target_cflags=["-DCONFIG_BUILD_FOR_HOST_UNIT_TEST=0","-DCHIP_CONFIG_ICD_OBSERVERS_POOL_SIZE=5","-DCHIP_CONFIG_ICD_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_SHORT_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_ACTIVE_MODE_DURATION_MS=1000","-DCHIP_CONFIG_ICD_ACTIVE_MODE_THRESHOLD_MS=5000","-DDOOR_LOCK_USE_LOCAL_BUFFER=1","-DDOOR_LOCK_CREDENTIAL_BUFFER_LENGTH=20","-DDOOR_LOCK_USER_CREDENTIALS_BUFFER_LENGTH=10"]'
+        'target_cflags=["-DCONFIG_BUILD_FOR_HOST_UNIT_TEST=0","-DCHIP_CONFIG_ICD_OBSERVERS_POOL_SIZE=5","-DCHIP_CONFIG_ICD_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_SHORT_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_ACTIVE_MODE_DURATION_MS=1000","-DCHIP_CONFIG_ICD_ACTIVE_MODE_THRESHOLD_MS=5000","-DDOOR_LOCK_USE_LOCAL_BUFFER=1","-DCHIP_CONFIG_SUBSCRIPTION_TIMEOUT_RESUMPTION_MIN_RETRY_INTERVAL_SECS=5","-DCHIP_CONFIG_SUBSCRIPTION_TIMEOUT_RESUMPTION_WAIT_TIME_MULTIPLIER_SECS=5","-DCHIP_CONFIG_SUBSCRIPTION_TIMEOUT_RESUMPTION_MAX_RETRY_INTERVAL_SECS=60","-DDOOR_LOCK_CREDENTIAL_BUFFER_LENGTH=20","-DDOOR_LOCK_USER_CREDENTIALS_BUFFER_LENGTH=10"]'
         "sysroot=\"$ARM_SYSROOT\""
         "${CCACHE_ARGS[@]}"
     )
@@ -159,16 +159,67 @@ build_thread_apps() {
     done
 }
 
+build_thread_nopersist_apps() {
+    local targets=("$@")
+    local args=(
+        'target_cpu="arm"'
+        'target_os="linux"'
+        'is_clang=true'
+        'chip_crypto="mbedtls"'
+        'chip_mdns="platform"'
+        'chip_logging_backend="stdio"'
+        'chip_enable_wifi=false'
+        'chip_enable_ble=true'
+        'chip_config_network_layer_ble=true'
+        'chip_enable_thread=true'
+        'chip_system_config_use_openthread_inet_endpoints=true'
+        'openthread_config_dns_client_enable=true'
+        'openthread_external_mbedtls="//third_party/connectedhomeip/third_party/mbedtls:mbedtls"'
+        'openthread_config_joiner_enable=false'
+        'chip_device_config_enable_thread_meshcop=false'
+        'chip_enable_icd_server=true'
+        'chip_enable_icd_lit=true'
+        'chip_enable_icd_dsls=true'
+        'chip_linux_use_silabs_ble_wifi=true'
+        'chip_inet_config_enable_ipv4=false'
+        'chip_enable_session_keylog=true'
+        'chip_im_force_fabric_quota_check=true'
+        'chip_build_tests=false'
+        'chip_persist_subscriptions=false'
+        'target_cflags=["-DCONFIG_BUILD_FOR_HOST_UNIT_TEST=0","-DCHIP_CONFIG_ICD_OBSERVERS_POOL_SIZE=5","-DCHIP_CONFIG_ICD_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_SHORT_IDLE_MODE_DURATION_SEC=5","-DCHIP_CONFIG_ICD_ACTIVE_MODE_DURATION_MS=1000","-DCHIP_CONFIG_ICD_ACTIVE_MODE_THRESHOLD_MS=5000","-DDOOR_LOCK_USE_LOCAL_BUFFER=1","-DCHIP_CONFIG_SUBSCRIPTION_TIMEOUT_RESUMPTION_MIN_RETRY_INTERVAL_SECS=5","-DCHIP_CONFIG_SUBSCRIPTION_TIMEOUT_RESUMPTION_WAIT_TIME_MULTIPLIER_SECS=5","-DCHIP_CONFIG_SUBSCRIPTION_TIMEOUT_RESUMPTION_MAX_RETRY_INTERVAL_SECS=60","-DDOOR_LOCK_CREDENTIAL_BUFFER_LENGTH=20","-DDOOR_LOCK_USER_CREDENTIALS_BUFFER_LENGTH=10"]'
+        "sysroot=\"$ARM_SYSROOT\""
+        "${CCACHE_ARGS[@]}"
+    )
+    if [ "${CIRQUE_COVERAGE:-0}" == "1" ]; then
+        args+=('use_coverage=true')
+    fi
+
+    echo "Build: Cross-compile ARM32 Silicon Labs Thread App(s) (nopersist) in out/arm-silabs-thread-nopersist: ${targets[*]}"
+    mkdir -p out/arm-silabs-thread-nopersist
+    gn --root="$CHIP_ROOT/examples/all-clusters-app/linux" gen out/arm-silabs-thread-nopersist --args="${args[*]}"
+    time ninja -C out/arm-silabs-thread-nopersist "${targets[@]}"
+    for target in "${targets[@]}"; do
+        check_arm32_elf "out/arm-silabs-thread-nopersist/$target"
+        # Rename to chip-silabs-lock-app-nopersist
+        cp -fL "out/arm-silabs-thread-nopersist/$target" "out/arm-silabs-thread/${target}-nopersist"
+    done
+}
+
 thread_targets=()
+nopersist_targets=()
 for app in $SILABS_ARM32_APPS; do
     case "$app" in
         lighting) build_lighting ;;
         lit-icd) thread_targets+=(chip-silabs-lit-icd-app) ;;
         lock) thread_targets+=(chip-silabs-lock-app) ;;
+        lock-nopersist) nopersist_targets+=(chip-silabs-lock-app) ;;
     esac
 done
 if [ "${#thread_targets[@]}" -gt 0 ]; then
     build_thread_apps "${thread_targets[@]}"
+fi
+if [ "${#nopersist_targets[@]}" -gt 0 ]; then
+    build_thread_nopersist_apps "${nopersist_targets[@]}"
 fi
 
 echo "Build: pty_bridge_linux (host PTY <-> Cirque VirtualBluetoothServer TCP)"

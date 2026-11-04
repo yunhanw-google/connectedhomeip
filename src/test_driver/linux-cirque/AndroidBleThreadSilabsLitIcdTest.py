@@ -79,7 +79,7 @@ _ANDROID_POLL_LOGCAT_CMD = (
     " 'NsdManagerServiceResolver|DeviceProvisioningFragment|"
     'ChipDeviceController|ChipClient|ICDListener|Commissioning|'
     'OnReadCommissioningInfo|onICDRegistrationComplete|onCheckInComplete|'
-    'Check In Message|SecureChannel:ICD_CheckInMessage|CHIP|NsdService|'
+    'Check In Message|SecureChannel:ICD_CheckInMessage|NsdService|'
     'MdnsServiceTypeClient|AndroidRuntime\' || true"'
 )
 
@@ -233,7 +233,7 @@ def sync():
         for inst, (host, port, ips) in current.items():
             if known.get(inst) != (host, port, ips):
                 _write_service(inst, host, port, ips)
-        hup_cmd = ['killall', '-HUP', 'avahi-daemon']
+        hup_cmd = ['pkill', '-HUP', 'avahi-daemon']
         subprocess.run(hup_cmd, stderr=subprocess.DEVNULL)
         known.clear()
         known.update(current)
@@ -260,6 +260,47 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
     self.pty_proc = None
     self.app_log_file = None
 
+  def _restart_chiptool_and_register_srp(self, req_device_id: str, tbr_id: str):
+    self.execute_device_cmd(req_device_id, 'adb logcat -c')
+    self.execute_device_cmd(
+        req_device_id, 'adb shell am force-stop com.google.chip.chiptool'
+    )
+    import time
+
+    time.sleep(2.0)
+    self.execute_device_cmd(
+        req_device_id,
+        'adb shell am start -n com.google.chip.chiptool/.CHIPToolActivity',
+    )
+
+    start_time = time.time()
+    svc_name, svc_port = None, None
+    while time.time() - start_time < 15.0:
+      out = self._poll_android_logcat(req_device_id)
+
+      import re
+
+      m = re.search(
+          r'publish'
+          r' serviceName=([0-9A-F]{16}-000000000001B669)\s+type=_matter\._tcp\S*\s+port=(\d+)',
+          out,
+      )
+      if m:
+        svc_name = m.group(1)
+        svc_port = int(m.group(2))
+        break
+      time.sleep(1.0)
+
+    if svc_name and svc_port:
+      self.logger.info(
+          f'Found restarted CHIPTool SRP service: {svc_name} on port {svc_port}'
+      )
+      self._register_chiptool_srp_service(tbr_id, svc_name, svc_port)
+    else:
+      self.logger.warning(
+          'Failed to find CHIPTool SRP registration in logcat after restart'
+      )
+
   def _get_end_device_binary_esc(self) -> str:
     return CHIP_SILABS_LIT_ICD_APP_ESC
 
@@ -280,6 +321,26 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
         if isinstance(d, dict) and 'Thread' in (d.get('capability') or [])
     ]
     return len(thread_devices) + 1
+
+  def _build_end_device_cmd(self, port_offset: str, node_id: int) -> str:
+    coverage_env = ''
+    if os.environ.get('CIRQUE_COVERAGE') == '1':
+      os.makedirs(SILABS_PROFRAW_DIR_PATH, exist_ok=True)
+      coverage_env = (
+          f'LLVM_PROFILE_FILE={SILABS_PROFRAW_DIR_ESC}/lit-icd-%p-%m.profraw '
+      )
+
+    return (
+        'ulimit -c 0; '
+        f'exec env {coverage_env}{SESSION_KEYLOG_ENV} '
+        f'{self._extra_app_env()}'
+        'SILABS_BT_PTY_PATH=/tmp/ttySilabsBT0 '
+        f'PORT_OFFSET={port_offset} {QEMU_ARM_ESC} '
+        f'-L {ARM_SYSROOT_ESC} {self._get_end_device_binary_esc()} '
+        f'--thread-args=--log-file=/tmp/chip_ot_node{node_id}.log '
+        f'--thread-args={node_id} --ble-controller 0 --discriminator '
+        f'{TEST_DISCRIMINATOR}'
+    )
 
   def _run_post_checkin_phase(self, ctx: dict) -> None:
     """Runs after the Check-In oracles pass, while the end device is alive.
@@ -322,12 +383,7 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
   def _poll_android_logcat(self, req_device_id: str) -> str:
     res = self.execute_device_cmd(req_device_id, _ANDROID_POLL_LOGCAT_CMD)
     out = res.get('output', '') if isinstance(res, dict) else str(res)
-    if out.strip():
-      return out
-    res = self.execute_device_cmd(
-        req_device_id, 'adb shell "logcat -d -v epoch"'
-    )
-    return res.get('output', '') if isinstance(res, dict) else str(res)
+    return out
 
   def _cleanup_host_processes(self):
     if self.app_proc:
@@ -597,33 +653,9 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
     open(app_log_path, 'w').close()
     self.app_log_file = open(app_log_path, 'a')
 
-    disable_reg = os.environ.get('DISABLE_ICD_REGISTRATION', '0')
-    # Same emulator and sysroot as the Silabs lighting-app test: the static
-    # out/host_libs/qemu-arm and the Pigweed armhf sysroot, so the test needs
-    # no qemu-user or armhf cross packages in the runner image.
-    # With CIRQUE_COVERAGE=1 the clang ARM32 build writes .profraw files on
-    # exit; exec lets terminate() signal qemu-arm itself instead of the shell.
-    coverage_env = ''
-    if os.environ.get('CIRQUE_COVERAGE') == '1':
-      os.makedirs(SILABS_PROFRAW_DIR_PATH, exist_ok=True)
-      coverage_env = (
-          f'LLVM_PROFILE_FILE={SILABS_PROFRAW_DIR_ESC}/lit-icd-%p-%m.profraw '
-      )
-
-    cmd = (
-        'ulimit -c 0; '
-        f'exec env {coverage_env}{SESSION_KEYLOG_ENV} '
-        f'{self._extra_app_env()}'
-        'SILABS_BT_PTY_PATH=/tmp/ttySilabsBT0 '
-        f'PORT_OFFSET={port_offset} {QEMU_ARM_ESC} '
-        f'-L {ARM_SYSROOT_ESC} {self._get_end_device_binary_esc()} '
-        # OpenThread simulation args forwarded verbatim to otSysInit(); the
-        # log file is kept in /tmp because the simulation platform exits if it
-        # cannot open it (same form as scripts/tests/chiptest).
-        f'--thread-args=--log-file=/tmp/chip_ot_node{node_id}.log '
-        f'--thread-args={node_id} --ble-controller 0 --discriminator '
-        f'{TEST_DISCRIMINATOR}'
-    )
+    self._last_port_offset = port_offset
+    self._last_node_id = node_id
+    cmd = self._build_end_device_cmd(port_offset, node_id)
     self.logger.info(
         'Starting host chip-silabs-lit-icd-app under qemu-arm: %s', cmd
     )
@@ -666,6 +698,7 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
     )
     self._pin_android_neighbor_on_tbr(req_device_id, tbr_ids[0])
 
+    disable_reg = os.environ.get('DISABLE_ICD_REGISTRATION', '0')
     is_lit_str = 'false' if disable_reg == '1' else 'true'
     self.logger.info(
         'Driving CHIPTool commissioning over BLE + Thread via ADB Intent'
@@ -727,7 +760,7 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
     try:
       self.assertTrue(
           comm_success,
-          'BLE + Thread commissioning did not complete with code 0 within 120s',
+          'BLE + Thread commissioning did not complete with code 0 within 240s',
       )
       if registered_chiptool_srp is None:
         out = self._poll_android_logcat(req_device_id)
@@ -836,6 +869,14 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
             ' on device/802.15.4/Wi-Fi/Android (sed_decrypted_udp=%d)',
             len(sed_radio_udp),
         )
+        return
+
+      if getattr(self, 'skip_icd_oracles', False):
+        self._run_post_checkin_phase({
+            'tbr_id': tbr_ids[0],
+            'req_device_id': req_device_id,
+            'app_log_path': app_log_path,
+        })
         return
 
       self.logger.info(
@@ -956,8 +997,8 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
         delay = w['ts'] - f['ts']
         self.assertTrue(
             -0.1 <= delay <= _MAX_BR_FORWARD_DELAY_S,
-            f'Oracle 2c failed: TBR forward delay {delay:.4f}s outside'
-            f' [-0.1, {_MAX_BR_FORWARD_DELAY_S}]s for counter {f["msg_counter"]}',
+            f'Oracle 2c failed: TBR forward delay {delay:.4f}s outside [-0.1,'
+            f' {_MAX_BR_FORWARD_DELAY_S}]s for counter {f["msg_counter"]}',
         )
         forward_delays.append(delay)
 
@@ -1099,9 +1140,7 @@ class TestAndroidBleThreadSilabsLitIcdDevice(TestAndroidBleThreadMobileDevice):
       self._save_host_session_keylog()
       self._cleanup_host_processes()
       # The OpenThread simulation log is buffered until the app exits.
-      ot_log_path = (
-          f'/tmp/chip_ot_node{self._end_device_thread_node_id()}.log'
-      )
+      ot_log_path = f'/tmp/chip_ot_node{self._end_device_thread_node_id()}.log'
       if log_dir and os.path.isdir(log_dir) and os.path.exists(ot_log_path):
         try:
           shutil.copy(

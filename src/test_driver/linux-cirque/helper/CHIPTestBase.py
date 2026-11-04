@@ -129,7 +129,11 @@ class CHIPVirtualHome:
         if stream:
             return ret
 
-        ret_struct = ret.json()
+        try:
+            ret_struct = ret.json()
+        except Exception as e:
+            print(f"FAILED TO DECODE JSON: status={ret.status_code}, text={ret.text}")
+            raise e
         command_ret_code = ret_struct.get('return_code', None)
         if command_ret_code is None:
             # could be 0

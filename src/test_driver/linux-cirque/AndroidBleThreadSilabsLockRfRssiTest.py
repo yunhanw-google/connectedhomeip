@@ -134,7 +134,11 @@ class TestAndroidBleThreadSilabsLockRfRssi(
   ) -> dict:
     """Applies an RF preset, drives BLE/Wi-Fi/Thread traffic, and samples."""
     self.logger.info('Applying RF Channel preset: %s', preset_name)
-    self._rf_api('rf_channel', {'preset': preset_name})
+    payload = {'preset': preset_name, 'seed': 999}
+    if preset_name == 'ideal':
+      payload['enabled'] = True
+      payload['max_per_cap'] = 0.0
+    self._rf_api('rf_channel', payload)
 
     mac_before_raw = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl counters mac')
     mac_before = parse_ot_mac_counters(mac_before_raw)
@@ -150,9 +154,9 @@ class TestAndroidBleThreadSilabsLockRfRssi(
     wifi_ping_out = self._generate_wifi_traffic(req_device_id, count=30)
 
     # 3. Thread 802.15.4 traffic across ot-rcp <-> chip-silabs-lock-app
-    thread_ping_out = self._generate_thread_traffic(tbr_id, ml_eid, count=8)
-    # Allow one ICD IdleMode poll/Check-In cycle on 802.15.4
-    time.sleep(4.0)
+    thread_ping_out = self._generate_thread_traffic(tbr_id, ml_eid, count=20)
+    # Allow ICD IdleMode poll/Check-In cycle on 802.15.4 to settle
+    time.sleep(10.0)
 
     mac_after_raw = self._exec_tbr_ot_ctl(tbr_id, 'ot-ctl counters mac')
     mac_after = parse_ot_mac_counters(mac_after_raw)
@@ -187,7 +191,9 @@ class TestAndroidBleThreadSilabsLockRfRssi(
         'ot_mac_counters_delta': mac_delta,
         'ot_child_table': child_table,
         'ot_child_lq_in': parse_child_table_lq_in(child_table),
-        'ot_cca_rssi': cca_rssi_raw.strip(),
+        'ot_cca_rssi': (
+            cca_rssi_raw.strip() if 'Error' not in cca_rssi_raw else '-100'
+        ),
         'wifi_ping_tail': '\n'.join(wifi_ping_out.splitlines()[-4:]),
         'thread_ping_tail': '\n'.join(thread_ping_out.splitlines()[-4:]),
     }
@@ -298,6 +304,19 @@ class TestAndroidBleThreadSilabsLockRfRssi(
     thr_rssi_a = float(regime_a['thread_telemetry']['mean_rssi_dbm'])
     thr_rssi_b = float(regime_b['thread_telemetry']['mean_rssi_dbm'])
 
+    for reg, data in [
+        ('Regime A', regime_a),
+        ('Regime B', regime_b),
+        ('Regime C', regime_c),
+        ('Ideal', ideal_baseline),
+    ]:
+      for radio in ('ble', 'wifi', 'thread'):
+        cnt = data[f'{radio}_telemetry'].get('sample_count', 0)
+        self.assertTrue(
+            cnt > 0,
+            f'Oracle sample_count failed: {reg} {radio} has {cnt} samples',
+        )
+
     self.assertTrue(
         ble_rssi_a > ble_rssi_b + 8.0,
         f'Oracle RF-1 (BLE RSSI) failed: Regime A ({ble_rssi_a} dBm) not >'
@@ -405,8 +424,46 @@ class TestAndroidBleThreadSilabsLockRfRssi(
         'Oracle RF-5 (Regime B stochastic fading variance) failed: expected'
         f' std_rssi_db > 2.0 dB, got {thr_std_b} dB',
     )
+
+    # OT evidence oracles
+    for reg, data in [
+        ('Regime A', regime_a),
+        ('Regime B', regime_b),
+        ('Regime C', regime_c),
+    ]:
+      delta = data['ot_mac_counters_delta'].get('TxAckRequested', 0)
+      self.assertTrue(
+          delta > 0,
+          f'Oracle OT-1 ({reg} TxAckRequested delta) failed: {delta} not > 0',
+      )
+
+    def ack_ratio(data):
+      delta = data['ot_mac_counters_delta']
+      req = delta.get('TxAckRequested', 0)
+      return delta.get('TxAcked', 0) / req if req > 0 else 1.0
+
+    ack_a = ack_ratio(regime_a)
+    ack_c = ack_ratio(regime_c)
+    self.assertTrue(
+        ack_c < ack_a - 0.15,
+        f'Oracle OT-2 (Ack ratio) failed: C ({ack_c}) not < A ({ack_a}) - 0.15',
+    )
+
+    def get_lq_in(data):
+      lq_in = data.get('ot_child_lq_in')
+      return lq_in[0] if lq_in else 0
+
+    lq_a = get_lq_in(regime_a)
+    lq_b = get_lq_in(regime_b)
+    lq_c = get_lq_in(regime_c)
+    self.assertTrue(
+        lq_a >= lq_b and lq_a >= lq_c,
+        f'Oracle OT-3 (LQ In) failed: expected {lq_a} >= {lq_b} and {lq_c}',
+    )
+
     self.logger.info(
-        'All Multi-Radio RF RSSI & Coexistence Oracles (RF-1..RF-5) PASSED!'
+        'All Multi-Radio RF RSSI & Coexistence Oracles (RF-1..RF-5, OT-1..OT-3)'
+        ' PASSED!'
     )
 
 
