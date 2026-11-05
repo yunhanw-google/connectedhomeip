@@ -20,6 +20,7 @@ on CHIPVirtualHome, and its OpenThread output parsers behave.
 
 import os
 import re
+import shlex
 import sys
 import unittest
 import yaml
@@ -84,14 +85,31 @@ class SilabsLockRfRssiHarnessContractTest(unittest.TestCase):
     self.assertIn('build_silabs_arm32_lock:', cirque_yaml)
     self.assertIn('name: Build ARM32 Silabs Lock App', cirque_yaml)
     self.assertIn(
-        'SILABS_ARM32_APPS="lock lock-nopersist"'
+        r'SILABS_ARM32_APPS=\"lock lock-nopersist\"'
         ' scripts/build/gn_gen_cirque_silabs_arm32.sh',
         cirque_yaml,
     )
-    self.assertIn('name: cirque-silabs-arm32-lock-app', cirque_yaml)
+    lock_steps = parsed['jobs']['build_silabs_arm32_lock']['steps']
+    build_step = next(
+        s
+        for s in lock_steps
+        if s.get('name') == 'Build ARM32 chip-silabs-lock-app'
+    )
+    tokens = shlex.split(build_step['run'].replace('\\\n', ' '))
+    c_idx = tokens.index('-c')
+    self.assertIn(
+        'SILABS_ARM32_APPS="lock lock-nopersist"'
+        ' scripts/build/gn_gen_cirque_silabs_arm32.sh',
+        tokens[c_idx + 1],
+    )
     self.assertIn('name: cirque-silabs-arm32-lock-app', cirque_yaml)
     self.assertIn(
         'file out/arm-silabs-thread/chip-silabs-lock-app | grep -q'
+        ' "ELF 32-bit LSB.*ARM"',
+        cirque_yaml,
+    )
+    self.assertIn(
+        'file out/arm-silabs-thread/chip-silabs-lock-app-nopersist | grep -q'
         ' "ELF 32-bit LSB.*ARM"',
         cirque_yaml,
     )
@@ -103,6 +121,11 @@ class SilabsLockRfRssiHarnessContractTest(unittest.TestCase):
         'lit-icd) thread_targets+=(chip-silabs-lit-icd-app) ;;', gn_gen_sh
     )
     self.assertIn('lock) thread_targets+=(chip-silabs-lock-app) ;;', gn_gen_sh)
+    self.assertIn(
+        'CHIP_CONFIG_SUBSCRIPTION_TIMEOUT_RESUMPTION_'
+        'MAX_FIBONACCI_STEP_INDEX=6',
+        gn_gen_sh,
+    )
     self.assertIn(
         'time ninja -C out/arm-silabs-thread "${targets[@]}"', gn_gen_sh
     )
@@ -127,10 +150,10 @@ class SilabsLockRfRssiHarnessContractTest(unittest.TestCase):
     )
     with open(src_path, 'r', encoding='utf-8') as f:
       source = f.read()
-    self.assertIn("'enabled': True", source)
-    self.assertIn("'max_per_cap': 0", source)
+    self.assertIn("payload['enabled'] = True", source)
+    self.assertIn("payload['max_per_cap'] = 0.0", source)
     self.assertIn("'seed':", source)
-    self.assertIn("'-c', '20'", source)
+    self.assertIn('count=20', source)
     self.assertIn('sleep(10', source)
     self.assertNotIn('TxErrCca', source)
 

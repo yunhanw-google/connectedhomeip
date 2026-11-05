@@ -475,7 +475,7 @@ jobs:
                        git config --global --add safe.directory '*' \
                        && export CCACHE_DIR=\"\$PWD/.ccache\" \
                        && mkdir -p \"\$CCACHE_DIR\" \
-                       && SILABS_ARM32_APPS="lock lock-nopersist" scripts/build/gn_gen_cirque_silabs_arm32.sh \
+                       && SILABS_ARM32_APPS=\"lock lock-nopersist\" scripts/build/gn_gen_cirque_silabs_arm32.sh \
                        && chown -R $(id -u):$(id -g) .ccache out .environment \
                       "
             - name: Verify ARM32 Lock artifact
@@ -879,10 +879,11 @@ jobs:
               # fail loudly if anything the Silabs E2E test needs is missing.
               if: ${{ matrix.shard != 'linux' }}
               run: |
-                  chmod 755 out/arm-silabs/chip-silabs-lighting-app out/arm-silabs-thread/chip-silabs-lit-icd-app out/arm-silabs-thread/chip-silabs-lock-app out/host_libs/pty_bridge_linux out/host_libs/qemu-arm
+                  chmod 755 out/arm-silabs/chip-silabs-lighting-app out/arm-silabs-thread/chip-silabs-lit-icd-app out/arm-silabs-thread/chip-silabs-lock-app out/arm-silabs-thread/chip-silabs-lock-app-nopersist out/host_libs/pty_bridge_linux out/host_libs/qemu-arm
                   file out/arm-silabs/chip-silabs-lighting-app | grep -q "ELF 32-bit LSB.*ARM"
                   file out/arm-silabs-thread/chip-silabs-lit-icd-app | grep -q "ELF 32-bit LSB.*ARM"
                   file out/arm-silabs-thread/chip-silabs-lock-app | grep -q "ELF 32-bit LSB.*ARM"
+                  file out/arm-silabs-thread/chip-silabs-lock-app-nopersist | grep -q "ELF 32-bit LSB.*ARM"
                   file -L out/host_libs/qemu-arm | grep -q "static"
                   test -x out/host_libs/pty_bridge_linux
                   test -f .environment/cipd/packages/pigweed/clang_sysroot/lib/ld-linux-armhf.so.3

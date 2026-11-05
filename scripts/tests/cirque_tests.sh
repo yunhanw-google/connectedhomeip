@@ -477,10 +477,10 @@ if sorted(expected) != sorted(actual):
     )
     sys.exit(1)
 
-if len(set(actual)) != len(actual) or len(actual) != 25:
+if len(set(actual)) != len(actual) or len(actual) != 27:
     sys.stderr.write(
         f"Shard assignment duplicate or count error: "
-        f"unique={len(set(actual))}, total={len(actual)} (expected 25)\n"
+        f"unique={len(set(actual))}, total={len(actual)} (expected 27)\n"
     )
     sys.exit(1)
 
