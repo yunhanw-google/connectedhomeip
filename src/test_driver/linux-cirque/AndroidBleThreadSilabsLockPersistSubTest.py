@@ -152,6 +152,15 @@ class TestAndroidBleThreadSilabsLockPersistSub(
         ),
         'Failed to establish initial subscription',
     )
+    # "Final negotiated" is logged when the SubscribeRequest arrives, before
+    # the first report and the SubscribeResponse are done. Wait for the
+    # SubscribeResponse so the phone has an active subscription before the
+    # ICD reboot; otherwise the resumed report is rejected with
+    # INVALID_SUBSCRIPTION.
+    self.assertTrue(
+        wait_for_lock_log('(IM:SubscribeResponse)', offset_sub, timeout_s=30.0),
+        'Initial subscription never completed (no SubscribeResponse sent)',
+    )
 
     # SCENARIO: ICD reboot (S3 in plan)
     self.logger.info('SCENARIO: ICD reboot')
