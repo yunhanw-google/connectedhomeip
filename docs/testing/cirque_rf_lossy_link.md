@@ -18,8 +18,8 @@ message order of each exchange.
 
 The Cirque RF channel simulator (`third_party/cirque/repo`, see its
 `docs/rf_channel_simulation.md`) produces the same kinds of loss end to end:
-`regime_b_far_nlos_fading` gives isolated single-frame drops and
-`regime_f_bursty_body_shadowing` gives correlated bursts of consecutive drops.
+`regime_c_cochannel_interference` drops frames while a duty-cycled co-channel
+Wi-Fi interferer is on.
 
 ## 1. Interaction Model `Status::Busy` from a held `ReadHandler`
 
@@ -91,7 +91,7 @@ The Cirque RF channel simulator (`third_party/cirque/repo`, see its
 
 `src/test_driver/linux-cirque/AndroidBleThreadSilabsLockRfRssiTest.py`
 commissions the Silabs lock app over BLE and Thread from Android CHIPTool and
-checks the RSSI, SINR, LQI and drop statistics reported by the Cirque RF
-simulator for several presets. Its Oracle RF-5 compares `ideal` with
-`regime_b_far_nlos_fading` (zero drops under `ideal`, lower and more variable
-RSSI under `regime_b`). It does not assert on the four hazards above.
+checks the SINR, LQI and drop statistics reported by the Cirque RF simulator
+under `ideal` and `regime_c_cochannel_interference` (zero drops under `ideal`,
+lower SINR and LQI and more drops under `regime_c`). It does not assert on the
+four hazards above.

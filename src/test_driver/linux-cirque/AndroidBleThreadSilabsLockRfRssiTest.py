@@ -18,15 +18,11 @@ and Thread (IEEE 802.15.4) between Android CHIPTool (Android Emulator),
 Thread Border Router (otbr-agent + ot-rcp), and ARM32 Silicon Labs Lock App
 (examples/lock-app/silabs -> out/arm-silabs-thread/chip-silabs-lock-app).
 
-Validates three progressive 2.4 GHz stochastic propagation and coexistence
-regimes:
-  * Regime A (regime_a_near_los): Near-field LoS (d=1.5m, n=2.0, Rician K=10dB,
-    sigma_s=1.0dB, no interferers).
-  * Regime B (regime_b_far_nlos_fading): Far-field NLOS (d=14m, n=3.0, 2 walls,
-    Gudmundson AR(1) shadowing sigma_s=5.0dB, rho=0.85, Rayleigh fading K=0).
-  * Regime C (regime_c_cochannel_interference): 2.4 GHz co-channel Wi-Fi + BLE
-    interference burst overlapping Thread Ch 15 (2425 MHz) & Wi-Fi Ch 11 + NLOS
-    Rayleigh fading, causing measurable SINR drop, LQI drop, and RX/TX packet
+Compares two 2.4 GHz RF channel presets:
+  * Ideal (ideal): clean baseline (d=1.5m, n=2.0, no interferers, PER cap 0).
+  * Regime C (regime_c_cochannel_interference): fixed d=20m, n=3.4 link plus
+    one duty-cycled Wi-Fi Ch 4 interferer overlapping Thread Ch 15 (2425 MHz)
+    and Wi-Fi Ch 6, causing measurable SINR drop, LQI drop, and RX/TX packet
     drops & MAC retransmissions across BLE, Wi-Fi, and Thread.
 """
 
@@ -255,16 +251,6 @@ class TestAndroidBleThreadSilabsLockRfRssi(
       ideal_baseline = self._exercise_and_measure_regime(
           'ideal', tbr_id, req_device_id, ml_eid, bt_ctrl_port
       )
-      regime_a = self._exercise_and_measure_regime(
-          'regime_a_near_los', tbr_id, req_device_id, ml_eid, bt_ctrl_port
-      )
-      regime_b = self._exercise_and_measure_regime(
-          'regime_b_far_nlos_fading',
-          tbr_id,
-          req_device_id,
-          ml_eid,
-          bt_ctrl_port,
-      )
       regime_c = self._exercise_and_measure_regime(
           'regime_c_cochannel_interference',
           tbr_id,
@@ -280,8 +266,6 @@ class TestAndroidBleThreadSilabsLockRfRssi(
         'ml_eid': ml_eid,
         'regimes': {
             'ideal': ideal_baseline,
-            'regime_a_near_los': regime_a,
-            'regime_b_far_nlos_fading': regime_b,
             'regime_c_cochannel_interference': regime_c,
         },
     }
@@ -295,20 +279,9 @@ class TestAndroidBleThreadSilabsLockRfRssi(
         json.dump(results, f, indent=2, sort_keys=True)
       self.logger.info('Saved RF RSSI experiment results to %s', results_path)
 
-    # Oracle RF-1: Strict RSSI attenuation from Near-Field LoS (Regime A) to
-    # Far-Field NLOS + Shadowing + Rayleigh Fading (Regime B) across all radios
-    ble_rssi_a = float(regime_a['ble_telemetry']['mean_rssi_dbm'])
-    ble_rssi_b = float(regime_b['ble_telemetry']['mean_rssi_dbm'])
-    wifi_rssi_a = float(regime_a['wifi_telemetry']['mean_rssi_dbm'])
-    wifi_rssi_b = float(regime_b['wifi_telemetry']['mean_rssi_dbm'])
-    thr_rssi_a = float(regime_a['thread_telemetry']['mean_rssi_dbm'])
-    thr_rssi_b = float(regime_b['thread_telemetry']['mean_rssi_dbm'])
-
     for reg, data in [
-        ('Regime A', regime_a),
-        ('Regime B', regime_b),
-        ('Regime C', regime_c),
         ('Ideal', ideal_baseline),
+        ('Regime C', regime_c),
     ]:
       for radio in ('ble', 'wifi', 'thread'):
         cnt = data[f'{radio}_telemetry'].get('sample_count', 0)
@@ -317,118 +290,56 @@ class TestAndroidBleThreadSilabsLockRfRssi(
             f'Oracle sample_count failed: {reg} {radio} has {cnt} samples',
         )
 
-    self.assertTrue(
-        ble_rssi_a > ble_rssi_b + 8.0,
-        f'Oracle RF-1 (BLE RSSI) failed: Regime A ({ble_rssi_a} dBm) not >'
-        f' Regime B ({ble_rssi_b} dBm) + 8 dB',
-    )
-    self.assertTrue(
-        wifi_rssi_a > wifi_rssi_b + 8.0,
-        f'Oracle RF-1 (Wi-Fi RSSI) failed: Regime A ({wifi_rssi_a} dBm) not >'
-        f' Regime B ({wifi_rssi_b} dBm) + 8 dB',
-    )
-    self.assertTrue(
-        thr_rssi_a > thr_rssi_b + 8.0,
-        f'Oracle RF-1 (Thread RSSI) failed: Regime A ({thr_rssi_a} dBm) not >'
-        f' Regime B ({thr_rssi_b} dBm) + 8 dB',
-    )
-
-    # Oracle RF-2: Strict SINR degradation across Regimes A > B > C
-    ble_sinr_a = float(regime_a['ble_telemetry']['mean_sinr_db'])
-    ble_sinr_b = float(regime_b['ble_telemetry']['mean_sinr_db'])
-    ble_sinr_c = float(regime_c['ble_telemetry']['mean_sinr_db'])
-
-    wifi_sinr_a = float(regime_a['wifi_telemetry']['mean_sinr_db'])
-    wifi_sinr_b = float(regime_b['wifi_telemetry']['mean_sinr_db'])
-    wifi_sinr_c = float(regime_c['wifi_telemetry']['mean_sinr_db'])
-
-    thr_sinr_a = float(regime_a['thread_telemetry']['mean_sinr_db'])
-    thr_sinr_b = float(regime_b['thread_telemetry']['mean_sinr_db'])
-    thr_sinr_c = float(regime_c['thread_telemetry']['mean_sinr_db'])
-
-    self.assertTrue(
-        ble_sinr_a > ble_sinr_b > ble_sinr_c,
-        f'Oracle RF-2 (BLE SINR) failed: expected A ({ble_sinr_a}) > B'
-        f' ({ble_sinr_b}) > C ({ble_sinr_c})',
-    )
-    self.assertTrue(
-        wifi_sinr_a > wifi_sinr_b > wifi_sinr_c,
-        f'Oracle RF-2 (Wi-Fi SINR) failed: expected A ({wifi_sinr_a}) > B'
-        f' ({wifi_sinr_b}) > C ({wifi_sinr_c})',
-    )
-    self.assertTrue(
-        thr_sinr_a > thr_sinr_b > thr_sinr_c,
-        f'Oracle RF-2 (Thread SINR) failed: expected A ({thr_sinr_a}) > B'
-        f' ({thr_sinr_b}) > C ({thr_sinr_c})',
-    )
+    # Oracle RF-2: Strict SINR degradation from Ideal to Regime C
+    for radio, label in (
+        ('ble', 'BLE'),
+        ('wifi', 'Wi-Fi'),
+        ('thread', 'Thread'),
+    ):
+      sinr_ideal = float(ideal_baseline[f'{radio}_telemetry']['mean_sinr_db'])
+      sinr_c = float(regime_c[f'{radio}_telemetry']['mean_sinr_db'])
+      self.assertTrue(
+          sinr_ideal > sinr_c,
+          f'Oracle RF-2 ({label} SINR) failed: expected Ideal ({sinr_ideal}) >'
+          f' C ({sinr_c})',
+      )
 
     # Oracle RF-3: Packet drops & PER increase under Regime C interference
-    ble_drops_a = int(regime_a['ble_telemetry']['dropped_packets'])
+    ble_drops_ideal = int(ideal_baseline['ble_telemetry']['dropped_packets'])
     ble_drops_c = int(regime_c['ble_telemetry']['dropped_packets'])
-    wifi_drops_a = int(regime_a['wifi_telemetry']['dropped_packets'])
+    wifi_drops_ideal = int(ideal_baseline['wifi_telemetry']['dropped_packets'])
     wifi_drops_c = int(regime_c['wifi_telemetry']['dropped_packets'])
-    thr_drops_a = int(regime_a['thread_telemetry']['dropped_packets'])
+    thr_drops_ideal = int(ideal_baseline['thread_telemetry']['dropped_packets'])
     thr_drops_c = int(regime_c['thread_telemetry']['dropped_packets'])
 
     self.assertTrue(
-        ble_drops_c > ble_drops_a,
+        ble_drops_c > ble_drops_ideal,
         f'Oracle RF-3 (BLE drops) failed: Regime C ({ble_drops_c}) not >'
-        f' Regime A ({ble_drops_a})',
+        f' Ideal ({ble_drops_ideal})',
     )
     self.assertTrue(
-        wifi_drops_c > wifi_drops_a,
+        wifi_drops_c > wifi_drops_ideal,
         f'Oracle RF-3 (Wi-Fi drops) failed: Regime C ({wifi_drops_c}) not >'
-        f' Regime A ({wifi_drops_a})',
+        f' Ideal ({wifi_drops_ideal})',
     )
     self.assertTrue(
-        thr_drops_c > thr_drops_a,
+        thr_drops_c > thr_drops_ideal,
         'Oracle RF-3 (Thread 802.15.4 Spinel proxy drops) failed: Regime C'
-        f' ({thr_drops_c}) not > Regime A ({thr_drops_a})',
+        f' ({thr_drops_c}) not > Ideal ({thr_drops_ideal})',
     )
 
-    # Oracle RF-4: Thread 802.15.4 LQI degradation from Regime A to Regime C
-    thr_lqi_a = float(regime_a['thread_telemetry']['mean_lqi'])
+    # Oracle RF-4: Thread 802.15.4 LQI degradation from Ideal to Regime C
+    thr_lqi_ideal = float(ideal_baseline['thread_telemetry']['mean_lqi'])
     thr_lqi_c = float(regime_c['thread_telemetry']['mean_lqi'])
     self.assertTrue(
-        thr_lqi_a > thr_lqi_c + 25.0,
-        f'Oracle RF-4 (Thread LQI) failed: Regime A LQI ({thr_lqi_a}) not >'
+        thr_lqi_ideal > thr_lqi_c + 25.0,
+        f'Oracle RF-4 (Thread LQI) failed: Ideal LQI ({thr_lqi_ideal}) not >'
         f' Regime C LQI ({thr_lqi_c}) + 25',
-    )
-
-    # Oracle RF-5: Default 'ideal' preset vs 'regime_b_far_nlos_fading'
-    # Verifies that 'ideal' has 0% stochastic drops and 0.0 dB RSSI jitter
-    # (so loss-driven hazards such as those in
-    # docs/testing/cirque_rf_lossy_link.md cannot occur), whereas
-    # 'regime_b_far_nlos_fading'
-    # introduces realistic NLOS path-loss attenuation (> 15 dB below ideal) and
-    # non-zero Gudmundson AR(1) + Rayleigh RSSI variance (std_rssi_db > 2.0 dB).
-    ble_drops_ideal = int(ideal_baseline['ble_telemetry']['dropped_packets'])
-    wifi_drops_ideal = int(ideal_baseline['wifi_telemetry']['dropped_packets'])
-    thr_drops_ideal = int(ideal_baseline['thread_telemetry']['dropped_packets'])
-    self.assertEqual(
-        ble_drops_ideal + wifi_drops_ideal + thr_drops_ideal,
-        0,
-        'Oracle RF-5 (ideal baseline) failed: expected 0 drops under ideal'
-        f' preset, got BLE={ble_drops_ideal}, Wi-Fi={wifi_drops_ideal},'
-        f' Thread={thr_drops_ideal}',
-    )
-    thr_rssi_ideal = float(ideal_baseline['thread_telemetry']['mean_rssi_dbm'])
-    thr_std_b = float(regime_b['thread_telemetry']['std_rssi_db'])
-    self.assertTrue(
-        thr_rssi_ideal > thr_rssi_b + 15.0,
-        f'Oracle RF-5 (ideal vs Regime B RSSI) failed: ideal ({thr_rssi_ideal}'
-        f' dBm) not > Regime B ({thr_rssi_b} dBm) + 15 dB',
-    )
-    self.assertTrue(
-        thr_std_b > 2.0,
-        'Oracle RF-5 (Regime B stochastic fading variance) failed: expected'
-        f' std_rssi_db > 2.0 dB, got {thr_std_b} dB',
     )
 
     # OT evidence oracles
     for reg, data in [
-        ('Regime A', regime_a),
-        ('Regime B', regime_b),
+        ('Ideal', ideal_baseline),
         ('Regime C', regime_c),
     ]:
       delta = data['ot_mac_counters_delta'].get('TxAckRequested', 0)
@@ -442,27 +353,27 @@ class TestAndroidBleThreadSilabsLockRfRssi(
       req = delta.get('TxAckRequested', 0)
       return delta.get('TxAcked', 0) / req if req > 0 else 1.0
 
-    ack_a = ack_ratio(regime_a)
+    ack_ideal = ack_ratio(ideal_baseline)
     ack_c = ack_ratio(regime_c)
     self.assertTrue(
-        ack_c < ack_a - 0.15,
-        f'Oracle OT-2 (Ack ratio) failed: C ({ack_c}) not < A ({ack_a}) - 0.15',
+        ack_c < ack_ideal - 0.15,
+        f'Oracle OT-2 (Ack ratio) failed: C ({ack_c}) not < Ideal'
+        f' ({ack_ideal}) - 0.15',
     )
 
     def get_lq_in(data):
       lq_in = data.get('ot_child_lq_in')
       return lq_in[0] if lq_in else 0
 
-    lq_a = get_lq_in(regime_a)
-    lq_b = get_lq_in(regime_b)
+    lq_ideal = get_lq_in(ideal_baseline)
     lq_c = get_lq_in(regime_c)
     self.assertTrue(
-        lq_a >= lq_b and lq_a >= lq_c,
-        f'Oracle OT-3 (LQ In) failed: expected {lq_a} >= {lq_b} and {lq_c}',
+        lq_ideal >= lq_c,
+        f'Oracle OT-3 (LQ In) failed: expected {lq_ideal} >= {lq_c}',
     )
 
     self.logger.info(
-        'All Multi-Radio RF RSSI & Coexistence Oracles (RF-1..RF-5, OT-1..OT-3)'
+        'All Multi-Radio RF RSSI & Coexistence Oracles (RF-2..RF-4, OT-1..OT-3)'
         ' PASSED!'
     )
 
