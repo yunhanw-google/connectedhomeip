@@ -326,8 +326,17 @@ jobs:
               # Copied into CHIPEndDevice containers, so it must be static.
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y qemu-user-static
-                  file -L /usr/bin/qemu-arm-static | grep -q static
+                  # Ubuntu 26.04+ (QEMU 10) dropped qemu-user-static; its
+                  # static binaries now ship in qemu-user without the suffix.
+                  if apt-cache policy qemu-user-static | grep -q 'Candidate: [0-9]'; then
+                      sudo apt-get install -y qemu-user-static
+                      QEMU_ARM=/usr/bin/qemu-arm-static
+                  else
+                      sudo apt-get install -y qemu-user
+                      QEMU_ARM=/usr/bin/qemu-arm
+                  fi
+                  file -L "$QEMU_ARM" | grep -q static
+                  echo "QEMU_ARM=$QEMU_ARM" >> "$GITHUB_ENV"
             - name: Build ARM32 chip-silabs-lighting-app and pty_bridge_linux
               run: |
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
@@ -339,7 +348,7 @@ jobs:
                        && SILABS_ARM32_APPS=lighting scripts/build/gn_gen_cirque_silabs_arm32.sh \
                        && chown -R $(id -u):$(id -g) .ccache out .environment \
                       "
-                  cp -fL /usr/bin/qemu-arm-static out/host_libs/qemu-arm
+                  cp -fL "$QEMU_ARM" out/host_libs/qemu-arm
                   chmod 755 out/host_libs/qemu-arm
             - name: Verify ARM32 artifacts
               run: |
@@ -866,14 +875,21 @@ jobs:
             - name: Build ARM32 Silabs artifacts (Local ACT fallback)
               if: ${{ matrix.shard != 'linux' && env.ACT }}
               run: |
-                  sudo apt-get update && sudo apt-get install -y qemu-user-static
+                  sudo apt-get update
+                  if apt-cache policy qemu-user-static | grep -q 'Candidate: [0-9]'; then
+                      sudo apt-get install -y qemu-user-static
+                      QEMU_ARM=/usr/bin/qemu-arm-static
+                  else
+                      sudo apt-get install -y qemu-user
+                      QEMU_ARM=/usr/bin/qemu-arm
+                  fi
                   integrations/docker/images/stage-2/chip-build-cirque/run.sh \
                     -- sh -c " \
                        git config --global --add safe.directory '*' \
                        && scripts/build/gn_gen_cirque_silabs_arm32.sh \
                        && chown -R $(id -u):$(id -g) out .environment \
                       "
-                  cp -fL /usr/bin/qemu-arm-static out/host_libs/qemu-arm
+                  cp -fL "$QEMU_ARM" out/host_libs/qemu-arm
             - name: Verify ARM32 Silabs artifacts
               # upload-artifact drops the executable bit; restore it, then
               # fail loudly if anything the Silabs E2E test needs is missing.
