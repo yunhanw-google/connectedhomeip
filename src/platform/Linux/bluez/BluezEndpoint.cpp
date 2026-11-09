@@ -335,8 +335,22 @@ void BluezEndpoint::HandleNewDevice(BluezDevice1 & aDevice)
                    ChipLogError(DeviceLayer, "FAIL: Connection already tracked: conn=%p device=%s path=%s", conn,
                                 conn->GetPeerAddress(), objectPath));
 
-    auto * origin            = static_cast<GVariant *>(g_object_get_data(G_OBJECT(&aDevice), "chip-connect-request-id"));
-    const uint64_t requestId = origin != nullptr ? g_variant_get_uint64(origin) : 0;
+    auto * origin      = static_cast<GVariant *>(g_object_get_data(G_OBJECT(&aDevice), "chip-connect-request-id"));
+    uint64_t requestId = origin != nullptr ? g_variant_get_uint64(origin) : 0;
+    if (objectPath != nullptr)
+    {
+        GCharPtr requestKey(
+            g_strdup_printf("%p:%s", g_dbus_proxy_get_connection(reinterpret_cast<GDBusProxy *>(&aDevice)), objectPath));
+        auto it = mConnectRequestIds.find(requestKey.get());
+        if (it != mConnectRequestIds.end())
+        {
+            if (requestId == 0)
+            {
+                requestId = it->second;
+            }
+            mConnectRequestIds.erase(it);
+        }
+    }
 
     conn = chip::Platform::New<BluezConnection>(aDevice);
     VerifyOrExit(conn != nullptr, err = CHIP_ERROR_NO_MEMORY);
@@ -619,6 +633,7 @@ void BluezEndpoint::Shutdown()
     // the middle of being processed when the cleanup function is called.
     TEMPORARY_RETURN_IGNORED PlatformMgrImpl().GLibMatterContextInvokeSync(
         +[](BluezEndpoint * self) {
+            self->mConnectRequestIds.clear();
             self->mAdapter.reset();
             self->mRoot.reset();
             self->mService.reset();
@@ -638,6 +653,13 @@ void BluezEndpoint::Shutdown()
 
 CHIP_ERROR BluezEndpoint::ConnectDeviceImpl(BluezDevice1 & aDevice, GCancellable * cancellable, uint64_t requestId)
 {
+    GCharPtr requestKey;
+    if (const char * objectPath = g_dbus_proxy_get_object_path(reinterpret_cast<GDBusProxy *>(&aDevice)); objectPath != nullptr)
+    {
+        requestKey.reset(
+            g_strdup_printf("%p:%s", g_dbus_proxy_get_connection(reinterpret_cast<GDBusProxy *>(&aDevice)), objectPath));
+        mConnectRequestIds[requestKey.get()] = requestId;
+    }
     g_object_set_data_full(
         G_OBJECT(&aDevice), "chip-connect-request-id", g_variant_ref_sink(g_variant_new_uint64(requestId)),
         +[](void * value) { g_variant_unref(static_cast<GVariant *>(value)); });
@@ -665,6 +687,10 @@ CHIP_ERROR BluezEndpoint::ConnectDeviceImpl(BluezDevice1 & aDevice, GCancellable
         bluez_device1_call_disconnect_sync(&aDevice, nullptr, nullptr);
     }
 
+    if (requestKey)
+    {
+        mConnectRequestIds.erase(requestKey.get());
+    }
     return CHIP_ERROR_INTERNAL;
 }
 

@@ -151,6 +151,9 @@ private:
         uint64_t mPendingTicket;
     };
     std::unordered_map<std::string, ConnectionEntry> mConnMap;
+    // Preserves outgoing connect request IDs across GDBusObjectManagerClient
+    // BluezDevice1 proxy recreation. Accessed on the GLib Matter context thread.
+    std::unordered_map<std::string, uint64_t> mConnectRequestIds;
     uint64_t mNextPendingTicket = 0;
     GAutoPtr<GCancellable> mConnectCancellable;
     GCharPtr mPeerDevicePath;
