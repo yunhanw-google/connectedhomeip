@@ -92,8 +92,8 @@ class CHIPVirtualHome:
             traceback.print_exc(file=sys.stderr)
         return test_ret
 
-    def query_api(self, end_point, args=[], binary=False):
-        ret = requests.get(self._build_request_url(end_point, args), timeout=REQUEST_TIMEOUT_SEC)
+    def query_api(self, end_point, args=[], binary=False, params=None):
+        ret = requests.get(self._build_request_url(end_point, args), params=params, timeout=REQUEST_TIMEOUT_SEC)
         if binary:
             return ret.content
         return ret.json()
